@@ -1,0 +1,6 @@
+[specs]
+layout = "feature-folder"
+granularity = "module"
+custom_folders = []
+scout_suggestion = ""
+decided_at = "2026-06-01T13:26:00Z"

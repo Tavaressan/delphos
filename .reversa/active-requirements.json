@@ -1,0 +1,15 @@
+{
+  "schema-version": 1,
+  "feature-dir": "_reversa_forward/004-workflow-worker",
+  "feature-id": "004",
+  "short-name": "workflow-worker",
+  "started-at": "2026-06-03T17:37:30Z",
+  "current-stage": "done",
+  "stages-completed": [
+    "requirements",
+    "plan",
+    "to-do",
+    "coding"
+  ],
+  "paused-features": []
+}

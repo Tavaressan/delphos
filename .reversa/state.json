@@ -1,0 +1,18 @@
+{
+  "version": "1.2.43",
+  "project": "enterprise_rag_platform",
+  "user_name": "Vitor",
+  "chat_language": "pt-br",
+  "doc_language": "Português",
+  "answer_mode": "chat",
+  "doc_level": "completo",
+  "output_folder": "_reversa_sdd",
+  "forward_folder": "_reversa_forward",
+  "phase": null,
+  "completed": [],
+  "pending": ["reconhecimento", "escavacao", "interpretacao", "geracao", "revisao"],
+  "checkpoints": {},
+  "engines": [],
+  "agents": [],
+  "created_files": []
+}

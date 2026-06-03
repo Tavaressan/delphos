@@ -152,6 +152,9 @@ services:
       context: ./rust-services
       dockerfile: workflow-worker/Dockerfile
     container_name: workflow_worker
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/rag_db
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
     env_file:
       - .env
     depends_on:

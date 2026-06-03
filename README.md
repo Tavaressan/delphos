@@ -1,8 +1,6 @@
 # Alfabra Vector
 
-Uma plataforma corporativa modular de última geração para Recuperação Aumentada por Geração (RAG), projetada com foco em escalabilidade, segurança e alta performance.
-
-Este repositório contém a base tecnológica para uma solução de IA generativa empresarial, utilizando arquiteturas modernas e as melhores práticas de engenharia de software.
+Uma plataforma corporativa modular para orquestração de agentes de IA do framework Carobelli com Recuperação Aumentada por Geração (RAG).
 
 ## 🏗️ Arquitetura do Sistema
 
@@ -79,6 +77,3 @@ A organização do código segue um padrão modular:
 - **Processamento**: Rust para processamento paralelo e eficiente de dados.
 - **IA**: Integração com Google Vertex AI / Gemini 2.5 Pro para geração de texto e embeddings.
 - **Infraestrutura**: Orquestração via Docker Compose, MinIO para armazenamento de objetos e Nginx como Reverse Proxy.
-
----
-Este projeto está pronto para crescimento incremental, mantendo alta manutenibilidade e preparo para uma evolução rumo a uma malha de microserviços completa.

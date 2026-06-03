@@ -35,3 +35,43 @@ services:
   core:
     ports:
       - "8080:8080" # API Spring Boot para chamadas locais (Postman/Swagger)
+
+  ingestion-worker:
+    platform: linux/arm64
+    image: rust:1.80
+    working_dir: /app/ingestion-worker
+    volumes:
+      - ./rust-services:/app
+      - cargo_target:/app/target
+      - cargo_registry:/usr/local/cargo/registry
+    environment:
+      - CARGO_HOME=/usr/local/cargo
+    command: bash -c "cargo run"
+
+  rag-worker:
+    platform: linux/arm64
+    image: rust:1.80
+    working_dir: /app/rag-worker
+    volumes:
+      - ./rust-services:/app
+      - cargo_target:/app/target
+      - cargo_registry:/usr/local/cargo/registry
+    environment:
+      - CARGO_HOME=/usr/local/cargo
+    command: bash -c "cargo run"
+
+  workflow-worker:
+    platform: linux/arm64
+    image: rust:1.80
+    working_dir: /app/workflow-worker
+    volumes:
+      - ./rust-services:/app
+      - cargo_target:/app/target
+      - cargo_registry:/usr/local/cargo/registry
+    environment:
+      - CARGO_HOME=/usr/local/cargo
+    command: bash -c "cargo run"
+
+volumes:
+  cargo_target:
+  cargo_registry:
