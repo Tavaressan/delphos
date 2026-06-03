@@ -1,0 +1,37 @@
+version: "3.9"
+
+# ==============================================================================
+# Development Override for Alfabra Vector
+# ==============================================================================
+# O Docker Compose mescla automaticamente este arquivo com o docker-compose.yml
+# principal ao rodar `docker compose up` localmente.
+# 
+# Função: Expor portas internas de banco de dados e APIs para o 'localhost',
+# permitindo que os desenvolvedores conectem ferramentas gráficas (DBeaver, 
+# Postman, Redis Desktop) durante o desenvolvimento.
+#
+# ⚠️ IMPORTANTE: Este arquivo NÃO DEVE ser usado em Produção. 
+# Em produção, execute apenas o docker-compose.yml principal, para que
+# esses serviços permaneçam isolados nas redes internas do Docker.
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  anythingllm:
+    ports:
+      - "3001:3000" # Acesso local à interface administrativa do AnythingLLM
+
+  core:
+    ports:
+      - "8080:8080" # API Spring Boot para chamadas locais (Postman/Swagger)

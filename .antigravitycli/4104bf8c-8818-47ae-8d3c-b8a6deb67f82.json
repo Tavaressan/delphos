@@ -1,0 +1,14 @@
+{
+  "id": "4104bf8c-8818-47ae-8d3c-b8a6deb67f82",
+  "name": "/Users/vitortavares/Desktop/reversa_teste/enterprise_rag_platform",
+  "projectResources": {
+    "resources": [
+      {
+        "gitFolder": {
+          "folderUri": "file:///Users/vitortavares/Desktop/reversa_teste/enterprise_rag_platform",
+          "allowWrite": true
+        }
+      }
+    ]
+  }
+}

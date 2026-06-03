@@ -1,0 +1,14 @@
+# Alfabra Vector - Caddy Reverse Proxy Configuration
+
+{$DOMAIN_NAME} {
+    # Habilita o HTTPS usando o DNS Challenge com DuckDNS
+    tls {
+        dns duckdns {$DUCKDNS_TOKEN}
+        resolvers 1.1.1.1
+        propagation_delay 60s
+        propagation_timeout 5m
+    }
+
+    # Proxy reverso para o Frontend Next.js
+    reverse_proxy frontend:3000
+}

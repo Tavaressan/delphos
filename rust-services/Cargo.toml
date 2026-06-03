@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "shared",
+    "document-processing",
+    "embedding-service",
+    "ingestion-worker",
+    "rag-worker",
+    "workflow-worker",
+]
+resolver = "2"

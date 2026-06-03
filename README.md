@@ -1,0 +1,84 @@
+# Alfabra Vector
+
+Uma plataforma corporativa modular de última geração para Recuperação Aumentada por Geração (RAG), projetada com foco em escalabilidade, segurança e alta performance.
+
+Este repositório contém a base tecnológica para uma solução de IA generativa empresarial, utilizando arquiteturas modernas e as melhores práticas de engenharia de software.
+
+## 🏗️ Arquitetura do Sistema
+
+A arquitetura foi concebida seguindo os princípios de **Clean Architecture** e **Baixo Acoplamento**, facilitando a transição futura para microserviços se necessário.
+
+### Visão Geral da Arquitetura (Mermaid)
+
+```mermaid
+graph TD
+    subgraph Users ["👤 Usuários"]
+        U[Colaborador]
+        A[Administrador]
+    end
+
+    U -->|Acessa| FE[Frontend Next.js]
+    A -->|Administra| FE
+
+    subgraph Platform ["🏗️ Plataforma Alfabra Vector"]
+        FE -->|HTTPS| NX[Nginx Proxy]
+        NX -->|API REST| JC[Java Core API]
+        
+        JC -->|Orquestra RAG| AL[AnythingLLM]
+        JC -->|Cache/Sessões| RD[Redis]
+        JC -->|Dados/Vetores| PG[(PostgreSQL + pgvector)]
+        JC -->|Uploads| MO[MinIO / S3]
+        JC -.->|Enfileira Jobs| CA[CrewAI Agent Runtime Orchestrator]
+
+        subgraph Processing ["⚙️ Processamento de Documentos (Rust)"]
+            RW[Ingestion Worker]
+            DP[Doc Processing]
+            ES[Embedding Service]
+        end
+
+        JC -.->|Enfileira| RW
+        RW --> DP
+        DP --> ES
+        ES --> PG
+        CA -->|Busca Vetores| PG
+    end
+
+    subgraph External ["☁️ Provedor de IA"]
+        VAI[Vertex AI / Gemini]
+    end
+
+    AL -->|LLM/Embed| VAI
+    ES -->|Gera Embeddings| VAI
+    CA -->|Raciocínio/LLM| VAI
+
+    classDef user fill:#08427b,color:#fff,stroke:#333,stroke-width:2px;
+    classDef platform fill:#438dd5,color:#fff,stroke:#333,stroke-width:2px;
+    classDef db fill:#1168bd,color:#fff,stroke:#333,stroke-width:2px;
+    classDef external fill:#f9f9f9,color:#333,stroke:#666,stroke-dasharray: 5 5;
+
+    class U,A user;
+    class FE,NX,JC,AL,MO,RD,RW,DP,ES,CA platform;
+    class PG db;
+    class VAI external;
+```
+## 📂 Estrutura de Diretórios
+
+A organização do código segue um padrão modular:
+
+- **`frontend/`**: Interface web moderna construída com Next.js 15, React e TypeScript.
+- **`java-core/`**: API principal desenvolvida em Java 21 com Spring Boot. Implementa as regras de negócio e orquestração do fluxo RAG.
+- **`rust-services/`**: Serviços de alta performance em Rust para processamento pesado de documentos e geração de embeddings.
+- **`anythingllm/`**: Engine RAG desacoplada utilizada como infraestrutura plugável para o MVP.
+- **`infrastructure/`**: Configurações de Docker, Nginx, monitoramento e scripts de ambiente.
+- **`docs/`**: Documentação técnica detalhada, incluindo ADRs (Architectural Decision Records).
+
+## 🚀 Destaques Tecnológicos
+
+- **Frontend**: Next.js (App Router), Tailwind CSS, Shadcn UI, TanStack Query, Framer Motion.
+- **Backend Core**: Java 21, Spring Boot, Spring Security (JWT), PostgreSQL + pgvector, Redis.
+- **Processamento**: Rust para processamento paralelo e eficiente de dados.
+- **IA**: Integração com Google Vertex AI / Gemini 2.5 Pro para geração de texto e embeddings.
+- **Infraestrutura**: Orquestração via Docker Compose, MinIO para armazenamento de objetos e Nginx como Reverse Proxy.
+
+---
+Este projeto está pronto para crescimento incremental, mantendo alta manutenibilidade e preparo para uma evolução rumo a uma malha de microserviços completa.

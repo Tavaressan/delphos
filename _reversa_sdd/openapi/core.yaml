@@ -1,0 +1,245 @@
+openapi: 3.0.3
+info:
+  title: Alfabra Vector Core API
+  description: API Central desenvolvida em Spring Boot para gerenciamento de usuários, documentos, chats e logs de auditoria na plataforma RAG.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Servidor de desenvolvimento local
+paths:
+  /api/auth/login:
+    post:
+      summary: Login de usuário
+      description: Realiza a autenticação de credenciais de usuário e retorna o token JWT.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: administrador
+                password:
+                  type: string
+                  format: password
+                  example: admin123
+      responses:
+        '200':
+          description: Autenticado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  type:
+                    type: string
+                    example: Bearer
+                  expires_in:
+                    type: integer
+                    example: 86400
+        '401':
+          description: Credenciais inválidas
+
+  /api/documents/upload:
+    post:
+      summary: Upload de Documento
+      description: Envia um arquivo físico para armazenamento no MinIO e inicia a indexação vetorial. Requer permissão WRITE_DOCUMENTS.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Upload registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '403':
+          description: Acesso negado
+
+  /api/documents/{id}:
+    delete:
+      summary: Remoção de Documento
+      description: Remove permanentemente um documento e seus chunks vetoriais. Requer permissão DELETE_DOCUMENTS (ROLE_ADMIN).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Documento removido com sucesso
+        '403':
+          description: Acesso negado
+        '404':
+          description: Documento não encontrado
+
+  /api/chats:
+    post:
+      summary: Criação de Chat
+      description: Cria uma nova sessão de conversa para o usuário logado.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                  example: Perguntas sobre Políticas de Reembolso
+      responses:
+        '201':
+          description: Chat criado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  title:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+
+  /api/chats/{id}/messages:
+    post:
+      summary: Envio de Mensagem
+      description: Envia uma pergunta ao chat e retorna a resposta gerada com base nos documentos (RAG).
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  example: Qual é a diária máxima permitida para hotéis?
+      responses:
+        '200':
+          description: Resposta gerada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  role:
+                    type: string
+                    example: ASSISTANT
+                  content:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+
+  /api/audit-logs:
+    get:
+      summary: Listagem de Auditoria
+      description: Retorna logs de ações de segurança críticas. Requer permissão VIEW_AUDIT_LOGS (ROLE_ADMIN).
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Lista de logs retornada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLog'
+        '403':
+          description: Acesso negado
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        file_path:
+          type: string
+        file_size:
+          type: integer
+        file_type:
+          type: string
+        status:
+          type: string
+          enum: [UPLOADING, PROCESSING, INDEXED, FAILED]
+        created_at:
+          type: string
+          format: date-time
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        target:
+          type: string
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        details:
+          type: object
+        created_at:
+          type: string
+          format: date-time

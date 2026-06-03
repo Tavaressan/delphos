@@ -1,0 +1,38 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+.next/
+dist/
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Java
+.gradle/
+build/
+out/
+bin/
+*.class
+*.jar
+*.war
+*.ear
+
+# Rust
+target/
+Cargo.lock
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+
+# Docker
+*.log
+.env
