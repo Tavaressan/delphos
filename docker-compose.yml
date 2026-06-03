@@ -155,6 +155,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/rag_db
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - ANYTHINGLLM_API_KEY=${ANYTHINGLLM_API_KEY:-anythingllm_api_key_placeholder}
+      - ANYTHINGLLM_API_URL=http://anythingllm:3001/api/v1
     env_file:
       - .env
     depends_on:
