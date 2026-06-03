@@ -11,6 +11,7 @@ struct WorkflowJob {
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 struct Node {
     id: Uuid,
     #[serde(rename = "type")]
@@ -19,6 +20,7 @@ struct Node {
 }
 
 #[derive(serde::Deserialize, Debug, Clone)]
+#[allow(dead_code)]
 struct Edge {
     id: Uuid,
     from_node_id: Uuid,

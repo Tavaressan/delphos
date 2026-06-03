@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use sqlx::postgres::PgPoolOptions;
-use std::env;
 
 mod config;
 mod db;

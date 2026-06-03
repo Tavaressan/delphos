@@ -4,7 +4,9 @@ use uuid::Uuid;
 #[derive(sqlx::FromRow, serde::Deserialize, Debug, Clone)]
 pub struct DbNode {
     pub id: Uuid,
+    #[allow(dead_code)]
     pub workflow_id: Uuid,
+    #[allow(dead_code)]
     pub version: i32,
     #[serde(rename = "type")]
     pub node_type: String,
@@ -13,11 +15,15 @@ pub struct DbNode {
 
 #[derive(sqlx::FromRow, serde::Deserialize, Debug, Clone)]
 pub struct DbEdge {
+    #[allow(dead_code)]
     pub id: Uuid,
+    #[allow(dead_code)]
     pub workflow_id: Uuid,
+    #[allow(dead_code)]
     pub version: i32,
     pub from_node_id: Uuid,
     pub to_node_id: Uuid,
+    #[allow(dead_code)]
     pub condition: Option<String>,
 }
 

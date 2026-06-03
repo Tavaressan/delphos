@@ -5,7 +5,6 @@ use lapin::{
     BasicProperties, Connection, ConnectionProperties, Channel
 };
 use sqlx::PgPool;
-use std::env;
 use tokio::time::{sleep, Duration};
 use futures_lite::stream::StreamExt;
 use uuid::Uuid;
@@ -19,6 +18,7 @@ use crate::engine::WorkflowEngine;
 struct WorkflowJob {
     workflow_id: Uuid,
     workflow_version: i32,
+    #[allow(dead_code)]
     tenant_id: String,
     execution_id: Uuid,
 }
