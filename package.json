@@ -1,5 +1,12 @@
 {
+  "name": "alfabra-vector-root",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test:e2e": "node --test tests/e2e/runner.test.js"
+  },
   "dependencies": {
+    "pg": "^8.11.5",
     "reversa": "^1.2.43"
   }
 }

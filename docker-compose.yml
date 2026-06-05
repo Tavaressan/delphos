@@ -50,7 +50,7 @@ services:
     container_name: rag_anythingllm
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-rag_db}
-      PORT: 3000
+      PORT: 3001
       STORAGE_DIR: /app/server/storage
       DB_ENGINE: postgres
     cap_add:
@@ -70,8 +70,8 @@ services:
 
   core:
     build:
-      context: ./java-core
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: java-core/Dockerfile
     container_name: core-platform
     env_file:
       - .env
@@ -102,7 +102,7 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      test: [ "CMD", "rabbitmq-diagnostics", "check_running" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -121,6 +121,19 @@ services:
       timeout: 10s
       retries: 3
 
+  embedding-service:
+    build:
+      context: ./rust-services
+      dockerfile: embedding-service/Dockerfile
+    container_name: embedding_service
+    env_file:
+      - .env
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   ingestion-worker:
     build:
       context: ./rust-services
@@ -132,6 +145,8 @@ services:
       core:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      embedding-service:
         condition: service_healthy
 
   rag-worker:
@@ -192,7 +207,7 @@ services:
         condition: service_healthy
     command: npm run dev
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3000').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))" ]
       interval: 30s
       timeout: 10s
       retries: 3

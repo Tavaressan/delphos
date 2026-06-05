@@ -4,7 +4,7 @@ import json
 import uuid
 import pika
 from typing import Any, List, Mapping, Optional
-from crewai import Agent, Task, Crew, Process, BaseLLM
+from crewai import Agent, Task, Crew, Process, BaseLLM, LLM
 from crewai.tools import tool
 
 class MockLLM(BaseLLM):
@@ -25,7 +25,24 @@ class CrewAiRuntimeAdapter:
         self.execution_id = execution_id
         self.tenant_id = tenant_id
         self.prompt = prompt
-        self.llm = MockLLM(model="mock-model")
+        
+        # Detect Vertex AI environment variables
+        api_key = os.environ.get("VERTEX_AI_API_KEY")
+        project_id = os.environ.get("VERTEX_AI_PROJECT_ID")
+        region = os.environ.get("VERTEX_AI_REGION", "us-central1")
+        
+        if api_key and "placeholder" not in api_key.lower() and len(api_key) > 20:
+            print(f"[CrewAiRuntimeAdapter] Configuring real Vertex AI LLM (Gemini 1.5 Flash) for project '{project_id}'...")
+            os.environ["VERTEX_API_KEY"] = api_key
+            os.environ["VERTEX_PROJECT"] = project_id
+            os.environ["VERTEX_LOCATION"] = region
+            self.llm = LLM(
+                model="vertex_ai/gemini-1.5-flash-002",
+                temperature=0.2
+            )
+        else:
+            print("[CrewAiRuntimeAdapter] Vertex API Key missing or placeholder. Using MockLLM.")
+            self.llm = MockLLM(model="mock-model")
 
     def publish_event(self, event_type: str, payload: dict):
         event_body = {

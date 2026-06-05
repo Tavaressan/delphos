@@ -1,0 +1,14 @@
+.git
+node_modules
+target
+build
+.gradle
+.next
+.reversa
+_reversa_sdd
+_reversa_forward
+**/target
+**/node_modules
+**/build
+**/.gradle
+**/.next

@@ -59,7 +59,7 @@ pub async fn start_consumer(pool: PgPool, rabbitmq_url: &str) -> Result<()> {
     let exchange = "agent.execution.exchange";
     channel.exchange_declare(
         exchange,
-        lapin::ExchangeKind::Topic,
+        lapin::ExchangeKind::Direct,
         ExchangeDeclareOptions {
             durable: true,
             ..Default::default()

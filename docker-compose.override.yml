@@ -5,7 +5,7 @@ version: "3.9"
 # ==============================================================================
 # O Docker Compose mescla automaticamente este arquivo com o docker-compose.yml
 # principal ao rodar `docker compose up` localmente.
-# 
+#
 # Função: Expor portas internas de banco de dados e APIs para o 'localhost',
 # permitindo que os desenvolvedores conectem ferramentas gráficas (DBeaver, 
 # Postman, Redis Desktop) durante o desenvolvimento.
@@ -30,48 +30,14 @@ services:
 
   anythingllm:
     ports:
-      - "3001:3000" # Acesso local à interface administrativa do AnythingLLM
+      - "3001:3001" # Acesso local à interface administrativa do AnythingLLM
 
   core:
     ports:
       - "8080:8080" # API Spring Boot para chamadas locais (Postman/Swagger)
 
-  ingestion-worker:
-    platform: linux/arm64
-    image: rust:1.80
-    working_dir: /app/ingestion-worker
-    volumes:
-      - ./rust-services:/app
-      - cargo_target:/app/target
-      - cargo_registry:/usr/local/cargo/registry
-    environment:
-      - CARGO_HOME=/usr/local/cargo
-    command: bash -c "cargo run"
+  embedding-service:
+    ports:
+      - "8000:8000"
 
-  rag-worker:
-    platform: linux/arm64
-    image: rust:1.80
-    working_dir: /app/rag-worker
-    volumes:
-      - ./rust-services:/app
-      - cargo_target:/app/target
-      - cargo_registry:/usr/local/cargo/registry
-    environment:
-      - CARGO_HOME=/usr/local/cargo
-    command: bash -c "cargo run"
 
-  workflow-worker:
-    platform: linux/arm64
-    image: rust:1.80
-    working_dir: /app/workflow-worker
-    volumes:
-      - ./rust-services:/app
-      - cargo_target:/app/target
-      - cargo_registry:/usr/local/cargo/registry
-    environment:
-      - CARGO_HOME=/usr/local/cargo
-    command: bash -c "cargo run"
-
-volumes:
-  cargo_target:
-  cargo_registry:
