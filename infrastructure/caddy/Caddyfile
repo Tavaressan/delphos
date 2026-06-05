@@ -9,6 +9,16 @@
         propagation_timeout 5m
     }
 
-    # Proxy reverso para o Frontend Next.js
-    reverse_proxy frontend:3000
+    # Roteamento de API e Actuator para o backend
+    handle /api/* {
+        reverse_proxy core:8080
+    }
+    handle /actuator/* {
+        reverse_proxy core:8080
+    }
+
+    # Proxy reverso para o Frontend Next.js (fallback)
+    handle {
+        reverse_proxy frontend:3000
+    }
 }

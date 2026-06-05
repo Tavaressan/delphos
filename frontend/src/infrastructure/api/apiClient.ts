@@ -1,0 +1,85 @@
+import { ErrorResponse } from '../../types';
+
+const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+const DEFAULT_TIMEOUT = 15000; // 15 seconds
+
+export class ApiError extends Error {
+  status: number;
+  data?: ErrorResponse;
+
+  constructor(message: string, status: number, data?: ErrorResponse) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+interface RequestOptions extends RequestInit {
+  timeout?: number;
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { timeout = DEFAULT_TIMEOUT, headers, ...rest } = options;
+  const url = `${BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+
+  const config: RequestInit = {
+    ...rest,
+    signal: controller.signal,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
+  };
+
+  try {
+    const response = await fetch(url, config);
+    clearTimeout(id);
+
+    if (!response.ok) {
+      let errorData: ErrorResponse | undefined;
+      try {
+        errorData = await response.json();
+      } catch {
+        // Fallback if not JSON
+      }
+      throw new ApiError(
+        errorData?.error || `Request failed with status ${response.status}`,
+        response.status,
+        errorData
+      );
+    }
+
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    return await response.json() as T;
+  } catch (error: any) {
+    clearTimeout(id);
+    if (error.name === 'AbortError') {
+      throw new ApiError('Request timeout exceeded', 408);
+    }
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(error.message || 'Network error occurred', 500);
+  }
+}
+
+export const apiClient = {
+  get: <T>(path: string, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'GET' }),
+    
+  post: <T>(path: string, body: any, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+    
+  put: <T>(path: string, body: any, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+    
+  delete: <T>(path: string, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'DELETE' }),
+};

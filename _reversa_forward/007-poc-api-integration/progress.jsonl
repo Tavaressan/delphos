@@ -1,0 +1,16 @@
+{"ts":"2026-06-05T18:38:00Z","action":"T001","status":"done","files":["frontend/src/types/index.ts"]}
+{"ts":"2026-06-05T18:38:00Z","action":"T002","status":"done","files":["frontend/src/domain/entities/index.ts"]}
+{"ts":"2026-06-05T18:38:00Z","action":"T003","status":"done","files":["frontend/src/domain/dto/index.ts"]}
+{"ts":"2026-06-05T18:38:00Z","action":"T004","status":"done","files":["frontend/src/domain/repositories/index.ts"]}
+{"ts":"2026-06-05T18:39:20Z","action":"T005","status":"done","files":["frontend/tests/smoke.test.js"]}
+{"ts":"2026-06-05T18:39:30Z","action":"T006","status":"done","files":["frontend/src/infrastructure/api/apiClient.ts"]}
+{"ts":"2026-06-05T18:39:35Z","action":"T007","status":"done","files":["frontend/src/infrastructure/adapters/executionAdapter.ts"]}
+{"ts":"2026-06-05T18:39:40Z","action":"T008","status":"done","files":["frontend/src/providers/AuthProvider.tsx"]}
+{"ts":"2026-06-05T18:39:45Z","action":"T009","status":"done","files":["frontend/src/domain/use-cases/execution.ts","frontend/src/infrastructure/repositories/ExecutionRepository.ts"]}
+{"ts":"2026-06-05T18:40:15Z","action":"T010","status":"done","files":["frontend/src/components/layout/Header.tsx","frontend/src/components/layout/Sidebar.tsx","frontend/src/components/layout/Footer.tsx","frontend/src/components/layout/index.ts"]}
+{"ts":"2026-06-05T18:40:50Z","action":"T011","status":"done","files":["frontend/src/components/ui/Button.tsx","frontend/src/components/ui/Input.tsx","frontend/src/components/ui/Badge.tsx","frontend/src/components/ui/index.ts","frontend/src/components/forms/ChatInput.tsx","frontend/src/components/forms/FileUploadArea.tsx","frontend/src/components/forms/index.ts"]}
+{"ts":"2026-06-05T18:42:00Z","action":"T012","status":"done","files":["frontend/src/app/layout.tsx","frontend/src/app/catalog/page.tsx","frontend/src/app/knowledge-base/page.tsx","frontend/src/app/design-system/page.tsx","frontend/src/app/auth/login/page.tsx"]}
+{"ts":"2026-06-05T18:41:20Z","action":"T013","status":"done","files":["frontend/src/hooks/useExecution.ts"]}
+{"ts":"2026-06-05T18:41:40Z","action":"T014","status":"done","files":["frontend/src/features/chat/ChatCanvas.tsx"]}
+{"ts":"2026-06-05T18:42:05Z","action":"T015","status":"done","files":["frontend/src/components/layout/Header.tsx"]}
+{"ts":"2026-06-05T18:43:30Z","action":"T016","status":"done","files":["_reversa_forward/007-poc-api-integration/onboarding.md"]}

@@ -52,6 +52,19 @@ async fn test_download_file_fallback() {
 }
 
 #[tokio::test]
+async fn test_get_embeddings_from_service_fallback() {
+    std::env::set_var("EMBEDDING_PROVIDER", "mock");
+    std::env::set_var("EMBEDDING_DIMENSIONS", "1536");
+    
+    let texts = vec!["teste de integração".to_string()];
+    let res = get_embeddings_from_service(&texts).await;
+    assert!(res.is_ok());
+    let embs = res.unwrap();
+    assert_eq!(embs.len(), 1);
+    assert_eq!(embs[0].len(), 1536);
+}
+
+#[tokio::test]
 async fn test_db_integration_ingestion() {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/rag_db".to_string());

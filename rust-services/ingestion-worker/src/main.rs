@@ -206,9 +206,13 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
         .await
         .context("Failed to clean up old chunks")?;
 
+    // Obter embeddings do embedding-service
+    let embeddings = get_embeddings_from_service(&chunks).await
+        .context("Failed to generate embeddings from embedding-service")?;
+
     // Inserir os novos chunks
     for (i, chunk) in chunks.iter().enumerate() {
-        let embedding = generate_mock_embedding(chunk, 1536);
+        let embedding = &embeddings[i];
 
         sqlx::query(
             "INSERT INTO document_chunks (document_id, tenant_id, chunk_index, content, embedding) VALUES ($1, $2, $3, $4, $5::vector)"
@@ -357,6 +361,71 @@ fn generate_mock_embedding(text: &str, dimension: usize) -> Vec<f32> {
     }
 
     values
+}
+
+async fn get_embeddings_from_service(texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    let embedding_service_url = env::var("EMBEDDING_SERVICE_URL")
+        .unwrap_or_else(|_| "http://embedding-service:8000/embeddings".to_string());
+    let dimensions_str = env::var("EMBEDDING_DIMENSIONS").unwrap_or_else(|_| "1536".to_string());
+    let dimensions: usize = dimensions_str.parse().unwrap_or(1536);
+
+    #[derive(serde::Serialize)]
+    struct ReqPayload<'a> {
+        input: &'a [String],
+        dimensions: usize,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct RespEmbeddingData {
+        embedding: Vec<f32>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct RespPayload {
+        data: Vec<RespEmbeddingData>,
+    }
+
+    let req_payload = ReqPayload {
+        input: texts,
+        dimensions,
+    };
+
+    let client = reqwest::Client::new();
+    let res = match client.post(&embedding_service_url)
+        .json(&req_payload)
+        .send()
+        .await {
+            Ok(r) => r,
+            Err(e) => {
+                let provider = env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
+                if provider == "mock" {
+                    println!("Warning: Failed to connect to embedding-service, using local mock fallback.");
+                    let mock_embs = texts.iter().map(|text| generate_mock_embedding(text, dimensions)).collect();
+                    return Ok(mock_embs);
+                }
+                return Err(e).context("Failed to connect to embedding-service");
+            }
+        };
+
+    let status = res.status();
+    if !status.is_success() {
+        let err_body = res.text().await.unwrap_or_else(|_| "Unknown error body".to_string());
+        return Err(anyhow::anyhow!("embedding-service returned error {}: {}", status, err_body));
+    }
+
+    let resp_payload: RespPayload = res.json().await
+        .context("Failed to parse embedding-service response JSON")?;
+
+    let mut result = Vec::with_capacity(resp_payload.data.len());
+    for item in resp_payload.data {
+        result.push(item.embedding);
+    }
+
+    if result.len() != texts.len() {
+        return Err(anyhow::anyhow!("Mismatch in number of embeddings returned: expected {}, got {}", texts.len(), result.len()));
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]
