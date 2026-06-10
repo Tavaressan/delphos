@@ -13,7 +13,7 @@ A suite de testes executará os seguintes passos de forma automatizada:
 2. **Ingestão e RAG E2E:** Simula o fluxo completo de RAG:
    - Upload de um documento fictício para o MinIO (ou Mock local se em ambiente restrito).
    - Ingestão assíncrona disparada pelo RabbitMQ, validando as transições de estado do documento no banco PostgreSQL (`UPLOADING` -> `PROCESSING` -> `INDEXED`).
-   - Confirmação de que os trechos do documento foram criados na tabela `document_chunks` com embeddings de 1536 dimensões.
+   - Confirmação de que os trechos do documento foram criados na tabela `document_chunks` com embeddings de 768 dimensões.
    - Envio de pergunta via Chat HTTP API e verificação de que a resposta semântica é coerente e cita o documento indexado.
 3. **Limpeza pós-teste:** Exclui todos os dados gerados de teste nas tabelas `document_chunks`, `documents` e `chats` para garantir que o ambiente não fique poluído.
 4. **Tratamento Híbrido de LLM:** O teste roda em modo `mock` por padrão no CI, mas permite execução com a Vertex AI real caso chaves válidas sejam fornecidas nas variáveis de ambiente.

@@ -17,14 +17,14 @@ POSTGRES_PASSWORD=postgres
 POSTGRES_DB=rag_db
 
 # Vertex AI API Keys
-VERTEX_AI_PROJECT_ID=<VERTEX_AI_PROJECT_ID>
-VERTEX_AI_REGION=<VERTEX_AI_REGION>
+GCP_PROJECT_ID=<GCP_PROJECT_ID>
+GCP_LOCATION=<GCP_LOCATION>
 VERTEX_AI_API_KEY=<VERTEX_AI_API_KEY>
 
 # Configurações de Embedding
 EMBEDDING_PROVIDER=real
 EMBEDDING_MODEL=text-embedding-004
-EMBEDDING_DIMENSIONS=1536
+EMBEDDING_DIMENSIONS=768
 EMBEDDING_SERVICE_URL=http://embedding-service:8000/embeddings
 
 # Caddy Domain name
@@ -50,19 +50,19 @@ Você também pode recompilar todo o monorepo usando o script utilitário de des
 ## 3. Testes Unitários e de Integração
 
 ### 3.1. Teste do Endpoint de Embeddings (Axum)
-Envie um request direto para a API do `embedding-service` local para validar se a comunicação com o Vertex AI está ativa e retornando o array de 1536 floats:
+Envie um request direto para a API do `embedding-service` local para validar se a comunicação com o Vertex AI está ativa e retornando o array de 768 floats:
 
 ```bash
 curl -X POST http://localhost:8000/embeddings \
   -H "Content-Type: application/json" \
   -d '{
     "input": ["Olá Alfabra Vector"],
-    "dimensions": 1536
+    "dimensions": 768
   }'
 ```
 
 *Saída esperada:*
-Um JSON listando o vetor numérico com 1536 dimensões computado pelo Vertex AI.
+Um JSON listando o vetor numérico com 768 dimensões computado pelo Vertex AI.
 
 ### 3.2. Teste do Fluxo de Mensageria E2E (Fumaça)
 Envie um job de execução fictício diretamente na API do `java-core` (Spring Boot) na porta 8080 para testar o enfileiramento no RabbitMQ e processamento assíncrono:

@@ -1,13 +1,9 @@
 use anyhow::{Context, Result};
-use lapin::{
-    options::*,
-    types::FieldTable,
-    Connection, ConnectionProperties,
-};
+use futures_lite::stream::StreamExt;
+use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tokio::time::{sleep, Duration};
-use futures_lite::stream::StreamExt;
 
 #[derive(serde::Deserialize, Debug)]
 struct IngestionJob {
@@ -34,8 +30,8 @@ async fn main() -> Result<()> {
     println!("Database connected successfully.");
 
     // Conectar ao RabbitMQ
-    let rabbitmq_url = env::var("RABBITMQ_URL")
-        .unwrap_or_else(|_| "amqp://guest:guest@rabbitmq:5672".to_string());
+    let rabbitmq_url =
+        env::var("RABBITMQ_URL").unwrap_or_else(|_| "amqp://guest:guest@rabbitmq:5672".to_string());
     println!("Connecting to RabbitMQ at {}...", rabbitmq_url);
 
     let mut rabbit_conn = None;
@@ -46,48 +42,66 @@ async fn main() -> Result<()> {
                 break;
             }
             Err(e) => {
-                println!("Attempt {} to connect to RabbitMQ failed: {}. Retrying in 5s...", attempt, e);
+                println!(
+                    "Attempt {} to connect to RabbitMQ failed: {}. Retrying in 5s...",
+                    attempt, e
+                );
                 sleep(Duration::from_secs(5)).await;
             }
         }
     }
 
     let conn = rabbit_conn.context("Failed to connect to RabbitMQ after 10 attempts")?;
-    let channel = conn.create_channel().await.context("Failed to create RabbitMQ channel")?;
+    let channel = conn
+        .create_channel()
+        .await
+        .context("Failed to create RabbitMQ channel")?;
     println!("RabbitMQ channel created successfully.");
 
     // Declarar Exchange e Filas
     let exchange = "agent.execution.exchange";
-    channel.exchange_declare(
-        exchange,
-        lapin::ExchangeKind::Direct,
-        ExchangeDeclareOptions {
-            durable: true,
-            ..Default::default()
-        },
-        FieldTable::default(),
-    ).await.context("Failed to declare exchange")?;
+    channel
+        .exchange_declare(
+            exchange,
+            lapin::ExchangeKind::Direct,
+            ExchangeDeclareOptions {
+                durable: true,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .context("Failed to declare exchange")?;
 
     let queue = "document.ingestion.jobs";
-    channel.queue_declare(
-        queue,
-        QueueDeclareOptions {
-            durable: true,
-            ..Default::default()
-        },
-        FieldTable::default(),
-    ).await.context("Failed to declare queue")?;
+    channel
+        .queue_declare(
+            queue,
+            QueueDeclareOptions {
+                durable: true,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .context("Failed to declare queue")?;
 
-    channel.queue_bind(
-        queue,
-        exchange,
-        "document.ingestion.jobs",
-        QueueBindOptions::default(),
-        FieldTable::default(),
-    ).await.context("Failed to bind queue")?;
+    channel
+        .queue_bind(
+            queue,
+            exchange,
+            "document.ingestion.jobs",
+            QueueBindOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .context("Failed to bind queue")?;
 
     // QoS
-    channel.basic_qos(1, BasicQosOptions::default()).await.context("Failed to set QoS")?;
+    channel
+        .basic_qos(1, BasicQosOptions::default())
+        .await
+        .context("Failed to set QoS")?;
 
     println!("Listening to '{}' queue...", queue);
 
@@ -116,18 +130,27 @@ async fn main() -> Result<()> {
         match process_delivery(&db_pool, &body).await {
             Ok(_) => {
                 println!("Ingestion job processed successfully. Acknowledging.");
-                delivery.ack(BasicAckOptions::default()).await.unwrap_or_else(|e| {
-                    println!("Failed to ACK message: {}", e);
-                });
+                delivery
+                    .ack(BasicAckOptions::default())
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("Failed to ACK message: {}", e);
+                    });
             }
             Err(e) => {
-                println!("Error processing ingestion job: {}. Negative acknowledging.", e);
-                delivery.nack(BasicNackOptions {
-                    requeue: false,
-                    ..Default::default()
-                }).await.unwrap_or_else(|ne| {
-                    println!("Failed to NACK message: {}", ne);
-                });
+                println!(
+                    "Error processing ingestion job: {}. Negative acknowledging.",
+                    e
+                );
+                delivery
+                    .nack(BasicNackOptions {
+                        requeue: false,
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap_or_else(|ne| {
+                        println!("Failed to NACK message: {}", ne);
+                    });
             }
         }
     }
@@ -136,8 +159,8 @@ async fn main() -> Result<()> {
 }
 
 async fn process_delivery(pool: &sqlx::PgPool, body: &str) -> Result<()> {
-    let job: IngestionJob = serde_json::from_str(body)
-        .context("Failed to parse ingestion job JSON")?;
+    let job: IngestionJob =
+        serde_json::from_str(body).context("Failed to parse ingestion job JSON")?;
 
     // 1. Mudar status para PROCESSING no banco
     println!("Updating document {} status to PROCESSING", job.document_id);
@@ -152,17 +175,22 @@ async fn process_delivery(pool: &sqlx::PgPool, body: &str) -> Result<()> {
         Ok(_) => {
             // Mudar status para INDEXED
             println!("Document {} indexed successfully.", job.document_id);
-            sqlx::query("UPDATE documents SET status = 'INDEXED', updated_at = NOW() WHERE id = $1")
-                .bind(job.document_id)
-                .execute(pool)
-                .await
-                .context("Failed to update document status to INDEXED")?;
+            sqlx::query(
+                "UPDATE documents SET status = 'INDEXED', updated_at = NOW() WHERE id = $1",
+            )
+            .bind(job.document_id)
+            .execute(pool)
+            .await
+            .context("Failed to update document status to INDEXED")?;
             Ok(())
         }
         Err(err) => {
             // Mudar status para FAILED com erro
             let err_msg = err.to_string();
-            println!("Failed to process document {}: {}", job.document_id, err_msg);
+            println!(
+                "Failed to process document {}: {}",
+                job.document_id, err_msg
+            );
             sqlx::query("UPDATE documents SET status = 'FAILED', processing_error = $1, updated_at = NOW() WHERE id = $2")
                 .bind(&err_msg)
                 .bind(job.document_id)
@@ -197,7 +225,10 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
     println!("Divided document into {} chunks.", chunks.len());
 
     // 4. Iniciar transação para inserção consistente
-    let mut tx = pool.begin().await.context("Failed to start PostgreSQL transaction")?;
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start PostgreSQL transaction")?;
 
     // Deletar chunks antigos se houver (reindexação segura)
     sqlx::query("DELETE FROM document_chunks WHERE document_id = $1")
@@ -207,7 +238,8 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
         .context("Failed to clean up old chunks")?;
 
     // Obter embeddings do embedding-service
-    let embeddings = get_embeddings_from_service(&chunks).await
+    let embeddings = get_embeddings_from_service(&chunks)
+        .await
         .context("Failed to generate embeddings from embedding-service")?;
 
     // Inserir os novos chunks
@@ -234,7 +266,7 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
 async fn download_file(file_path: &str) -> Result<Vec<u8>> {
     let minio_host = env::var("MINIO_HOST").unwrap_or_else(|_| "minio".to_string());
     let minio_port = env::var("MINIO_PORT").unwrap_or_else(|_| "9000".to_string());
-    
+
     // Tratamento para extrair apenas o nome do arquivo se o file_path contiver diretórios
     let clean_path = if let Some(pos) = file_path.rfind('/') {
         &file_path[pos + 1..]
@@ -242,7 +274,10 @@ async fn download_file(file_path: &str) -> Result<Vec<u8>> {
         file_path
     };
 
-    let url = format!("http://{}:{}/documents/{}", minio_host, minio_port, clean_path);
+    let url = format!(
+        "http://{}:{}/documents/{}",
+        minio_host, minio_port, clean_path
+    );
     println!("Tentando baixar arquivo de: {}", url);
 
     match reqwest::get(&url).await {
@@ -277,14 +312,19 @@ fn extract_text_from_pdf(pdf_bytes: &[u8]) -> Result<String> {
         Err(e) => {
             println!("Falha ao ler os bytes do PDF com lopdf: {}. Tentando converter para String (modo desenvolvimento)...", e);
             let text = String::from_utf8_lossy(pdf_bytes).to_string();
-            if text.contains("Alfabra Vector") || text.contains("Documento") || text.contains("Auditoria") {
-                println!("Texto de fallback do desenvolvimento detectado. Ignorando erro do lopdf.");
+            if text.contains("Alfabra Vector")
+                || text.contains("Documento")
+                || text.contains("Auditoria")
+            {
+                println!(
+                    "Texto de fallback do desenvolvimento detectado. Ignorando erro do lopdf."
+                );
                 return Ok(text);
             }
             return Err(e).context("Failed to parse PDF document bytes");
         }
     };
-    
+
     let mut text = String::new();
     let mut page_numbers: Vec<u32> = doc.get_pages().keys().cloned().collect();
     page_numbers.sort();
@@ -295,7 +335,7 @@ fn extract_text_from_pdf(pdf_bytes: &[u8]) -> Result<String> {
             text.push('\n');
         }
     }
-    
+
     Ok(text)
 }
 
@@ -366,8 +406,8 @@ fn generate_mock_embedding(text: &str, dimension: usize) -> Vec<f32> {
 async fn get_embeddings_from_service(texts: &[String]) -> Result<Vec<Vec<f32>>> {
     let embedding_service_url = env::var("EMBEDDING_SERVICE_URL")
         .unwrap_or_else(|_| "http://embedding-service:8000/embeddings".to_string());
-    let dimensions_str = env::var("EMBEDDING_DIMENSIONS").unwrap_or_else(|_| "1536".to_string());
-    let dimensions: usize = dimensions_str.parse().unwrap_or(1536);
+    let dimensions_str = env::var("EMBEDDING_DIMENSIONS").unwrap_or_else(|_| "768".to_string());
+    let dimensions: usize = dimensions_str.parse().unwrap_or(768);
 
     #[derive(serde::Serialize)]
     struct ReqPayload<'a> {
@@ -391,29 +431,45 @@ async fn get_embeddings_from_service(texts: &[String]) -> Result<Vec<Vec<f32>>> 
     };
 
     let client = reqwest::Client::new();
-    let res = match client.post(&embedding_service_url)
+    let res = match client
+        .post(&embedding_service_url)
         .json(&req_payload)
         .send()
-        .await {
-            Ok(r) => r,
-            Err(e) => {
-                let provider = env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
-                if provider == "mock" {
-                    println!("Warning: Failed to connect to embedding-service, using local mock fallback.");
-                    let mock_embs = texts.iter().map(|text| generate_mock_embedding(text, dimensions)).collect();
-                    return Ok(mock_embs);
-                }
-                return Err(e).context("Failed to connect to embedding-service");
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let provider = env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
+            if provider == "mock" {
+                println!(
+                    "Warning: Failed to connect to embedding-service, using local mock fallback."
+                );
+                let mock_embs = texts
+                    .iter()
+                    .map(|text| generate_mock_embedding(text, dimensions))
+                    .collect();
+                return Ok(mock_embs);
             }
-        };
+            return Err(e).context("Failed to connect to embedding-service");
+        }
+    };
 
     let status = res.status();
     if !status.is_success() {
-        let err_body = res.text().await.unwrap_or_else(|_| "Unknown error body".to_string());
-        return Err(anyhow::anyhow!("embedding-service returned error {}: {}", status, err_body));
+        let err_body = res
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error body".to_string());
+        return Err(anyhow::anyhow!(
+            "embedding-service returned error {}: {}",
+            status,
+            err_body
+        ));
     }
 
-    let resp_payload: RespPayload = res.json().await
+    let resp_payload: RespPayload = res
+        .json()
+        .await
         .context("Failed to parse embedding-service response JSON")?;
 
     let mut result = Vec::with_capacity(resp_payload.data.len());
@@ -422,7 +478,11 @@ async fn get_embeddings_from_service(texts: &[String]) -> Result<Vec<Vec<f32>>> 
     }
 
     if result.len() != texts.len() {
-        return Err(anyhow::anyhow!("Mismatch in number of embeddings returned: expected {}, got {}", texts.len(), result.len()));
+        return Err(anyhow::anyhow!(
+            "Mismatch in number of embeddings returned: expected {}, got {}",
+            texts.len(),
+            result.len()
+        ));
     }
 
     Ok(result)

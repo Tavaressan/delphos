@@ -17,13 +17,13 @@ Este documento descreve o contrato REST HTTP exposto pelo `embedding-service` na
 | Campo | Tipo | Obrigatório | Descrição |
 |-------|------|-------------|-----------|
 | `input` | Array de Strings | Sim | Textos (chunks ou sentenças) a serem vetorizados. Não pode ser um array vazio. |
-| `dimensions` | Inteiro | Não | Dimensionalidade desejada para a saída (default: `1536`). |
+| `dimensions` | Inteiro | Não | Dimensionalidade desejada para a saída (default: `768`). |
 
 ### Exemplo de Request:
 ```json
 {
   "input": ["Exemplo de texto para RAG"],
-  "dimensions": 1536
+  "dimensions": 768
 }
 ```
 

@@ -1,10 +1,16 @@
 use axum::{
-    routing::{get, post},
+    extract::State,
     http::StatusCode,
     response::IntoResponse,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub authenticator: Option<shared::gcp::GcpAuthenticator>,
+}
 
 #[derive(Deserialize)]
 struct EmbeddingsRequest {
@@ -65,31 +71,41 @@ struct VertexResponse {
     predictions: Vec<VertexPrediction>,
 }
 
-pub fn app() -> Router {
+pub fn app(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(|| async { "OK" }))
         .route("/embeddings", post(handle_embeddings))
+        .with_state(state)
 }
 
 async fn handle_embeddings(
+    State(state): State<AppState>,
     Json(payload): Json<EmbeddingsRequest>,
 ) -> impl IntoResponse {
     if payload.input.is_empty() {
-        return (StatusCode::BAD_REQUEST, "A lista de inputs não pode estar vazia.".to_string()).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            "A lista de inputs não pode estar vazia.".to_string(),
+        )
+            .into_response();
     }
 
     let provider = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
-    let model = std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "text-embedding-004".to_string());
-    let dimensions = payload.dimensions.unwrap_or(1536);
+    let model =
+        std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "text-embedding-004".to_string());
+    let dimensions = payload.dimensions.unwrap_or(768);
 
     if provider == "mock" {
-        let data: Vec<EmbeddingData> = payload.input.iter().enumerate().map(|(idx, text)| {
-            EmbeddingData {
+        let data: Vec<EmbeddingData> = payload
+            .input
+            .iter()
+            .enumerate()
+            .map(|(idx, text)| EmbeddingData {
                 object: "embedding",
                 index: idx,
                 embedding: generate_mock_embedding(text, dimensions),
-            }
-        }).collect();
+            })
+            .collect();
 
         let response = EmbeddingsResponse {
             object: "list",
@@ -103,20 +119,47 @@ async fn handle_embeddings(
         return (StatusCode::OK, Json(response)).into_response();
     }
 
-    let project_id = std::env::var("VERTEX_AI_PROJECT_ID").unwrap_or_else(|_| "alfabra-platform".to_string());
-    let region = std::env::var("VERTEX_AI_REGION").unwrap_or_else(|_| "us-central1".to_string());
-    let api_key = std::env::var("VERTEX_AI_API_KEY").unwrap_or_default();
+    let project_id =
+        std::env::var("GCP_PROJECT_ID").unwrap_or_else(|_| "alfabra-platform".to_string());
+    let region = std::env::var("GCP_LOCATION").unwrap_or_else(|_| "us-central1".to_string());
+
+    let authenticator = match &state.authenticator {
+        Some(auth) => auth,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado.".to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    let token = match authenticator
+        .get_token(&["https://www.googleapis.com/auth/cloud-platform"])
+        .await
+    {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Erro ao obter token GCP: {}", e),
+            )
+                .into_response();
+        }
+    };
 
     let url = format!(
         "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{}:predict",
         region, project_id, region, model
     );
 
-    let instances: Vec<VertexInstances> = payload.input.iter().map(|text| {
-        VertexInstances {
+    let instances: Vec<VertexInstances> = payload
+        .input
+        .iter()
+        .map(|text| VertexInstances {
             content: text.clone(),
-        }
-    }).collect();
+        })
+        .collect();
 
     let vertex_req = VertexRequest {
         instances,
@@ -126,38 +169,56 @@ async fn handle_embeddings(
     };
 
     let client = reqwest::Client::new();
-    let req_builder = client.post(&url)
+    let req_builder = client
+        .post(&url)
         .header("Content-Type", "application/json")
-        .header("x-goog-api-key", &api_key)
-        .header("Authorization", format!("Bearer {}", api_key));
+        .header("Authorization", format!("Bearer {}", token.as_str()));
 
     let res = match req_builder.json(&vertex_req).send().await {
         Ok(r) => r,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to send request to Vertex AI: {}", e)).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to send request to Vertex AI: {}", e),
+            )
+                .into_response();
         }
     };
 
     let status = res.status();
     if !status.is_success() {
-        let body = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Vertex AI returned error {}: {}", status, body)).into_response();
+        let body = res
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Vertex AI returned error {}: {}", status, body),
+        )
+            .into_response();
     }
 
     let vertex_res: VertexResponse = match res.json().await {
         Ok(vr) => vr,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to parse response from Vertex AI: {}", e)).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to parse response from Vertex AI: {}", e),
+            )
+                .into_response();
         }
     };
 
-    let data: Vec<EmbeddingData> = vertex_res.predictions.into_iter().enumerate().map(|(idx, pred)| {
-        EmbeddingData {
+    let data: Vec<EmbeddingData> = vertex_res
+        .predictions
+        .into_iter()
+        .enumerate()
+        .map(|(idx, pred)| EmbeddingData {
             object: "embedding",
             index: idx,
             embedding: pred.embeddings.values,
-        }
-    }).collect();
+        })
+        .collect();
 
     let response = EmbeddingsResponse {
         object: "list",
@@ -206,7 +267,24 @@ fn generate_mock_embedding(text: &str, dimension: usize) -> Vec<f32> {
 
 #[tokio::main]
 async fn main() {
-    let app = app();
+    let provider = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
+
+    let authenticator = if provider == "real" {
+        println!("Inicializando GcpAuthenticator para o provider real...");
+        match shared::gcp::GcpAuthenticator::new().await {
+            Ok(auth) => Some(auth),
+            Err(e) => {
+                eprintln!("Erro crítico ao inicializar o autenticador GCP: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        println!("Provider configurado como mock. GCP Autenticador ignorado.");
+        None
+    };
+
+    let state = AppState { authenticator };
+    let app = app(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
     println!(
@@ -223,12 +301,18 @@ mod tests {
         body::Body,
         http::{Request, StatusCode},
     };
-    use tower::ServiceExt;
     use http_body_util::BodyExt;
+    use std::sync::Mutex;
+    use tower::ServiceExt;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
     async fn test_healthz() {
-        let app = app();
+        let state = AppState {
+            authenticator: None,
+        };
+        let app = app(state);
 
         let response = app
             .oneshot(
@@ -248,7 +332,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_embeddings_empty_input() {
-        let app = app();
+        let state = AppState {
+            authenticator: None,
+        };
+        let app = app(state);
 
         let response = app
             .oneshot(
@@ -256,7 +343,7 @@ mod tests {
                     .method("POST")
                     .uri("/embeddings")
                     .header("Content-Type", "application/json")
-                    .body(Body::from(r#"{"input": [], "dimensions": 1536}"#))
+                    .body(Body::from(r#"{"input": [], "dimensions": 768}"#))
                     .unwrap(),
             )
             .await
@@ -271,10 +358,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_embeddings_mock() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("EMBEDDING_PROVIDER", "mock");
         std::env::set_var("EMBEDDING_MODEL", "text-embedding-004");
 
-        let app = app();
+        let state = AppState {
+            authenticator: None,
+        };
+        let app = app(state);
 
         let response = app
             .oneshot(
@@ -282,7 +373,7 @@ mod tests {
                     .method("POST")
                     .uri("/embeddings")
                     .header("Content-Type", "application/json")
-                    .body(Body::from(r#"{"input": ["Olá Mundo"], "dimensions": 1536}"#))
+                    .body(Body::from(r#"{"input": ["Olá Mundo"], "dimensions": 768}"#))
                     .unwrap(),
             )
             .await
@@ -298,6 +389,36 @@ mod tests {
         assert!(json["data"].is_array());
         assert_eq!(json["data"][0]["index"], 0);
         assert!(json["data"][0]["embedding"].is_array());
-        assert_eq!(json["data"][0]["embedding"].as_array().unwrap().len(), 1536);
+        assert_eq!(json["data"][0]["embedding"].as_array().unwrap().len(), 768);
+    }
+
+    #[tokio::test]
+    async fn test_embeddings_real_provider_no_credentials() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        std::env::set_var("EMBEDDING_PROVIDER", "real");
+        std::env::remove_var("GOOGLE_APPLICATION_CREDENTIALS");
+
+        let state = AppState {
+            authenticator: None,
+        };
+        let app = app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/embeddings")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(r#"{"input": ["Olá Mundo"], "dimensions": 768}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body_str = String::from_utf8_lossy(&body);
+        assert!(body_str.contains("GOOGLE_APPLICATION_CREDENTIALS não configurado"));
     }
 }

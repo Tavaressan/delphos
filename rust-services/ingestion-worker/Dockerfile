@@ -1,4 +1,4 @@
-FROM rust:slim as builder
+FROM rust:slim-bookworm as builder
 WORKDIR /app
 COPY . .
 RUN cargo build --release --package ingestion-worker

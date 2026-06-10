@@ -42,8 +42,8 @@ As definições de arquitetura de rede, portas de serviço e dependências de ba
 
 | ID | Requisito | Prioridade | Critério de aceite | Confidência |
 |----|-----------|------------|--------------------|-------------|
-| RF-01 | Lista de Verificação e Setup de Variáveis do POC | Must | Deve existir um arquivo `.env` configurado localmente contendo as chaves de acesso do Vertex AI (`VERTEX_AI_API_KEY`, `VERTEX_AI_PROJECT_ID`, `VERTEX_AI_REGION`), configurações de domínio DuckDNS e portas de execução do Docker Compose. | 🟢 |
-| RF-02 | Integração de Embeddings com text-embedding-004 | Must | O `embedding-service` deve expor a rota `/embeddings` e chamar o endpoint de predição `:predict` do Vertex AI para vetorizar os textos a 1536 dimensões usando a API key. | 🟢 |
+| RF-01 | Lista de Verificação e Setup de Variáveis do POC | Must | Deve existir um arquivo `.env` configurado localmente contendo as chaves de acesso do Vertex AI (`VERTEX_AI_API_KEY`, `GCP_PROJECT_ID`, `GCP_LOCATION`), configurações de domínio DuckDNS e portas de execução do Docker Compose. | 🟢 |
+| RF-02 | Integração de Embeddings com text-embedding-004 | Must | O `embedding-service` deve expor a rota `/embeddings` e chamar o endpoint de predição `:predict` do Vertex AI para vetorizar os textos a 768 dimensões usando a API key. | 🟢 |
 | RF-03 | Testes End-to-End de Integração e Fumaça | Must | Deve ser executada uma bateria de testes de validação end-to-end que chame o endpoint `POST /api/executions` do backend Spring Boot (`java-core`), simulando a criação de uma execução de agente e confirmando a resposta de sucesso. | 🟢 |
 
 ## 6. Requisitos Não Funcionais

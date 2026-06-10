@@ -23,7 +23,7 @@ A geração local de vetores (mock determinístico) foi totalmente substituída 
 
 ## 3. Preservadas
 
-*   **[DR03] Dimensionalidade Parametrizável de Vetores** (`_reversa_sdd/domain.md#2.2`): A dimensionalidade continua sendo configurável (1536 para o pgvector).
+*   **[DR03] Dimensionalidade Parametrizável de Vetores** (`_reversa_sdd/domain.md#2.2`): A dimensionalidade continua sendo configurável (768 para o pgvector).
 *   **[DR05] Heartbeat de Ingestão** (`_reversa_sdd/domain.md#2.2`): O loop assíncrono do worker de ingestão continua emitindo heartbeats a cada 60 segundos.
 *   **[DR06] Monitoramento de Microsserviços** (`_reversa_sdd/domain.md#2.2`): O endpoint `/healthz` de readiness probes de ambos os serviços continua respondendo "OK" na porta 8000.
 

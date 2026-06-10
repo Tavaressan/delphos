@@ -44,13 +44,13 @@ Os artefatos da engenharia reversa indicam a necessidade e a existência de um s
 
 1. **RN-01 (Nova - Robustez):** Retry Exponencial de Chamada. Em caso de falha de comunicação ou limite de requisições excedido (Rate Limit) da API externa de embeddings, o serviço deve tentar novamente utilizando backoff exponencial com jitter antes de falhar. 🟡
 2. **RN-02 (Nova - Robustez):** Fallback de Provedor de Embeddings. Se o provedor principal (Gemini 2.5 Flash via Google Vertex AI) estiver indisponível e as tentativas de retry falharem, o serviço deve encaminhar a requisição para um provedor alternativo configurado de mesma dimensionalidade. 🟡
-3. **RN-03 (Nova):** Parametrização Dinâmica do Modelo e Dimensão. O serviço deve suportar seleção do modelo e dimensionalidade do embedding por requisição ou por variáveis de ambiente, com valor padrão inicial de 1536 dimensões, respeitando a flexibilidade de dados do pgvector. 🟢
+3. **RN-03 (Nova):** Parametrização Dinâmica do Modelo e Dimensão. O serviço deve suportar seleção do modelo e dimensionalidade do embedding por requisição ou por variáveis de ambiente, com valor padrão inicial de 768 dimensões, respeitando a flexibilidade de dados do pgvector. 🟢
 
 ## 5. Requisitos Funcionais
 
 | ID | Requisito | Prioridade | Critério de aceite | Confidência |
 |----|-----------|------------|--------------------|-------------|
-| RF-01 | Endpoint de Geração de Embeddings | Must | `POST /embeddings` aceita JSON com `input` (lista de strings), `model` (opcional) e `dimensions` (opcional, padrão 1536), retornando os vetores numéricos correspondentes com código 200. | 🟢 |
+| RF-01 | Endpoint de Geração de Embeddings | Must | `POST /embeddings` aceita JSON com `input` (lista de strings), `model` (opcional) e `dimensions` (opcional, padrão 768), retornando os vetores numéricos correspondentes com código 200. | 🟢 |
 | RF-02 | Verificação de Saúde | Must | `GET /healthz` retorna a string "OK" com código 200 (mantendo comportamento herdado). | 🟢 |
 | RF-03 | Suporte a Múltiplos Provedores (Mock e Real) | Must | Suporta gerar embeddings reais via API externa (Google Vertex AI / Gemini 2.5 Flash com chave de API via placeholders) ou embeddings simulados (mock) em caso de ambiente offline de desenvolvimento. | 🟢 |
 | RF-04 | Resiliência com Retry e Jitter | Should | Aplica retentativas com backoff em erros de rede (5xx ou 429) das APIs externas de embedding. | 🟡 |
@@ -73,11 +73,11 @@ Cenário: Geração de embeddings com sucesso
     """
     {
       "input": ["Olá Mundo"],
-      "dimensions": 1536
+      "dimensions": 768
     }
     """
   Então o status da resposta deve ser 200 OK
-  E o corpo da resposta deve conter uma lista de objetos com o vetor de 1536 dimensões correspondente ao input
+  E o corpo da resposta deve conter uma lista de objetos com o vetor de 768 dimensões correspondente ao input
 
 Cenário: Geração de embeddings em lote com múltiplos textos
   Dado que o serviço de embeddings está ativo
@@ -85,7 +85,7 @@ Cenário: Geração de embeddings em lote com múltiplos textos
     """
     {
       "input": ["Texto um", "Texto dois"],
-      "dimensions": 1536
+      "dimensions": 768
     }
     """
   Então a resposta deve ser 200 OK
@@ -110,7 +110,7 @@ Cenário: Requisição inválida com input vazio
     """
     {
       "input": [],
-      "dimensions": 1536
+      "dimensions": 768
     }
     """
   Então o status da resposta deve ser 400 Bad Request
@@ -133,8 +133,8 @@ Cenário: Requisição inválida com input vazio
 
 - **Q:** Qual API externa (OpenAI, Anthropic, Cohere, etc.) será utilizada como provedor primário e qual o modelo padrão pré-configurado?
   **R:** A API provedora primária será o Gemini 2.5 Flash provido pelo Google Vertex AI. Serão utilizados placeholders que serão substituídos pela API key do provedor de LLM.
-- **Q:** Qual deve ser a dimensionalidade padrão quando não especificada na requisição (por exemplo, 1536 para modelos OpenAI)?
-  **R:** De início utilizaremos 1536, que é um padrão, mas a dimensionalidade deve ser parametrizável para o uso de outros provedores.
+- **Q:** Qual deve ser a dimensionalidade padrão quando não especificada na requisição (por exemplo, 768 para modelos OpenAI)?
+  **R:** De início utilizaremos 768, que é um padrão, mas a dimensionalidade deve ser parametrizável para o uso de outros provedores.
 - **Q:** O serviço deve expor suporte a embeddings locais por meio de bibliotecas ONNX (como ort ou fastembed) para rodar 100% offline, ou usaremos apenas chamadas de API de terceiros?
   **R:** Usaremos chamadas de API de terceiros, não rodaremos LLMs/modelos localmente.
 

@@ -44,8 +44,8 @@ Para validar a integração real de RAG contra o endpoint da Vertex AI, assegure
 ```bash
 # Exemplo de variáveis para Vertex AI real
 export EMBEDDING_PROVIDER=real
-export VERTEX_AI_PROJECT_ID=alfabra-platform
-export VERTEX_AI_REGION=us-central1
+export GCP_PROJECT_ID=alfabra-platform
+export GCP_LOCATION=us-central1
 export VERTEX_AI_API_KEY=sua_chave_secreta_aqui
 
 # Rodar os testes E2E com Vertex AI ativa

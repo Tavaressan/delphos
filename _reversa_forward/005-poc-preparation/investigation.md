@@ -26,7 +26,7 @@ O payload aceito exige um array de `instances` contendo o conteúdo de texto, e 
     }
   ],
   "parameters": {
-    "outputDimensionality": 1536
+    "outputDimensionality": 768
   }
 }
 ```

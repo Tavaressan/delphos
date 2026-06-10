@@ -18,7 +18,7 @@ CREATE TABLE document_chunks (
     tenant_id UUID NOT NULL,
     chunk_index INT NOT NULL,
     content TEXT NOT NULL,
-    embedding VECTOR(1536), -- Vetor de 1536 dimensões para similaridade
+    embedding VECTOR(768), -- Vetor de 768 dimensões para similaridade
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```

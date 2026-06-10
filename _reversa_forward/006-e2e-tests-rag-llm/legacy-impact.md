@@ -30,7 +30,7 @@ As seguintes regras de domínio confirmadas em `_reversa_sdd/domain.md` permanec
 
 *   **`[DR05] Heartbeat de Ingestão`**: O loop assíncrono de 60 segundos do `ingestion-worker` continua ativo e emitindo logs de batimento cardíaco.
 *   **`[DR06] Monitoramento de Microsserviços`**: O endpoint `/healthz` na porta `8000` continua respondendo com "OK" em ambos os microsserviços e é formalmente validado na suíte de testes.
-*   **`[DR03] Dimensionalidade Parametrizável de Vetores`**: O banco e o `embedding-service` continuam gerando vetores em 1536 dimensões, validados atômica e programaticamente pelo runner de teste.
+*   **`[DR03] Dimensionalidade Parametrizável de Vetores`**: O banco e o `embedding-service` continuam gerando vetores em 768 dimensões, validados atômica e programaticamente pelo runner de teste.
 
 ## 4. Modificadas
 

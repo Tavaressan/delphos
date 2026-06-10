@@ -7,7 +7,7 @@
 
 ## 1. Resumo da abordagem
 
-Para viabilizar a apresentação do POC hoje, implementamos a integração técnica real com as APIs da Vertex AI para processamento cognitivo e RAG. O microsserviço `embedding-service` (Rust) foi desenvolvido para expor o endpoint REST `/embeddings`, que repassa os textos para vetorização real no modelo `text-embedding-004` da Vertex AI usando a chamada `:predict` com a chave `VERTEX_AI_API_KEY`. O `ingestion-worker` (Rust) agora delega a vetorização de chunks de documentos para esse serviço via HTTP, indexando os embeddings finais de 1536 dimensões diretamente na extensão `pgvector` do PostgreSQL.
+Para viabilizar a apresentação do POC hoje, implementamos a integração técnica real com as APIs da Vertex AI para processamento cognitivo e RAG. O microsserviço `embedding-service` (Rust) foi desenvolvido para expor o endpoint REST `/embeddings`, que repassa os textos para vetorização real no modelo `text-embedding-004` da Vertex AI usando a chamada `:predict` com a chave `VERTEX_AI_API_KEY`. O `ingestion-worker` (Rust) agora delega a vetorização de chunks de documentos para esse serviço via HTTP, indexando os embeddings finais de 768 dimensões diretamente na extensão `pgvector` do PostgreSQL.
 
 ## 2. Princípios aplicados
 
@@ -36,7 +36,7 @@ Todas as dúvidas foram esclarecidas pelo usuário na etapa anterior. Nenhuma pr
 
 ## 6. Delta no modelo de dados
 
-- Resumo das mudanças: Nenhuma modificação de esquema de banco de dados é necessária, pois a coluna `embedding` do tipo `vector(1536)` já está criada em `document_chunks`.
+- Resumo das mudanças: Nenhuma modificação de esquema de banco de dados é necessária, pois a coluna `embedding` do tipo `vector(768)` já está criada em `document_chunks`.
 - Detalhe completo em: `_reversa_forward/005-poc-preparation/data-delta.md`
 
 ## 7. Delta de contratos externos

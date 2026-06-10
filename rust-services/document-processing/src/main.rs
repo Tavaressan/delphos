@@ -50,8 +50,7 @@ impl ServiceConfig {
             .ok()
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(false);
-        let ocr_lang = std::env::var("OCR_LANG")
-            .unwrap_or_else(|_| "por+eng".to_string());
+        let ocr_lang = std::env::var("OCR_LANG").unwrap_or_else(|_| "por+eng".to_string());
 
         Self {
             chunk_size,
@@ -96,7 +95,9 @@ fn split_sentences(text: &str) -> Vec<String> {
     while i < chars.len() {
         let c = chars[i];
         current.push(c);
-        if (c == '.' || c == '?' || c == '!') && (i + 1 == chars.len() || chars[i + 1].is_whitespace()) {
+        if (c == '.' || c == '?' || c == '!')
+            && (i + 1 == chars.len() || chars[i + 1].is_whitespace())
+        {
             sentences.push(current.trim().to_string());
             current = String::new();
         }
@@ -119,7 +120,7 @@ fn chunk_sentences(sentences: &[String], chunk_size: usize, chunk_overlap: usize
     while start_idx < sentences.len() {
         let mut current_chunk = String::new();
         let mut idx = start_idx;
-        
+
         while idx < sentences.len() {
             let sentence = &sentences[idx];
             let potential_len = if current_chunk.is_empty() {
@@ -127,7 +128,7 @@ fn chunk_sentences(sentences: &[String], chunk_size: usize, chunk_overlap: usize
             } else {
                 current_chunk.len() + 1 + sentence.len()
             };
-            
+
             if potential_len <= chunk_size {
                 if !current_chunk.is_empty() {
                     current_chunk.push(' ');
@@ -157,26 +158,26 @@ fn chunk_sentences(sentences: &[String], chunk_size: usize, chunk_overlap: usize
                 break;
             }
         }
-        
+
         if !current_chunk.is_empty() {
             chunks.push(current_chunk);
         }
-        
+
         if idx >= sentences.len() {
             break;
         }
-        
+
         let mut overlap_len = 0;
         let mut next_start = idx;
-        
-        while next_start > start_idx {
+
+        while next_start > start_idx + 1 {
             let prev_sentence_len = sentences[next_start - 1].len();
             let potential_overlap = if overlap_len == 0 {
                 prev_sentence_len
             } else {
                 overlap_len + 1 + prev_sentence_len
             };
-            
+
             if potential_overlap <= chunk_overlap {
                 overlap_len = potential_overlap;
                 next_start -= 1;
@@ -184,7 +185,7 @@ fn chunk_sentences(sentences: &[String], chunk_size: usize, chunk_overlap: usize
                 break;
             }
         }
-        
+
         if next_start == idx {
             start_idx = idx;
         } else {
@@ -194,13 +195,17 @@ fn chunk_sentences(sentences: &[String], chunk_size: usize, chunk_overlap: usize
     chunks
 }
 
-fn chunk_by_chars_with_word_boundary(text: &str, chunk_size: usize, chunk_overlap: usize) -> Vec<String> {
+fn chunk_by_chars_with_word_boundary(
+    text: &str,
+    chunk_size: usize,
+    chunk_overlap: usize,
+) -> Vec<String> {
     let chars: Vec<char> = text.chars().collect();
     let mut chunks = Vec::new();
     if chars.is_empty() {
         return chunks;
     }
-    
+
     let mut start = 0;
     while start < chars.len() {
         let mut end = start + chunk_size;
@@ -233,20 +238,20 @@ fn chunk_by_chars_with_word_boundary(text: &str, chunk_size: usize, chunk_overla
                 }
             }
         }
-        
+
         let chunk: String = chars[start..end].iter().collect();
         chunks.push(chunk.trim().to_string());
-        
+
         if end >= chars.len() {
             break;
         }
-        
+
         if chunk_size > chunk_overlap {
             start = end - chunk_overlap;
         } else {
             start = end;
         }
-        
+
         if start >= end {
             start = end + 1;
         }
@@ -292,7 +297,9 @@ impl DocType {
                 "application/pdf" => return Self::Pdf,
                 "text/html" => return Self::Html,
                 "text/markdown" | "text/x-markdown" => return Self::Markdown,
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => return Self::Docx,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+                    return Self::Docx
+                }
                 "text/plain" => return Self::Txt,
                 _ => {}
             }
@@ -454,7 +461,10 @@ pub async fn process_document(
                         file_bytes = bytes.to_vec();
                     }
                     Err(e) => {
-                        return Err((StatusCode::BAD_REQUEST, format!("Falha ao ler os bytes do arquivo: {}", e)));
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            format!("Falha ao ler os bytes do arquivo: {}", e),
+                        ));
                     }
                 }
             } else if n == "document_id" {
@@ -470,7 +480,10 @@ pub async fn process_document(
     }
 
     if file_bytes.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Nenhum arquivo enviado ou arquivo vazio".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Nenhum arquivo enviado ou arquivo vazio".to_string(),
+        ));
     }
 
     let max_bytes = config.max_document_size_mb * 1024 * 1024;
@@ -498,15 +511,19 @@ pub async fn process_document(
         DocType::Markdown => MarkdownParser.parse(&file_bytes, &parser_config),
         DocType::Docx => DocxParser.parse(&file_bytes, &parser_config),
         DocType::Txt => TxtParser.parse(&file_bytes, &parser_config),
-    }.map_err(|e| {
-        (StatusCode::INTERNAL_SERVER_ERROR, format!("Falha ao parsear o documento: {}", e))
+    }
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Falha ao parsear o documento: {}", e),
+        )
     })?;
 
-    let strategy_env = std::env::var("CHUNK_STRATEGY")
-        .unwrap_or_else(|_| "sentence".to_string());
+    let strategy_env = std::env::var("CHUNK_STRATEGY").unwrap_or_else(|_| "sentence".to_string());
     let strategy_name = chunk_strategy_param.unwrap_or(strategy_env);
 
-    let chunker: Box<dyn ChunkStrategy + Send + Sync> = match strategy_name.to_lowercase().as_str() {
+    let chunker: Box<dyn ChunkStrategy + Send + Sync> = match strategy_name.to_lowercase().as_str()
+    {
         "token" => Box::new(TokenChunker),
         _ => Box::new(SentenceChunker),
     };

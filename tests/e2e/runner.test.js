@@ -30,7 +30,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
 
   test('T004 - Validação do Ciclo de Vida do Ambiente (reset.sh e setup.sh)', async () => {
     console.log('Passo 1: Executando scripts de reinicialização e provisionamento do ambiente...');
-    
+
     // Executar reset.sh e setup.sh
     try {
       execSync('./scripts/reset.sh', { stdio: 'inherit' });
@@ -40,7 +40,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     }
 
     console.log('Passo 2: Monitorando healthchecks dos serviços...');
-    
+
     // Realizar polling ativo dos endpoints de healthcheck
     let backendHealthy = false;
     let embeddingHealthy = false;
@@ -49,7 +49,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     const maxAttempts = 30; // 60 segundos no total (tentativas de 2s)
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       console.log(`Tentativa ${attempt}/${maxAttempts} de healthcheck...`);
-      
+
       if (!backendHealthy) {
         try {
           const res = await fetch(`${config.backendUrl}/actuator/health`);
@@ -89,7 +89,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
       if (backendHealthy && embeddingHealthy && frontendHealthy) {
         break;
       }
-      
+
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
@@ -98,7 +98,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     assert.ok(frontendHealthy, 'Erro: Frontend (Next.js) não ficou pronto no tempo limite.');
 
     console.log('🟢 Todos os serviços subiram e estão respondendo com sucesso.');
-    
+
     // Conectar ao banco agora que o container PostgreSQL está saudável
     await dbClient.connect();
     console.log('Conectado ao PostgreSQL com sucesso.');
@@ -108,16 +108,16 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     // 1. Inserir documento fictício no status UPLOADING
     const docId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a99';
     const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
-    
+
     console.log(`Passo 1: Inserindo documento de teste com ID ${docId}...`);
-    
+
     // Assegurar usuário padrão admin para o FK
     await dbClient.query(`
       INSERT INTO users (id, username, email, password_hash, first_name, last_name, status)
       VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a00', 'admin_e2e', 'admin_e2e@company.com', 'hash', 'Admin', 'E2E', 'ACTIVE')
       ON CONFLICT (username) DO NOTHING
     `);
-    
+
     const userRes = await dbClient.query("SELECT id FROM users WHERE username = 'admin_e2e'");
     const userId = userRes.rows[0].id;
 
@@ -130,7 +130,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log('Passo 2: Publicando mensagem de ingestão no RabbitMQ...');
     const rabbitUrl = 'http://localhost:15672/api/exchanges/%2f/amq.default/publish';
     const auth = 'Basic ' + Buffer.from('guest:guest').toString('base64');
-    
+
     const rabbitPublishRes = await fetch(rabbitUrl, {
       method: 'POST',
       headers: {
@@ -178,15 +178,15 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     // 4. Validar chunks de vetores no pgvector
     console.log('Passo 4: Validando persistência e dimensionalidade dos vetores no PostgreSQL...');
     const chunksRes = await dbClient.query('SELECT id, embedding::text FROM document_chunks WHERE document_id = $1', [docId]);
-    
+
     assert.ok(chunksRes.rows.length > 0, 'Erro: Nenhum chunk vetorial foi localizado no banco.');
-    
+
     // Obter o vetor e verificar o tamanho
     const rawVector = chunksRes.rows[0].embedding;
     // O formato retornado do cast ::text é: [0.123, -0.456, ...]
     const vectorElements = rawVector.replace('[', '').replace(']', '').split(',');
-    
-    assert.strictEqual(vectorElements.length, 1536, `Erro: A dimensionalidade do vetor deveria ser 1536, mas retornou ${vectorElements.length}.`);
+
+    assert.strictEqual(vectorElements.length, 768, `Erro: A dimensionalidade do vetor deveria ser 768, mas retornou ${vectorElements.length}.`);
     console.log('🟢 Chunks vetoriais e dimensões validados com sucesso.');
   });
 
@@ -199,7 +199,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
 
     console.log('Passo 1: Enviando requisição de Chat/RAG para o backend Spring Boot...');
     const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
-    
+
     const chatReq = await fetch(`${config.backendUrl}/api/executions`, {
       method: 'POST',
       headers: {
@@ -217,7 +217,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     assert.ok(executionId, 'Erro: executionId não retornado pelo backend.');
 
     console.log(`Passo 2: Polling da execução cognitiva ${executionId}...`);
-    
+
     let completed = false;
     let finalOutput = '';
     const maxAttempts = 20;
@@ -241,16 +241,16 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
 
     assert.ok(completed, 'Erro: A execução cognitiva de chat não transicionou para COMPLETED.');
     assert.ok(finalOutput && finalOutput.length > 0, 'Erro: Resposta gerada do chat retornou vazia.');
-    
+
     console.log('🟢 Chat E2E e orquestração cognitiva do RAG validados com sucesso!');
     console.log(`Saída do chat: "${finalOutput}"`);
   });
 
   test('T009 - Teardown / Limpeza pós-teste robusta', async () => {
     console.log('Passo 1: Executando limpeza dos dados de teste criados no PostgreSQL...');
-    
+
     const docId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a99';
-    
+
     // A remoção do documento aciona ON DELETE CASCADE em document_chunks
     const delRes = await dbClient.query('DELETE FROM documents WHERE id = $1', [docId]);
     console.log(`Linhas de documento deletadas: ${delRes.rowCount}`);

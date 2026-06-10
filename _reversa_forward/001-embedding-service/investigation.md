@@ -24,12 +24,12 @@ Cada provedor concreto implementará a trait `EmbeddingProvider` e efetuará req
 ### 2.1. Google Vertex AI (Gemini 2.5 Flash)
 - **Endpoint:** `https://{region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}/publishers/google/models/{model}:predict`
 - **Autenticação:** Header `Authorization: Bearer <GCP_TOKEN>` ou API Key placeholder.
-- **Dimensões padrão:** 1536 (parametrizável).
+- **Dimensões padrão:** 768 (parametrizável).
 
 ### 2.2. OpenAI (`OpenAIEmbeddingProvider`)
 - **Endpoint:** `https://api.openai.com/v1/embeddings`
 - **Autenticação:** Header `Authorization: Bearer <OPENAI_API_KEY>`
-- **Modelos:** `text-embedding-3-small` (padrão, 1536 dimensões) ou `text-embedding-3-large`.
+- **Modelos:** `text-embedding-3-small` (padrão, 768 dimensões) ou `text-embedding-3-large`.
 
 ### 2.3. Voyage AI (`VoyageEmbeddingProvider`)
 - **Endpoint:** `https://api.voyageai.com/v1/embeddings`

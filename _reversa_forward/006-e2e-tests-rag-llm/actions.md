@@ -31,7 +31,7 @@
 |----|-----------|--------------|-------------|--------------|-------------|--------|
 | T004 | Implementar asserção de ciclo de vida do ambiente executando `reset.sh` e `setup.sh` via subprocessos Node e checando integridade dos containers. | T003 | - | `tests/e2e/runner.test.js` | 🟢 | `[X]` |
 | T005 | Desenvolver fluxo de upload de documento fictício e polling assíncrono para verificar transição de estado da tabela `documents` para `INDEXED`. | T004 | - | `tests/e2e/runner.test.js` | 🟢 | `[X]` |
-| T006 | Codificar consultas no banco de dados via driver `pg` para validar se os chunks foram criados e populados com vetores de 1536 dimensões. | T005 | - | `tests/e2e/runner.test.js` | 🟢 | `[X]` |
+| T006 | Codificar consultas no banco de dados via driver `pg` para validar se os chunks foram criados e populados com vetores de 768 dimensões. | T005 | - | `tests/e2e/runner.test.js` | 🟢 | `[X]` |
 | T007 | Adicionar chamada ao endpoint de Chat no backend Spring Boot (`java-core`), validando se a resposta do RAG cita o documento inserido de forma coerente. | T006 | - | `tests/e2e/runner.test.js` | 🟢 | `[X]` |
 
 ## Fase 4, Integração

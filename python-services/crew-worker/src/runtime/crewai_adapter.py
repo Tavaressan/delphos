@@ -28,8 +28,8 @@ class CrewAiRuntimeAdapter:
         
         # Detect Vertex AI environment variables
         api_key = os.environ.get("VERTEX_AI_API_KEY")
-        project_id = os.environ.get("VERTEX_AI_PROJECT_ID")
-        region = os.environ.get("VERTEX_AI_REGION", "us-central1")
+        project_id = os.environ.get("GCP_PROJECT_ID")
+        region = os.environ.get("GCP_LOCATION", "us-central1")
         
         if api_key and "placeholder" not in api_key.lower() and len(api_key) > 20:
             print(f"[CrewAiRuntimeAdapter] Configuring real Vertex AI LLM (Gemini 1.5 Flash) for project '{project_id}'...")

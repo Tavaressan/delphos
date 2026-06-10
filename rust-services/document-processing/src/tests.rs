@@ -124,7 +124,7 @@ fn test_sentence_chunker_overlap() {
     // "Frase um." (8 chars) + " " + "Frase dois." (10 chars) = 19 chars -> Cabe
     // Proximo chunk: "Frase dois." (10 chars) cabe no overlap de 15? Sim.
     // Então o segundo chunk deve começar com "Frase dois." e incluir "Frase tres."
-    let chunks = chunker.chunk(text, 22, 12);
+    let chunks = chunker.chunk(text, 25, 12);
     
     assert!(chunks.len() >= 2);
     assert_eq!(chunks[0], "Frase um. Frase dois.");

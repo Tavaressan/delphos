@@ -17,7 +17,7 @@ CREATE TABLE document_chunks (
     tenant_id UUID NOT NULL,
     chunk_index INT NOT NULL,
     content TEXT NOT NULL,
-    embedding vector(1536) NOT NULL, -- Tamanho de vetor definido em Flyway
+    embedding vector(768) NOT NULL, -- Tamanho de vetor definido em Flyway
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -30,4 +30,4 @@ Não há novas tabelas ou colunas a serem adicionadas para a feature `005-poc-pr
 - **Novas colunas:** nenhuma (n/a)
 - **Alterações de tipo:** nenhuma (n/a)
 
-O delta reside inteiramente na **origem dos dados inseridos** na coluna `embedding`, que passa de um vetor aleatório gerado deterministicamente por hash local (mock) para um vetor de 1536 floats reais computados pela API da Vertex AI.
+O delta reside inteiramente na **origem dos dados inseridos** na coluna `embedding`, que passa de um vetor aleatório gerado deterministicamente por hash local (mock) para um vetor de 768 floats reais computados pela API da Vertex AI.

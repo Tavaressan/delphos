@@ -119,4 +119,4 @@ CREATE INDEX idx_chunks_embedding
 ON document_chunks 
 USING hnsw (embedding vector_cosine_ops);
 ```
-**Nota de Desempenho:** A busca híbrida executada na camada Postgres executará filtros relacionais baseados em `tenant_id` e `document_id` de forma prioritária ou composta sobre o índice de embeddings. A largura dimensional do tipo `vector` deve ser redefinida de acordo com a configuração de embedding ativa para cada coleção/modelo (ex: 1536 para OpenAI/Gemini, 768 para BGE/E5, etc.), garantindo flexibilidade e evitando acoplamento a provedores ou modelos específicos.
+**Nota de Desempenho:** A busca híbrida executada na camada Postgres executará filtros relacionais baseados em `tenant_id` e `document_id` de forma prioritária ou composta sobre o índice de embeddings. A largura dimensional do tipo `vector` deve ser redefinida de acordo com a configuração de embedding ativa para cada coleção/modelo (ex: 768 para OpenAI/Gemini, 768 para BGE/E5, etc.), garantindo flexibilidade e evitando acoplamento a provedores ou modelos específicos.

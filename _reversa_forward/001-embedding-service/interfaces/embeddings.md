@@ -29,14 +29,14 @@ O corpo deve ser enviado no formato JSON contendo os seguintes campos:
     "Segundo trecho de texto no mesmo lote"
   ],
   "model": "gemini-2.5-flash",
-  "dimensions": 1536
+  "dimensions": 768
 }
 ```
 
 ### Detalhamento dos Campos
 * **`input`** (`array` de `string`): Lista de um ou mais blocos textuais a serem transformados em embeddings. Não pode estar vazio.
 * **`model`** (`string`, *opcional*): Identificador do modelo de embedding a ser utilizado. Se omitido, usará o configurado em `EMBEDDING_MODEL`.
-* **`dimensions`** (`integer`, *opcional*): Dimensionalidade final do vetor (ex: 1536). Se omitido, usará o valor padrão 1536.
+* **`dimensions`** (`integer`, *opcional*): Dimensionalidade final do vetor (ex: 768). Se omitido, usará o valor padrão 768.
 
 ## 4. Corpo da Resposta de Sucesso (Response - 200 OK)
 

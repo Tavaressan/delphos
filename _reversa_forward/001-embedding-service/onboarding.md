@@ -14,13 +14,13 @@ Crie ou atualize o arquivo `.env` na raiz da pasta `enterprise_rag_platform` com
 EMBEDDING_PROVIDER=mock
 
 # Configuração do provedor Vertex AI (quando PROVIDER=real)
-VERTEX_AI_PROJECT_ID=my-gcp-project
-VERTEX_AI_REGION=us-central1
+GCP_PROJECT_ID=my-gcp-project
+GCP_LOCATION=us-central1
 VERTEX_AI_API_KEY=my-secret-key-placeholder
 
 # Configurações do Modelo e Dimensão
 EMBEDDING_MODEL=gemini-2.5-flash
-EMBEDDING_DIMENSIONS=1536
+EMBEDDING_DIMENSIONS=768
 
 # Configurações de Fallback e Resiliência
 EMBEDDING_FALLBACK_PROVIDER=mock
@@ -60,7 +60,7 @@ curl -X POST http://localhost:8000/embeddings \
   -H "Content-Type: application/json" \
   -d '{
     "input": ["Olá Mundo"],
-    "dimensions": 1536
+    "dimensions": 768
   }'
 ```
 
@@ -89,7 +89,7 @@ curl -i -X POST http://localhost:8000/embeddings \
   -H "Content-Type: application/json" \
   -d '{
     "input": [],
-    "dimensions": 1536
+    "dimensions": 768
   }'
 ```
 

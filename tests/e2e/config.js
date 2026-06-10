@@ -28,6 +28,6 @@ export const config = {
   backendUrl: process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080',
   embeddingProvider: process.env.EMBEDDING_PROVIDER || 'mock',
   vertexAiApiKey: process.env.VERTEX_AI_API_KEY || '',
-  vertexAiProjectId: process.env.VERTEX_AI_PROJECT_ID || 'alfabra-platform',
-  vertexAiRegion: process.env.VERTEX_AI_REGION || 'us-central1'
+  vertexAiProjectId: process.env.GCP_PROJECT_ID || 'alfabra-platform',
+  vertexAiRegion: process.env.GCP_LOCATION || 'us-central1'
 };

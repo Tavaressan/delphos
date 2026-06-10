@@ -1,9 +1,9 @@
 {
   "schema-version": 1,
-  "feature-dir": "_reversa_forward/007-poc-api-integration",
-  "feature-id": "007",
-  "short-name": "poc-api-integration",
-  "started-at": "2026-06-05T18:00:00Z",
+  "feature-dir": "_reversa_forward/009-ui-modernization",
+  "feature-id": "009",
+  "short-name": "ui-modernization",
+  "started-at": "2026-06-10T14:17:54Z",
   "current-stage": "requirements",
   "stages-completed": [],
   "paused-features": []
