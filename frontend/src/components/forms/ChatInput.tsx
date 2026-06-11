@@ -19,14 +19,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   disabled = false,
 }) => {
   return (
-    <form onSubmit={onSubmit} className="flex items-center gap-2 border border-slate-200 rounded-lg p-2 bg-slate-50 flex-shrink-0 shadow-sm">
+    <form onSubmit={onSubmit} className="flex items-center gap-2 border border-border-color rounded-lg p-2 bg-secondary/25 dark:bg-slate-900/50 flex-shrink-0 shadow-sm transition-colors duration-200">
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         placeholder={placeholder}
-        className="flex-1 bg-transparent border-0 outline-none text-sm text-slate-700 placeholder-slate-400 font-body px-2 disabled:cursor-not-allowed"
+        className="flex-1 bg-transparent border-0 outline-none text-sm text-text-primary placeholder-slate-400 font-body px-2 disabled:cursor-not-allowed"
       />
       <button
         type="submit"

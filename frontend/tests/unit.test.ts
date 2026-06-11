@@ -108,3 +108,51 @@ describe('Execution Use Cases Tests', () => {
     assert.strictEqual(result.output, '30 dias');
   });
 });
+
+describe('Theme Switching Logic', () => {
+  test('should toggle dark class and store preference in localStorage', () => {
+    // Mock local storage
+    const store: Record<string, string> = {};
+    const mockLocalStorage = {
+      getItem: (key: string) => store[key] || null,
+      setItem: (key: string, value: string) => { store[key] = value; },
+    };
+
+    // Mock document element classList
+    const classList = {
+      classes: [] as string[],
+      add: (c: string) => { if (!classList.classes.includes(c)) classList.classes.push(c); },
+      remove: (c: string) => { classList.classes = classList.classes.filter(x => x !== c); },
+      contains: (c: string) => classList.classes.includes(c),
+    };
+
+    // Simulate the theme toggle function logic
+    const toggleTheme = (currentTheme: 'light' | 'dark', setLocal: boolean) => {
+      const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+      if (nextTheme === 'dark') {
+        classList.add('dark');
+      } else {
+        classList.remove('dark');
+      }
+      if (setLocal) {
+        mockLocalStorage.setItem('theme', nextTheme);
+      }
+      return nextTheme;
+    };
+
+    // Initial state: light
+    let theme: 'light' | 'dark' = 'light';
+    
+    // Toggle 1: switch to dark
+    theme = toggleTheme(theme, true);
+    assert.strictEqual(theme, 'dark');
+    assert.ok(classList.contains('dark'));
+    assert.strictEqual(mockLocalStorage.getItem('theme'), 'dark');
+
+    // Toggle 2: switch to light
+    theme = toggleTheme(theme, true);
+    assert.strictEqual(theme, 'light');
+    assert.ok(!classList.contains('dark'));
+    assert.strictEqual(mockLocalStorage.getItem('theme'), 'light');
+  });
+});

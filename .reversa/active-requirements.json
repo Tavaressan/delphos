@@ -4,7 +4,10 @@
   "feature-id": "009",
   "short-name": "ui-modernization",
   "started-at": "2026-06-10T14:17:54Z",
-  "current-stage": "requirements",
-  "stages-completed": [],
+  "current-stage": "plan",
+  "stages-completed": [
+    "requirements",
+    "clarify"
+  ],
   "paused-features": []
 }

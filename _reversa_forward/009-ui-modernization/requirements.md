@@ -37,7 +37,7 @@ As decisões e restrições desta especificação ancoram-se nos artefatos da ex
 2. **RN-02: Preservação e Redimensionamento da Logomarca** 🟢
    - Origem no legado: `_reversa_sdd/code-analysis.md#3.1` (`Header.tsx` e assets)
    - Tipo: alterada
-   - Descrição: O logotipo PNG original da Alfabra (`LogoMarca_Alfabra.png`) deve ser mantido, porém seu tamanho em tela na barra de navegação superior (Header) deve ser aumentado em uma faixa de 50% a 70% em relação ao tamanho legado, servindo como a principal âncora de marca.
+   - Descrição: O logotipo PNG original da Alfabra (`LogoMarca_Alfabra.png`) deve ser mantido, porém seu tamanho em tela na barra de navegação superior (Header) deve ser aumentado em uma faixa de 50% a 70% em relação ao tamanho legado. No tema escuro, deve-se aplicar o filtro de contraste/inversão no CSS (ex: `dark:brightness-0 dark:invert`) para garantir a legibilidade.
 
 3. **RN-03: Tema Escuro Nativo e Persistente** 🟢
    - Origem no legado: `_reversa_sdd/code-analysis.md#3.1` (Tailwind classes de layout)
@@ -62,7 +62,8 @@ As decisões e restrições desta especificação ancoram-se nos artefatos da ex
 | **RF-02** | Persistência do Tema | Must | A escolha do tema deve ser gravada no `localStorage` do navegador e restabelecida no carregamento da página. | 🟢 CONFIRMADO |
 | **RF-03** | Menu Lateral Aprimorado (Sidebar Actives) | Must | Os itens de menu ativos devem possuir uma borda lateral esquerda na cor azul primário (`#22409A`), melhor espaçamento e destaque visual nítido. | 🟢 CONFIRMADO |
 | **RF-04** | Redesenho de Cards (Card Refresh) | Must | Substituir o visual dos cards por bordas com raio de 8px, bordas finas com contraste adequado e sombras discretas (`shadow-sm` ou similar), evitando sombras pesadas. | 🟢 CONFIRMADO |
-| **RF-05** | Atualização da Página de Tokens | Should | A página de Guia do Design System (`/design-system`) deve ser atualizada para demonstrar as novas paletas de cores do tema escuro, fontes e os botões redesenhados. | 🟡 INFERIDO |
+| **RF-05** | Alternativa da Página de Tokens | Should | A página de Guia do Design System (`/design-system`) deve ser atualizada para demonstrar as novas paletas de cores do tema escuro, fontes e os botões redesenhados. | 🟡 INFERIDO |
+| **RF-06** | Painéis Laterais Retráteis (Collapsible Side Panels) | Must | Tanto o painel lateral esquerdo (Sidebar/Módulos Operacionais) quanto o painel lateral direito (Progresso de Execução/Timeline) devem possuir botões visuais para recolher/minimizar, maximizando a área de chat/RAG central quando desejado. | 🟢 CONFIRMADO |
 
 ## 6. Requisitos Não Funcionais
 
@@ -106,15 +107,20 @@ Cenário: Remoção da decoração de confiabilidade
 
 ## 9. Esclarecimentos
 
-> Nenhuma sessão de dúvidas registrada ainda. Rode `/reversa-clarify` quando houver `[DÚVIDA]` pendente.
+### Sessão 2026-06-11
+
+- **Q:** A logomarca existente da Alfabra (`LogoMarca_Alfabra.png`) possui fundo transparente e boa legibilidade em fundo escuro (`#0F1117`) ou deve-se prever uma versão com contorno/filtro invertido para contraste no tema escuro?
+  **R:** Seguir a recomendação de aplicar filtro de contraste/inversão no CSS (como `dark:brightness-0 dark:invert` no Tailwind) para o tema escuro, garantindo legibilidade sem necessitar de novas imagens.
+- **Q:** O painel de observabilidade direito (Execution Timeline) deve possuir controle de minimizar/recolher para ganho de espaço de tela ou deve manter-se fixo no layout de três colunas padrão?
+  **R:** Sim, e ambos os painéis laterais (tanto o esquerdo de módulos operacionais quanto o direito de progresso de execução) devem ser recolhíveis/minimizáveis para maximizar a área útil do chat/RAG.
 
 ## 10. Lacunas
 
-- 🔴 [DÚVIDA] A logomarca existente da Alfabra (`LogoMarca_Alfabra.png`) possui fundo transparente e boa legibilidade em fundo escuro (`#0F1117`) ou deve-se prever uma versão com contorno/filtro invertido para contraste no tema escuro?
-- 🔴 [DÚVIDA] O painel de observabilidade direito (Execution Timeline) deve possuir controle de minimizar/recolher para ganho de espaço de tela ou deve manter-se fixo no layout de três colunas padrão?
+Nenhuma lacuna ou dúvida pendente nesta versão.
 
 ## 11. Histórico de alterações
 
 | Data | Alteração | Autor |
 |------|-----------|-------|
 | 2026-06-10 | Versão inicial gerada por `/reversa-requirements` | reversa |
+| 2026-06-11 | Esclarecimento de dúvidas sobre a logomarca e painéis laterais retráteis via `/reversa-clarify` | reversa |

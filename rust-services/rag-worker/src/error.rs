@@ -4,7 +4,9 @@ use std::fmt;
 pub enum WorkerError {
     Config(String),
     RabbitMQ(String),
-    AnythingLLM(String),
+    Database(String),
+    Embedding(String),
+    VertexAI(String),
     Serialization(String),
 }
 
@@ -15,7 +17,9 @@ impl fmt::Display for WorkerError {
         match self {
             WorkerError::Config(msg) => write!(f, "Configuration Error: {}", msg),
             WorkerError::RabbitMQ(msg) => write!(f, "RabbitMQ Error: {}", msg),
-            WorkerError::AnythingLLM(msg) => write!(f, "AnythingLLM API Error: {}", msg),
+            WorkerError::Database(msg) => write!(f, "Database Error: {}", msg),
+            WorkerError::Embedding(msg) => write!(f, "Embedding Error: {}", msg),
+            WorkerError::VertexAI(msg) => write!(f, "Vertex AI Error: {}", msg),
             WorkerError::Serialization(msg) => write!(f, "Serialization Error: {}", msg),
         }
     }
@@ -27,9 +31,15 @@ impl From<lapin::Error> for WorkerError {
     }
 }
 
+impl From<sqlx::Error> for WorkerError {
+    fn from(err: sqlx::Error) -> Self {
+        WorkerError::Database(err.to_string())
+    }
+}
+
 impl From<reqwest::Error> for WorkerError {
     fn from(err: reqwest::Error) -> Self {
-        WorkerError::AnythingLLM(err.to_string())
+        WorkerError::VertexAI(err.to_string())
     }
 }
 

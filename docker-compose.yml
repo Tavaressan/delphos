@@ -45,29 +45,6 @@ services:
       timeout: 5s
       retries: 5
 
-  anythingllm:
-    image: mintplexlabs/anythingllm:latest
-    container_name: rag_anythingllm
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-rag_db}
-      PORT: 3001
-      STORAGE_DIR: /app/server/storage
-      DB_ENGINE: postgres
-    cap_add:
-      - SYS_ADMIN
-    volumes:
-      - anythingllm_data:/app/server/storage
-      - anythingllm_collector_hotdir:/app/collector/hotdir
-      - anythingllm_collector_outputs:/app/collector/outputs
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:3001/api/ping" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   core:
     build:
       context: .
@@ -79,8 +56,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      anythingllm:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -107,19 +82,19 @@ services:
       timeout: 5s
       retries: 5
 
-  structurizr:
-    image: structurizr/structurizr
-    container_name: structurizr
-    command: local
-    ports:
-      - "8081:8080"
-    volumes:
-      - ./docs/architecture:/usr/local/structurizr
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+#  structurizr:
+#    image: structurizr/structurizr
+#    container_name: structurizr
+#    command: local
+#    ports:
+#      - "8081:8080"
+#    volumes:
+#      - ./docs/architecture:/usr/local/structurizr
+#    healthcheck:
+#      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+#      interval: 30s
+#      timeout: 10s
+#      retries: 3
 
   embedding-service:
     build:
@@ -160,10 +135,16 @@ services:
     container_name: rag_worker
     env_file:
       - .env
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/gcp-key.json
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:/app/credentials/gcp-key.json
     depends_on:
-      core:
+      postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      embedding-service:
         condition: service_healthy
 
   workflow-worker:
@@ -193,6 +174,9 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/gcp-key.json
+    volumes:
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:/app/credentials/gcp-key.json
     depends_on:
       core:
         condition: service_healthy
@@ -240,7 +224,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-  anythingllm_data:
-  anythingllm_collector_hotdir:
-  anythingllm_collector_outputs:
   rabbitmq_data:

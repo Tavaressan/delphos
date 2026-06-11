@@ -28,9 +28,7 @@ services:
       - "9000:9000"
       - "9001:9001"
 
-  anythingllm:
-    ports:
-      - "3001:3001" # Acesso local à interface administrativa do AnythingLLM
+
 
   core:
     ports:
@@ -39,5 +37,9 @@ services:
   embedding-service:
     ports:
       - "8000:8000"
+
+  frontend:
+    ports:
+      - "3000:3000"
 
 

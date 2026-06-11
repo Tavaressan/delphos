@@ -36,3 +36,14 @@ Cargo.lock
 # Docker
 *.log
 .env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+test_models.py
+
+# Agents
+.agents/
+
+

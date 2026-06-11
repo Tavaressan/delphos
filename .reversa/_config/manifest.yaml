@@ -1,0 +1,58 @@
+installation:
+  version: 1.2.43
+  installDate: 2026-06-11T16:28:32.788Z
+  lastUpdated: 2026-06-11T16:28:32.788Z
+
+engines:
+  - antigravity
+
+agents:
+  - reversa
+  - reversa-scout
+  - reversa-archaeologist
+  - reversa-architect
+  - reversa-arquitetura-3d
+  - reversa-audit
+  - reversa-clarify
+  - reversa-coding
+  - reversa-curator
+  - reversa-data-master
+  - reversa-design-system
+  - reversa-designer
+  - reversa-detective
+  - reversa-docs
+  - reversa-docs-analyst
+  - reversa-docs-mapper
+  - reversa-docs-publisher
+  - reversa-docs-storyteller
+  - reversa-drafter
+  - reversa-especialista-d3
+  - reversa-extract-soul
+  - reversa-forward
+  - reversa-highcharts-visualizer
+  - reversa-ideator
+  - reversa-image-prompt-json
+  - reversa-inspector
+  - reversa-migrate
+  - reversa-n8n
+  - reversa-new
+  - reversa-paradigm-advisor
+  - reversa-plan
+  - reversa-pricing-estimate
+  - reversa-pricing-profile
+  - reversa-pricing-size
+  - reversa-principles
+  - reversa-quality
+  - reversa-reconstructor
+  - reversa-requirements
+  - reversa-researcher
+  - reversa-resume
+  - reversa-reviewer
+  - reversa-scout
+  - reversa-screen-translator
+  - reversa-selo-generativo
+  - reversa-spec-sdd
+  - reversa-strategist
+  - reversa-to-do
+  - reversa-visor
+  - reversa-writer

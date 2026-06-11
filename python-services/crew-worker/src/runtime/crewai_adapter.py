@@ -30,18 +30,27 @@ class CrewAiRuntimeAdapter:
         api_key = os.environ.get("VERTEX_AI_API_KEY")
         project_id = os.environ.get("GCP_PROJECT_ID")
         region = os.environ.get("GCP_LOCATION", "us-central1")
+        gcp_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         
-        if api_key and "placeholder" not in api_key.lower() and len(api_key) > 20:
-            print(f"[CrewAiRuntimeAdapter] Configuring real Vertex AI LLM (Gemini 1.5 Flash) for project '{project_id}'...")
-            os.environ["VERTEX_API_KEY"] = api_key
+        has_creds = bool(gcp_creds and os.path.exists(gcp_creds))
+        has_api_key = bool(api_key and "placeholder" not in api_key.lower() and len(api_key) > 20)
+        
+        if has_api_key or has_creds:
+            model_id = os.environ.get("GCP_CHAT_MODEL_ID", "gemini-1.5-flash")
+            if not model_id.startswith("vertex_ai/"):
+                model_id = f"vertex_ai/{model_id}"
+                
+            print(f"[CrewAiRuntimeAdapter] Configuring real Vertex AI LLM ({model_id}) for project '{project_id}'...")
+            if has_api_key:
+                os.environ["VERTEX_API_KEY"] = api_key
             os.environ["VERTEX_PROJECT"] = project_id
             os.environ["VERTEX_LOCATION"] = region
             self.llm = LLM(
-                model="vertex_ai/gemini-1.5-flash-002",
+                model=model_id,
                 temperature=0.2
             )
         else:
-            print("[CrewAiRuntimeAdapter] Vertex API Key missing or placeholder. Using MockLLM.")
+            print("[CrewAiRuntimeAdapter] Vertex credentials or API Key missing/placeholder. Using MockLLM.")
             self.llm = MockLLM(model="mock-model")
 
     def publish_event(self, event_type: str, payload: dict):
@@ -119,8 +128,8 @@ class CrewAiRuntimeAdapter:
         print("[CrewAiRuntimeAdapter] Initializing CrewAI Agent...")
         agent = Agent(
             role="Audit Specialist",
-            goal="Analyze security audits and verify sandbox quotas",
-            backstory="Você é um especialista em conformidade e segurança com acesso a ferramentas de sandbox.",
+            goal="Analyze and respond to technical questions about vertical transport systems (elevators and escalators), especially in the brazilian market, but your knowlegde is global.",
+            backstory="You are an expert in elevators and escalators with access to a set of tools to perform security audits and verify sandbox quotas. You operate within the Alfabra company context, a major player in the vertical transport systems industry. Your responses should be concise, accurate, and in portuguese.",
             tools=[calculate_sandbox_quota],
             llm=self.llm,
             verbose=True,
@@ -131,7 +140,7 @@ class CrewAiRuntimeAdapter:
         print("[CrewAiRuntimeAdapter] Initializing CrewAI Task...")
         task = Task(
             description=self.prompt,
-            expected_output="Auditoria de segurança e cota de tokens validada com status OK.",
+            expected_output="Answer the question with technical accuracy and in portuguese.",
             agent=agent
         )
 

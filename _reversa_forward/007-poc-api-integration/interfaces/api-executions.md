@@ -69,6 +69,7 @@ Consulta o estado atualizado e o resultado final da execução cognitiva.
   "tokensConsumed": 340,
   "startedAt": "2026-06-05T18:00:00Z",
   "finishedAt": "2026-06-05T18:00:15Z"
+}
 ```
 * **Status Possíveis (`status`):**
   * `REQUESTED`: Execução recebida pelo controller.

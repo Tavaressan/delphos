@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class',
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -10,41 +11,44 @@ module.exports = {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#22409A',
-          dark: '#183072',
-          light: '#3b5cb8',
+          DEFAULT: 'var(--primary)',
+          dark: 'var(--primary-dark)',
+          light: 'var(--primary-light)',
         },
         secondary: {
-          DEFAULT: '#E5E4E2',
-          dark: '#CCCCCC',
-          light: '#F5F4F2',
+          DEFAULT: 'var(--secondary)',
+          dark: 'var(--secondary-dark)',
+          light: 'var(--secondary-light)',
         },
         accent: {
-          DEFAULT: '#00ACC1',
-          dark: '#00838F',
-          light: '#4DD0E1',
+          DEFAULT: 'var(--accent)',
+          dark: 'var(--accent-dark)',
+          light: 'var(--accent-light)',
         },
         success: {
-          DEFAULT: '#2E7D32',
-          dark: '#1B5E20',
-          light: '#4CAF50',
+          DEFAULT: 'var(--success)',
+          dark: 'var(--success-dark)',
+          light: 'var(--success-light)',
         },
         warning: {
-          DEFAULT: '#F9A825',
-          dark: '#F57F17',
-          light: '#FBC02D',
+          DEFAULT: 'var(--warning)',
+          dark: 'var(--warning-dark)',
+          light: 'var(--warning-light)',
         },
         danger: {
-          DEFAULT: '#C62828',
-          dark: '#B71C1C',
-          light: '#E53935',
+          DEFAULT: 'var(--danger)',
+          dark: 'var(--danger-dark)',
+          light: 'var(--danger-light)',
         },
-        background: '#FBFBFE',
-        surface: '#FFFFFF',
+        background: 'var(--background)',
+        surface: 'var(--surface)',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'border-color': 'var(--border-color)',
       },
       fontFamily: {
-        heading: ['Orbitron', 'sans-serif'],
-        body: ['Overpass', 'sans-serif'],
+        heading: ['var(--font-inter)', 'Inter', 'sans-serif'],
+        body: ['var(--font-inter)', 'Inter', 'sans-serif'],
       },
       fontWeight: {
         light: '200',

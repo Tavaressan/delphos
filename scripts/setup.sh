@@ -40,7 +40,5 @@ echo ""
 echo "🌍 Local URLs:"
 echo "- Frontend: http://localhost:3000"
 echo "- Java Core: http://localhost:8080"
-echo "- AnythingLLM: http://localhost:3001"
-echo "- Structurizr: http://localhost:8081"
 echo ""
 docker compose ps
