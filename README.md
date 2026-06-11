@@ -19,35 +19,37 @@ graph TD
     A -->|Administra| FE
 
     subgraph Platform ["🏗️ Plataforma Alfabra Vector"]
-        FE -->|HTTPS| NX[Nginx Proxy]
-        NX -->|API REST| JC[Java Core API]
+        FE -->|HTTPS| CX[Caddy Proxy]
+        CX -->|API REST| JC[Java Core API]
         
-        JC -->|Orquestra RAG| AL[AnythingLLM]
         JC -->|Cache/Sessões| RD[Redis]
-        JC -->|Dados/Vetores| PG[(PostgreSQL + pgvector)]
+        JC -->|Dados/Metadados| PG[(PostgreSQL + pgvector)]
         JC -->|Uploads| MO[MinIO / S3]
-        JC -.->|Enfileira Jobs| CA[CrewAI Agent Runtime Orchestrator]
+        JC -.->|Enfileira Jobs| RMQ[RabbitMQ Broker]
 
-        subgraph Processing ["⚙️ Processamento de Documentos (Rust)"]
-            RW[Ingestion Worker]
-            DP[Doc Processing]
-            ES[Embedding Service]
+        subgraph Processors ["⚙️ Workers e Serviços"]
+            IW[Ingestion Worker - Rust]
+            RGW[RAG Worker - Rust]
+            CW[CrewAI Worker - Python]
+            ES[Embedding Service - Rust]
         end
 
-        JC -.->|Enfileira| RW
-        RW --> DP
-        DP --> ES
-        ES --> PG
-        CA -->|Busca Vetores| PG
+        RMQ -.->|Job Ingestão| IW
+        RMQ -.->|Job RAG/Chat| RGW
+        RMQ -.->|Job Agente| CW
+
+        IW -->|Gera Embeddings| ES
+        ES -->|Persiste Vetores| PG
+        RGW -->|Busca Vetorial pgvector| PG
     end
 
     subgraph External ["☁️ Provedor de IA"]
         VAI[Vertex AI / Gemini]
     end
 
-    AL -->|LLM/Embed| VAI
     ES -->|Gera Embeddings| VAI
-    CA -->|Raciocínio/LLM| VAI
+    RGW -->|Gera Resposta RAG| VAI
+    CW -->|Raciocínio/LLM| VAI
 
     classDef user fill:#08427b,color:#fff,stroke:#333,stroke-width:2px;
     classDef platform fill:#438dd5,color:#fff,stroke:#333,stroke-width:2px;
@@ -55,7 +57,7 @@ graph TD
     classDef external fill:#f9f9f9,color:#333,stroke:#666,stroke-dasharray: 5 5;
 
     class U,A user;
-    class FE,NX,JC,AL,MO,RD,RW,DP,ES,CA platform;
+    class FE,CX,JC,MO,RD,IW,RGW,CW,ES,RMQ platform;
     class PG db;
     class VAI external;
 ```
@@ -64,10 +66,10 @@ graph TD
 A organização do código segue um padrão modular:
 
 - **`frontend/`**: Interface web moderna construída com Next.js 15, React e TypeScript.
-- **`java-core/`**: API principal desenvolvida em Java 21 com Spring Boot. Implementa as regras de negócio e orquestração do fluxo RAG.
-- **`rust-services/`**: Serviços de alta performance em Rust para processamento pesado de documentos e geração de embeddings.
-- **`anythingllm/`**: Engine RAG desacoplada utilizada como infraestrutura plugável para o MVP.
-- **`infrastructure/`**: Configurações de Docker, Nginx, monitoramento e scripts de ambiente.
+- **`java-core/`**: API principal desenvolvida em Java 21 com Spring Boot. Implementa as regras de negócio e a autenticação/RBAC do sistema.
+- **`rust-services/`**: Serviços de alta performance em Rust para processamento pesado de documentos, geração de embeddings e processamento de RAG.
+- **`python-services/`**: Serviços em Python contendo o container do `crew-worker` para orquestração de agentes.
+- **`infrastructure/`**: Configurações de Docker, Caddy, monitoramento e scripts de ambiente.
 - **`docs/`**: Documentação técnica detalhada, incluindo ADRs (Architectural Decision Records).
 
 ## 🚀 Destaques Tecnológicos
