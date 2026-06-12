@@ -1,13 +1,10 @@
 {
   "schema-version": 1,
-  "feature-dir": "_reversa_forward/009-ui-modernization",
-  "feature-id": "009",
-  "short-name": "ui-modernization",
-  "started-at": "2026-06-10T14:17:54Z",
-  "current-stage": "plan",
-  "stages-completed": [
-    "requirements",
-    "clarify"
-  ],
+  "feature-dir": "_reversa_forward/010-rag-worker-validation",
+  "feature-id": "010",
+  "short-name": "rag-worker-validation",
+  "started-at": "2026-06-12T12:54:00Z",
+  "current-stage": "requirements",
+  "stages-completed": [],
   "paused-features": []
 }

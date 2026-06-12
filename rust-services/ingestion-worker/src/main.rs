@@ -186,7 +186,7 @@ async fn process_delivery(pool: &sqlx::PgPool, body: &str) -> Result<()> {
         }
         Err(err) => {
             // Mudar status para FAILED com erro
-            let err_msg = err.to_string();
+            let err_msg = format!("{:#}", err);
             println!(
                 "Failed to process document {}: {}",
                 job.document_id, err_msg

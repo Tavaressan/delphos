@@ -82,19 +82,19 @@ services:
       timeout: 5s
       retries: 5
 
-#  structurizr:
-#    image: structurizr/structurizr
-#    container_name: structurizr
-#    command: local
-#    ports:
-#      - "8081:8080"
-#    volumes:
-#      - ./docs/architecture:/usr/local/structurizr
-#    healthcheck:
-#      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
-#      interval: 30s
-#      timeout: 10s
-#      retries: 3
+  #  structurizr:
+  #    image: structurizr/structurizr
+  #    container_name: structurizr
+  #    command: local
+  #    ports:
+  #      - "8081:8080"
+  #    volumes:
+  #      - ./docs/architecture:/usr/local/structurizr
+  #    healthcheck:
+  #      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+  #      interval: 30s
+  #      timeout: 10s
+  #      retries: 3
 
   embedding-service:
     build:
@@ -155,8 +155,6 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/rag_db
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
-      - ANYTHINGLLM_API_KEY=${ANYTHINGLLM_API_KEY:-anythingllm_api_key_placeholder}
-      - ANYTHINGLLM_API_URL=http://anythingllm:3001/api/v1
     env_file:
       - .env
     depends_on:
