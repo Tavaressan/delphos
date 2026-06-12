@@ -22,13 +22,13 @@
 
 | ID | Descrição | Dependências | Paralelismo | Arquivo alvo | Confidência | Status |
 |----|-----------|--------------|-------------|--------------|-------------|--------|
-| T002 | Executar a suite de testes E2E do repositório (`npm run test:e2e`) para validar o fluxo do chat de RAG. | T001 | - | `tests/e2e/runner.test.js` | 🟢 | `[ ]` |
+| T002 | Executar a suite de testes E2E do repositório (`npm run test:e2e`) para validar o fluxo do chat de RAG. | T001 | - | `tests/e2e/runner.test.js` | 🟢 | `[X]` |
 
 ## Fase 3, Núcleo
 
 | ID | Descrição | Dependências | Paralelismo | Arquivo alvo | Confidência | Status |
 |----|-----------|--------------|-------------|--------------|-------------|--------|
-| T003 | Realizar uma consulta via curl/REST diretamente no endpoint `/api/executions` para validar a resposta do RAG integrado com pgvector/Gemini. | T002 | - | `java-core/src/main/java/com/company/core/` | 🟢 | `[ ]` |
+| T003 | Realizar uma consulta via curl/REST diretamente no endpoint `/api/executions` para validar a resposta do RAG integrado com pgvector/Gemini. | T002 | - | `java-core/src/main/java/com/company/core/` | 🟢 | `[X]` |
 
 ## Fase 4, Integração
 
@@ -38,7 +38,7 @@ n/a
 
 | ID | Descrição | Dependências | Paralelismo | Arquivo alvo | Confidência | Status |
 |----|-----------|--------------|-------------|--------------|-------------|--------|
-| T004 | Analisar e capturar os logs dos containers `rag-worker` e `core` confirmando o encerramento com sucesso do fluxo RAG. | T003 | `[//]` | `_reversa_forward/010-rag-worker-validation/onboarding.md` | 🟢 | `[ ]` |
+| T004 | Analisar e capturar os logs dos containers `rag-worker` e `core` confirmando o encerramento com sucesso do fluxo RAG. | T003 | `[//]` | `_reversa_forward/010-rag-worker-validation/onboarding.md` | 🟢 | `[X]` |
 
 ## Notas de execução
 

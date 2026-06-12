@@ -1,4 +1,7 @@
-# Alfabra Vector - Caddy Reverse Proxy Configuration
+{
+    acme_ca {$ACME_CA_URL:-https://acme-v02.api.letsencrypt.org/directory}
+    email {$ACME_EMAIL:-admin@company.com}
+}
 
 {$DOMAIN_NAME} {
     # Habilita o HTTPS usando o DNS Challenge com DuckDNS

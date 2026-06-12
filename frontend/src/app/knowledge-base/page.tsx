@@ -57,26 +57,26 @@ export default function KnowledgeBasePage() {
   }, [docs, kbFilter, kbSortField]);
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-slate-800">
+    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary">
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto bg-slate-50 p-6 flex flex-col min-h-0 font-body">
+        <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-background p-6 flex flex-col min-h-0 font-body">
           
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-wide text-slate-800 heading-font uppercase">Gerenciador de Bases de Conhecimento</h2>
+              <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Gerenciador de Bases de Conhecimento</h2>
               <p className="text-slate-400 text-xs mt-1">Carregue documentos corporativos para o pipeline de processamento vetorial PostgreSQL com pgvector.</p>
             </div>
             
             <div className="flex gap-4 text-xs">
-              <div className="bg-white border border-slate-200 rounded p-3 flex flex-col shadow-discrete text-left">
-                <span className="text-[10px] text-slate-400 uppercase font-bold">Total Indexado</span>
+              <div className="bg-white dark:bg-surface border border-slate-200 dark:border-border-color rounded p-3 flex flex-col shadow-discrete text-left">
+                <span className="text-[10px] text-text-secondary uppercase font-bold">Total Indexado</span>
                 <span className="font-bold text-primary text-base">2.95k Chunks</span>
               </div>
-              <div className="bg-white border border-slate-200 rounded p-3 flex flex-col shadow-discrete text-left">
-                <span className="text-[10px] text-slate-400 uppercase font-bold">Limites de Espaço</span>
-                <span className="font-bold text-slate-700 text-base">44.9 MB / 100 MB</span>
+              <div className="bg-white dark:bg-surface border border-slate-200 dark:border-border-color rounded p-3 flex flex-col shadow-discrete text-left">
+                <span className="text-[10px] text-text-secondary uppercase font-bold">Limites de Espaço</span>
+                <span className="font-bold text-text-primary text-base">44.9 MB / 100 MB</span>
               </div>
             </div>
           </div>
@@ -91,7 +91,7 @@ export default function KnowledgeBasePage() {
               {/* Table of indexed files */}
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <h3 className="font-bold text-slate-700 text-sm heading-font uppercase">Documentos da Coleção</h3>
+                  <h3 className="font-bold text-text-primary text-sm heading-font uppercase">Documentos da Coleção</h3>
                   
                   <div className="flex items-center gap-2">
                     <div className="relative">
@@ -131,7 +131,7 @@ export default function KnowledgeBasePage() {
                     <tbody>
                       {sortedAndFilteredDocs.map((doc) => (
                         <tr key={doc.id}>
-                          <td className="font-semibold text-slate-800">{doc.name}</td>
+                          <td className="font-semibold text-text-primary">{doc.name}</td>
                           <td>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 w-max ${
                               doc.status === 'INDEXED' ? 'bg-success/10 text-success border border-success/10' :
@@ -149,7 +149,7 @@ export default function KnowledgeBasePage() {
                             </span>
                           </td>
                           <td>{doc.size}</td>
-                          <td className="font-mono text-slate-500 font-bold">{doc.chunks}</td>
+                          <td className="font-mono text-text-secondary font-bold">{doc.chunks}</td>
                           <td>{doc.date}</td>
                           <td>{doc.author}</td>
                         </tr>
@@ -163,10 +163,10 @@ export default function KnowledgeBasePage() {
 
             {/* Right Sidebar: Chunking configurations & pgvector dimension preview */}
             <div className="w-full xl:w-80 flex flex-col gap-4 flex-shrink-0">
-              <div className="bg-white border border-slate-200 rounded shadow-discrete p-5 flex flex-col gap-4">
-                <div className="border-b border-slate-100 pb-2.5 flex items-center gap-2">
+              <div className="bg-white dark:bg-surface border border-slate-200 dark:border-border-color rounded shadow-discrete p-5 flex flex-col gap-4">
+                <div className="border-b border-slate-100 dark:border-border-color pb-2.5 flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-primary" />
-                  <h3 className="font-bold text-slate-800 text-xs heading-font uppercase">Configurações de Chunking</h3>
+                  <h3 className="font-bold text-text-primary text-xs heading-font uppercase">Configurações de Chunking</h3>
                 </div>
 
                 <div className="flex flex-col gap-4 text-left">
@@ -181,7 +181,7 @@ export default function KnowledgeBasePage() {
                   <div>
                     <div className="flex justify-between items-center mb-1">
                       <label className="label-alfabra m-0">Chunk Size (caracteres)</label>
-                      <span className="text-xs font-bold text-slate-600">{chunkSize}</span>
+                      <span className="text-xs font-bold text-text-secondary">{chunkSize}</span>
                     </div>
                     <input 
                       type="range" 
@@ -196,7 +196,7 @@ export default function KnowledgeBasePage() {
                   <div>
                     <div className="flex justify-between items-center mb-1">
                       <label className="label-alfabra m-0">Chunk Overlap</label>
-                      <span className="text-xs font-bold text-slate-600">{chunkOverlap}</span>
+                      <span className="text-xs font-bold text-text-secondary">{chunkOverlap}</span>
                     </div>
                     <input 
                       type="range" 
@@ -208,27 +208,27 @@ export default function KnowledgeBasePage() {
                     />
                   </div>
 
-                  <div className="h-[1px] bg-slate-100" />
+                  <div className="h-[1px] bg-slate-100 dark:bg-border-color" />
 
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Habilitar OCR (Tesseract)</span>
+                    <span className="text-xs font-bold text-text-secondary">Habilitar OCR (Tesseract)</span>
                     <input type="checkbox" className="accent-primary h-4 w-4 cursor-pointer" defaultChecked />
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Abstração de Embeddings</span>
+                    <span className="text-xs font-bold text-text-secondary">Abstração de Embeddings</span>
                     <span className="text-[10px] font-bold text-primary uppercase bg-primary/5 px-2 py-0.5 border border-primary/10 rounded">Vertex AI</span>
                   </div>
                 </div>
               </div>
 
               {/* Database specifications info */}
-              <div className="bg-white border border-slate-200 rounded shadow-discrete p-5 flex flex-col gap-3">
-                <h3 className="font-bold text-slate-700 text-xs heading-font uppercase border-b border-slate-100 pb-2">Status do pgvector (Postgres 16)</h3>
-                <div className="flex flex-col gap-2 font-mono text-[10px] text-slate-500 text-left">
+              <div className="bg-white dark:bg-surface border border-slate-200 dark:border-border-color rounded shadow-discrete p-5 flex flex-col gap-3">
+                <h3 className="font-bold text-text-primary text-xs heading-font uppercase border-b border-slate-100 dark:border-border-color pb-2">Status do pgvector (Postgres 16)</h3>
+                <div className="flex flex-col gap-2 font-mono text-[10px] text-text-secondary text-left">
                   <div className="flex justify-between">
                     <span>COLUNA VETORIAL:</span>
-                    <span className="font-bold text-slate-700">embedding vector(DIMENSION)</span>
+                    <span className="font-bold text-text-primary">embedding vector(DIMENSION)</span>
                   </div>
                   <div className="flex justify-between">
                     <span>DIMENSIONATIZAÇÃO:</span>

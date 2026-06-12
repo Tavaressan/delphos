@@ -54,14 +54,14 @@ export default function CatalogPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-slate-800">
+    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary">
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto bg-slate-50 p-6 flex flex-col min-h-0 font-body">
+        <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-background p-6 flex flex-col min-h-0 font-body">
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-wide text-slate-800 heading-font uppercase">Catálogo de Agentes Homologados</h2>
+              <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Catálogo de Agentes Homologados</h2>
               <p className="text-slate-400 text-xs mt-1">Gestão de permissões de deploy de pacotes de conformidade de agentes cognitivos.</p>
             </div>
 
@@ -86,15 +86,15 @@ export default function CatalogPage() {
                   <div key={agent.id} className="card-alfabra flex flex-col justify-between gap-4">
                     <div className="flex flex-col gap-2 text-left">
                       <div className="flex justify-between items-start">
-                        <h3 className="font-bold text-slate-800 text-base">{agent.name}</h3>
-                        <span className="text-[10px] bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-mono font-bold">
+                        <h3 className="font-bold text-text-primary text-base">{agent.name}</h3>
+                        <span className="text-[10px] bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-border-color px-2 py-0.5 rounded font-mono font-bold">
                           {agent.version}
                         </span>
                       </div>
-                      <p className="text-slate-500 text-xs leading-relaxed">{agent.description}</p>
+                      <p className="text-text-secondary text-xs leading-relaxed">{agent.description}</p>
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                    <div className="flex items-center justify-between border-t border-border-color pt-3">
                       <span className="bg-primary/5 text-primary text-[10px] font-bold px-2 py-0.5 rounded border border-primary/10">
                         #{agent.tag}
                       </span>
@@ -124,9 +124,9 @@ export default function CatalogPage() {
             </div>
 
             {/* Painel lateral: Enviar novo manifesto AgentPackage (ROLE_ADMIN) */}
-            <div className="w-full lg:w-96 bg-white border border-slate-200 rounded shadow-discrete p-6 flex flex-col gap-5 flex-shrink-0">
-              <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-                <h3 className="font-bold text-slate-800 text-sm heading-font uppercase">Homologar Novo Agente</h3>
+            <div className="w-full lg:w-96 bg-white dark:bg-surface border border-slate-200 dark:border-border-color rounded shadow-discrete p-6 flex flex-col gap-5 flex-shrink-0">
+              <div className="border-b border-slate-100 dark:border-border-color pb-3 flex items-center justify-between">
+                <h3 className="font-bold text-text-primary text-sm heading-font uppercase">Homologar Novo Agente</h3>
                 <span className="text-[10px] bg-red-100 text-danger border border-red-200 px-1.5 py-0.5 rounded font-mono font-bold">ADMIN ONLY</span>
               </div>
 
@@ -180,8 +180,8 @@ export default function CatalogPage() {
                 </div>
 
                 {/* Simulação de manifest.yaml */}
-                <div className="bg-slate-50 border border-slate-200 rounded p-3 text-[10px] font-mono text-slate-500 text-left">
-                  <span className="font-bold text-slate-700">manifest.yaml preview:</span>
+                <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-border-color rounded p-3 text-[10px] font-mono text-text-secondary text-left">
+                  <span className="font-bold text-text-primary">manifest.yaml preview:</span>
                   <pre className="mt-1.5 overflow-x-auto text-[9px] leading-tight">
 {`name: "${newAgentName || 'untitled-agent'}"
 version: "${newAgentVersion}"

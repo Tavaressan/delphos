@@ -29,14 +29,18 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
   });
 
   test('T004 - Validação do Ciclo de Vida do Ambiente (reset.sh e setup.sh)', async () => {
-    console.log('Passo 1: Executando scripts de reinicialização e provisionamento do ambiente...');
+    if (process.env.SKIP_RESET === 'true') {
+      console.log('Passo 1: SKIP_RESET=true detectado. Pulando scripts de reinicialização do ambiente Docker.');
+    } else {
+      console.log('Passo 1: Executando scripts de reinicialização e provisionamento do ambiente...');
 
-    // Executar reset.sh e setup.sh
-    try {
-      execSync('./scripts/reset.sh', { stdio: 'inherit' });
-      execSync('./scripts/setup.sh', { stdio: 'inherit' });
-    } catch (err) {
-      assert.fail(`Erro ao executar scripts de inicialização: ${err.message}`);
+      // Executar reset.sh e setup.sh
+      try {
+        execSync('./scripts/reset.sh', { stdio: 'inherit' });
+        execSync('./scripts/setup.sh', { stdio: 'inherit' });
+      } catch (err) {
+        assert.fail(`Erro ao executar scripts de inicialização: ${err.message}`);
+      }
     }
 
     console.log('Passo 2: Monitorando healthchecks dos serviços...');

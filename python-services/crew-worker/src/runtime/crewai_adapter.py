@@ -127,7 +127,7 @@ class CrewAiRuntimeAdapter:
         # 4. Initialize CrewAI Agent
         print("[CrewAiRuntimeAdapter] Initializing CrewAI Agent...")
         agent = Agent(
-            role="Audit Specialist",
+            role="Elevator Specialist",
             goal="Analyze and respond to technical questions about vertical transport systems (elevators and escalators), especially in the brazilian market, but your knowlegde is global.",
             backstory="You are an expert in elevators and escalators with access to a set of tools to perform security audits and verify sandbox quotas. You operate within the Alfabra company context, a major player in the vertical transport systems industry. Your responses should be concise, accurate, and in portuguese.",
             tools=[calculate_sandbox_quota],

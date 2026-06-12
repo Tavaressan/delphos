@@ -58,7 +58,7 @@ export const Header: React.FC = () => {
   return (
     <header className="h-16 bg-surface border-b border-border-color flex items-center justify-between px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
       <div className="flex items-center gap-3">
-        <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-8 object-contain dark:invert transition-all duration-200" />
+        <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-8 object-contain dark:brightness-0 dark:invert transition-all duration-200" />
         <span className="h-5 w-[1px] bg-border-color" />
         <h1 className="text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
           Enterprise Agent Operating Platform
