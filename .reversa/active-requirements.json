@@ -1,9 +1,9 @@
 {
   "schema-version": 1,
-  "feature-dir": "_reversa_forward/010-rag-worker-validation",
-  "feature-id": "010",
-  "short-name": "rag-worker-validation",
-  "started-at": "2026-06-12T12:54:00Z",
+  "feature-dir": "_reversa_forward/013-ci-security-hardening",
+  "feature-id": "013",
+  "short-name": "ci-security-hardening",
+  "started-at": "2026-06-16T13:37:00Z",
   "current-stage": "requirements",
   "stages-completed": [],
   "paused-features": []

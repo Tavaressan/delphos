@@ -98,7 +98,7 @@ export const useExecution = (onSuccess?: (output: string) => void) => {
     return newEvents;
   };
 
-  const submitPrompt = async (prompt: string) => {
+  const submitPrompt = async (prompt: string, agentId?: string, conversationId?: string) => {
     setIsLoading(true);
     setError(null);
     stopPolling();
@@ -109,7 +109,7 @@ export const useExecution = (onSuccess?: (output: string) => void) => {
     setTimeline(initialEvents);
 
     try {
-      const execution = await submitUseCase.execute({ prompt, tenantId });
+      const execution = await submitUseCase.execute({ prompt, tenantId, agentId, conversationId });
       setActiveExecution(execution);
 
       // Update timeline to Queued

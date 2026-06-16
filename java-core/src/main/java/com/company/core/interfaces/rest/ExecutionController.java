@@ -1,5 +1,9 @@
 package com.company.core.interfaces.rest;
 
+import com.company.core.domain.entities.Agent;
+import com.company.core.domain.entities.Message;
+import com.company.core.domain.repositories.AgentRepository;
+import com.company.core.domain.repositories.MessageRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.company.core.domain.entities.AgentExecution;
 import com.company.core.domain.entities.Conversation;
@@ -25,17 +29,26 @@ public class ExecutionController {
     private final AgentExecutionRepository executionRepository;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+    private final AgentRepository agentRepository;
+    private final MessageRepository messageRepository;
+    private final com.company.core.application.AuditService auditService;
 
     public ExecutionController(UserRepository userRepository,
                                ConversationRepository conversationRepository,
                                AgentExecutionRepository executionRepository,
                                RabbitTemplate rabbitTemplate,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               AgentRepository agentRepository,
+                               MessageRepository messageRepository,
+                               com.company.core.application.AuditService auditService) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
         this.executionRepository = executionRepository;
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
+        this.agentRepository = agentRepository;
+        this.messageRepository = messageRepository;
+        this.auditService = auditService;
     }
 
     @PostMapping
@@ -57,16 +70,40 @@ public class ExecutionController {
             });
 
             // 2. Create and save a Conversation
-            Conversation conversation = new Conversation();
-            conversation.setUser(user);
-            conversation.setTenantId(tenantId);
-            conversation.setTitle("Conversa de Teste RAG");
-            conversation = conversationRepository.save(conversation);
+            String convIdStr = request.get("conversationId");
+            Conversation conversation = null;
+            if (convIdStr != null && !convIdStr.isEmpty()) {
+                conversation = conversationRepository.findById(UUID.fromString(convIdStr)).orElse(null);
+            }
+
+            String agentIdStr = request.get("agentId");
+            Agent agent = null;
+            if (agentIdStr != null && !agentIdStr.isEmpty()) {
+                agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
+            }
+
+            if (conversation == null) {
+                conversation = new Conversation();
+                conversation.setUser(user);
+                conversation.setTenantId(tenantId);
+                conversation.setTitle(agent != null ? "Chat com " + agent.getName() : "Conversa de Teste RAG");
+                conversation.setAgent(agent);
+                conversation = conversationRepository.save(conversation);
+            }
+
+            // Save user message to database
+            Message userMessage = new Message();
+            userMessage.setConversation(conversation);
+            userMessage.setAuthorRole("USER");
+            userMessage.setContent(prompt);
+            messageRepository.save(userMessage);
 
             // 3. Create and save AgentExecution in REQUESTED status
             AgentExecution execution = new AgentExecution();
             execution.setConversation(conversation);
-            execution.setAgentId(UUID.randomUUID());
+            
+            UUID actualAgentId = (agent != null) ? agent.getId() : UUID.randomUUID();
+            execution.setAgentId(actualAgentId);
             execution.setStatus("REQUESTED");
             execution.setPromptFinal(prompt);
             execution.setStartedAt(Instant.now());
@@ -76,7 +113,7 @@ public class ExecutionController {
             Map<String, Object> payload = new HashMap<>();
             payload.put("execution_id", execution.getId().toString());
             payload.put("conversation_id", conversation.getId().toString());
-            payload.put("agent_id", execution.getAgentId().toString());
+            payload.put("agent_id", actualAgentId.toString());
             payload.put("tenant_id", tenantId.toString());
             payload.put("prompt_final", prompt);
 
@@ -90,6 +127,7 @@ public class ExecutionController {
             // 6. Transition to QUEUED status
             execution.setStatus("QUEUED");
             execution = executionRepository.save(execution);
+            auditService.logAction("SUBMIT_RAG_CHAT", "Execution: " + execution.getId(), "{\"agentId\":\"" + actualAgentId + "\",\"conversationId\":\"" + conversation.getId() + "\"}");
 
             // 7. Return JSON response
             Map<String, Object> response = new HashMap<>();
@@ -98,6 +136,7 @@ public class ExecutionController {
             response.put("status", execution.getStatus());
             response.put("prompt", execution.getPromptFinal());
             response.put("tenantId", tenantId.toString());
+            response.put("agentId", actualAgentId.toString());
 
             return ResponseEntity.ok(response);
 

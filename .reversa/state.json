@@ -1,25 +1,45 @@
 {
   "version": "1.2.43",
-  "project": "enterprise_rag_platform",
+  "project": "Alfabra-Vector",
   "user_name": "Vitor",
   "chat_language": "pt-br",
   "doc_language": "Português",
   "answer_mode": "chat",
-  "doc_level": "completo",
+  "doc_level": "essencial",
   "output_folder": "_reversa_sdd",
   "forward_folder": "_reversa_forward",
-  "phase": null,
-  "completed": [],
-  "pending": [
+  "phase": "interpretacao",
+  "completed": [
     "reconhecimento",
-    "escavacao",
+    "escavacao"
+  ],
+  "pending": [
     "interpretacao",
     "geracao",
     "revisao"
   ],
-  "checkpoints": {},
+  "checkpoints": {
+    "scout": {
+      "completed_at": "2026-06-16T14:50:09.396944Z",
+      "files": [
+        "_reversa_sdd/inventory.md",
+        "_reversa_sdd/dependencies.md",
+        ".reversa/context/surface.json"
+      ]
+    },
+    "archaeologist": {
+      "completed_at": "2026-06-16T15:35:24.212366Z",
+      "files": [
+        "_reversa_sdd/code-analysis.md",
+        ".reversa/context/modules.json"
+      ]
+    }
+  },
   "engines": [],
-  "agents": [],
+  "agents": [
+    "reversa-scout",
+    "reversa-archaeologist"
+  ],
   "created_files": [
     ".agents/skills/reversa-scout",
     ".agents/skills/reversa-archaeologist",
@@ -84,6 +104,11 @@
     ".reversa/setup.json",
     ".reversa/config.user.toml",
     ".reversa/version",
-    ".reversa/_config/manifest.yaml"
+    ".reversa/_config/manifest.yaml",
+    "_reversa_sdd/inventory.md",
+    "_reversa_sdd/dependencies.md",
+    ".reversa/context/surface.json",
+    "_reversa_sdd/code-analysis.md",
+    ".reversa/context/modules.json"
   ]
 }

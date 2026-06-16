@@ -1,160 +1,145 @@
-# Inventário do Projeto - alfabra_vector
+# Inventário do Projeto — Alfabra-Vector
 
-Este documento apresenta o inventário completo da superfície do repositório **alfabra_vector**, incluindo a árvore de arquivos, pontos de entrada principais, configurações, dockerização e recursos identificados pelo **Scout**.
+Este documento foi gerado automaticamente pelo **Scout** e contém o inventário completo da superfície do projeto.
 
-## 📁 Estrutura de Diretórios Mapeada
+---
 
-Abaixo está a estrutura simplificada do monorepo, excluindo diretórios de build, pacotes externos e arquivos de controle de versão (`.git`, `node_modules`, etc.):
+## 1. Estrutura de Diretórios do Projeto
+
+Abaixo está a representação da árvore de diretórios do projeto (excluindo pastas temporárias, dependências externas e build artifacts como `node_modules/`, `target/`, `.git/`, `.reversa/` e `_reversa_sdd/`):
 
 ```
 .
-├── anythingllm
-│   └── README.md
 ├── docker-compose.override.yml
 ├── docker-compose.yml
-├── docs
-│   └── architecture
-│       ├── README.md
-│       ├── workspace.dsl
-│       └── workspace.json
-├── frontend
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── package.json
-│   ├── src
-│   │   ├── README.md
-│   │   ├── app
-│   │   │   ├── auth
-│   │   │   │   └── layout.tsx
-│   │   │   └── layout.tsx
-│   │   ├── components
-│   │   ├── domain
-│   │   ├── features
-│   │   │   ├── auth
-│   │   │   ├── chat
-│   │   │   ├── documents
-│   │   │   ├── rag
-│   │   │   └── users
-│   │   ├── hooks
-│   │   ├── infrastructure
-│   │   ├── lib
-│   │   ├── providers
-│   │   ├── styles
-│   │   ├── types
-│   │   └── utils
-│   └── tests
-├── infrastructure
-│   ├── README.md
-│   ├── caddy
-│   │   ├── Caddyfile
-│   │   └── Dockerfile
-│   ├── postgres
-│   │   └── init.sql
-│   └── setup_firewall.sh
-├── java-core
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── build.gradle.kts
-│   ├── settings.gradle.kts
-│   └── src
-│       ├── main
-│       │   ├── java
-│       │   │   └── com
-│       │   │       └── company
-│       │   │           └── core
-│       │   │               ├── Application.java
-│       │   │               ├── application
-│       │   │               ├── domain
-│       │   │               │   ├── entities
-│       │   │               │   └── repositories
-│       │   │               ├── infrastructure
-│       │   │               │   ├── config
-│       │   │               │   ├── external
-│       │   │               │   └── persistence
-│       │   │               ├── interfaces
-│       │   │               │   ├── dto
-│       │   │               │   └── rest
-│       │   │               └── shared
-│       │   └── resources
-│       └── test
-├── package-lock.json
 ├── package.json
-├── rust-services
-│   ├── Cargo.lock
-│   ├── Cargo.toml
+├── package-lock.json
+├── README.md
+├── AGENTS.md
+├── frontend/
 │   ├── Dockerfile
-│   ├── document-processing
-│   │   ├── Cargo.toml
-│   │   ├── Dockerfile
-│   │   └── src
-│   │       └── main.rs
-│   ├── embedding-service
-│   │   ├── Cargo.toml
-│   │   ├── Dockerfile
-│   │   └── src
-│   │       └── main.rs
-│   ├── ingestion-worker
-│   │   ├── Cargo.toml
-│   │   ├── Dockerfile
-│   │   └── src
-│   │       └── main.rs
-│   └── shared
-│       ├── Cargo.toml
-│       └── src
-│           └── lib.rs
-└── scripts
-    ├── dev.sh
-    ├── logs.sh
-    ├── reset.sh
-    ├── setup.sh
-    └── stop.sh
+│   ├── next.config.js
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   ├── public/
+│   ├── src/
+│   │   ├── app/ (auth, catalog, knowledge-base, design-system)
+│   │   ├── components/ (ui, forms, layout, shared)
+│   │   ├── domain/ (entities, use-cases, repositories, dto)
+│   │   ├── features/ (chat, auth, admin, rag, users, documents)
+│   │   ├── hooks/
+│   │   ├── infrastructure/ (api, auth, storage, repositories, adapters)
+│   │   ├── lib/
+│   │   ├── providers/
+│   │   └── styles/
+│   └── tests/ (unit, layout, smoke, e2e)
+├── java-core/
+│   ├── build.gradle.kts
+│   ├── Dockerfile
+│   ├── gradlew
+│   ├── settings.gradle.kts
+│   └── src/
+│       ├── main/
+│       │   ├── java/com/company/core/ (Application.java, application, domain, infrastructure, interfaces, shared)
+│       │   └── resources/ (application.yml, db/migration/)
+│       └── test/
+├── rust-services/
+│   ├── Cargo.toml
+│   ├── Cargo.lock
+│   ├── Dockerfile
+│   ├── document-processing/
+│   ├── embedding-service/
+│   ├── ingestion-worker/
+│   ├── rag-worker/
+│   ├── shared/
+│   └── workflow-worker/
+├── python-services/
+│   └── crew-worker/
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       └── src/ (main.py, seed_rag.py, runtime, tools)
+├── infrastructure/
+│   ├── caddy/ (Dockerfile, Caddyfile)
+│   ├── docker/
+│   ├── kubernetes/
+│   ├── postgres/ (init.sql)
+│   └── setup_firewall.sh
+├── scripts/
+│   ├── dev.sh
+│   ├── logs.sh
+│   ├── reset.sh
+│   ├── setup.sh
+│   └── stop.sh
+└── tests/
+    └── e2e/ (runner.test.js, config.js)
 ```
 
-## 🎯 Pontos de Entrada da Aplicação
+---
 
-1. **Frontend (Next.js)**:
-   - `frontend/src/app/layout.tsx` (Ponto de entrada do Layout principal da aplicação)
-2. **Java Core API (Spring Boot)**:
-   - `java-core/src/main/java/com/company/core/Application.java` (Classe principal que inicializa o Spring Boot)
-3. **Serviços em Rust**:
-   - `rust-services/document-processing/src/main.rs` (Início do serviço de processamento de documentos - Axum)
-   - `rust-services/embedding-service/src/main.rs` (Início do serviço de embeddings - Axum)
-   - `rust-services/ingestion-worker/src/main.rs` (Início do daemon worker de ingestão - Tokio runtime loop)
+## 2. Módulos e Componentes Identificados
 
-## ⚙️ Configurações e DevOps
+### 2.1. Frontend (`frontend/`)
+- **Tecnologia**: Next.js (React) com TypeScript.
+- **Estilo**: TailwindCSS.
+- **Função**: Interface com o usuário (chats, base de conhecimento, catálogo, painel administrativo, design system).
+- **Testes**: Possui testes unitários, de layout, smoke e e2e estruturados na pasta `tests/`.
 
-- **Variáveis de Ambiente**: `.env.example` descrevendo as variáveis do PostgreSQL, JWT, MinIO, Caddy e DuckDNS.
-- **Orquestração Docker**: `docker-compose.yml` e `docker-compose.override.yml` com orquestração completa dos contêineres:
-  - `postgres` (pgvector)
-  - `redis` (cache)
-  - `minio` (armazenamento de arquivos)
-  - `anythingllm` (motor RAG de MVP)
-  - `core` (Spring Boot Java)
-  - `structurizr` (ferramenta de C4 Model)
-  - `document-processing` (Rust)
-  - `embedding-service` (Rust)
-  - `ingestion-worker` (Rust)
-  - `frontend` (Next.js)
-  - `caddy` (Proxy Reverso HTTPS)
-- **Caddyfile**: Configurado em `infrastructure/caddy/Caddyfile` para redirecionamento SSL/HTTPS com Let's Encrypt.
-- **Scripts Utilitários**:
-  - `scripts/setup.sh` (Configura e inicializa o ambiente inicial)
-  - `scripts/dev.sh` (Sobe o Docker Compose local)
-  - `scripts/stop.sh` (Para a execução do projeto)
-  - `scripts/reset.sh` (Reinicializa bancos e volumes)
-  - `scripts/logs.sh` (Exibe logs de execução)
-  - `infrastructure/setup_firewall.sh` (Configurações de segurança no host local)
+### 2.2. Java Core (`java-core/`)
+- **Tecnologia**: Spring Boot 3.2.5 com Java 21 e Gradle.
+- **Função**: API principal e orquestrador central de regras de negócio, persistência (JPA/Hibernate) e mensageria (RabbitMQ).
+- **Banco de Dados**: Migrations gerenciadas via Flyway.
 
-## 🗄️ Dicas de Banco de Dados
+### 2.3. Rust Services (`rust-services/`)
+- **Tecnologia**: Cargo Workspace com Rust stable.
+- **Função**: Processamento de dados de alta performance e workers:
+  - `embedding-service`: Geração de embeddings (integrado ao GCP Vertex AI).
+  - `ingestion-worker`: Processa a fila de ingestão de documentos.
+  - `rag-worker`: Gerencia operações de Retrieval-Augmented Generation conectadas ao Postgres (pgvector).
+  - `workflow-worker`: Máquina de execução de workflows persistida e integrada ao RabbitMQ.
+  - `document-processing`: Processamento preliminar de documentos.
+  - `shared`: Biblioteca compartilhada de utilitários (ex: gcp).
 
-- **Inicialização**: `infrastructure/postgres/init.sql` carrega as extensões `vector` (pgvector) e `uuid-ossp`.
-- **Versionamento**: O Spring Boot utiliza `flyway-core` para migrações futuras, embora a pasta de migrations esteja atualmente vazia ou sob orquestração de banco interna.
+### 2.4. Python Services (`python-services/`)
+- **Tecnologia**: Python 3 com CrewAI.
+- **Função**:
+  - `crew-worker`: Orquestração de agentes de IA usando CrewAI e litellm para execução de tarefas complexas e baseadas em papel.
 
-## 🧪 Cobertura de Testes
-
-- **Frontend**: O módulo `frontend/tests` foi identificado, contudo, sem frameworks específicos (como Jest ou Playwright) instalados formalmente nas dependências do `package.json`.
-- **Java Core**: JUnit Platform está ativado no `build.gradle.kts` através de `tasks.withType<Test> { useJUnitPlatform() }`. Nenhuma suite de testes implementada.
-- **Rust Services**: Sem suites de testes implementadas nos módulos rust.
+### 2.5. Infraestrutura (`infrastructure/`)
+- **Gateway/LB**: Caddy Server (`infrastructure/caddy/`).
+- **Orquestração local**: Docker Compose com Postgres + pgvector, Redis, MinIO, RabbitMQ.
+- **Orquestração cloud**: Manifestos do Kubernetes.
 
 ---
-*Gerado automaticamente pelo Scout durante a etapa de Reconhecimento.*
+
+## 3. Pontos de Entrada e Inicialização
+
+- **Serviço HTTP Core**: [Application.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/Application.java) (porta interna: `8080`).
+- **Interface Web**: [layout.tsx](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/app/layout.tsx) (porta interna: `3000`).
+- **Load Balancer**: [Caddyfile](file:///Users/vitortavares/Desktop/Alfabra-Vector/infrastructure/caddy/Caddyfile) (portas expostas: `80`, `443`).
+- **Workers assíncronos**:
+  - Rust: `main.rs` em `rag-worker`, `ingestion-worker`, `workflow-worker`, etc.
+  - Python: `main.py` em `crew-worker`.
+
+---
+
+## 4. Banco de Dados e Migrations
+
+- **Banco Principal**: PostgreSQL com extensão `pgvector`.
+- **Script de Iniciação**: [init.sql](file:///Users/vitortavares/Desktop/Alfabra-Vector/infrastructure/postgres/init.sql)
+- **Migrations (Flyway)**: Localizadas em [db/migration/](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/resources/db/migration/)
+  - `V1__init_schema.sql`
+  - `V2__reversa_target_schema.sql`
+  - `V3__workflow_schema.sql`
+  - `V4__seed_workflow_data.sql`
+  - `V5__add_agents_and_rag_isolation.sql`
+
+---
+
+## 5. Cobertura e Estrutura de Testes
+
+- **Testes Backend (Java)**: Cucumber para testes BDD/E2E em [src/test/java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/test/).
+- **Testes Frontend (Node/TS)**: Testes de layout, smoke, unit e e2e em [frontend/tests/](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/tests/).
+- **Testes Globais**: Runner E2E em [tests/e2e/runner.test.js](file:///Users/vitortavares/Desktop/Alfabra-Vector/tests/e2e/runner.test.js).

@@ -40,8 +40,19 @@ spring:
 server:
   port: 8080
 
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://alfabra-vector.vercel.app,https://*.vercel.app,http://localhost:[*]}
+
 management:
   endpoints:
     web:
       exposure:
         include: health, info, metrics
+
+minio:
+  url: ${MINIO_URL:http://localhost:9000}
+  access-key: ${MINIO_ROOT_USER:minioadmin}
+  secret-key: ${MINIO_ROOT_PASSWORD:minioadmin}
+  bucket: ${MINIO_BUCKET:agents-data}
+

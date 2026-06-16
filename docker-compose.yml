@@ -52,6 +52,8 @@ services:
     container_name: core-platform
     env_file:
       - .env
+    environment:
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://alfabra-vector.vercel.app,https://*.vercel.app,http://localhost:[*]}
     depends_on:
       postgres:
         condition: service_healthy

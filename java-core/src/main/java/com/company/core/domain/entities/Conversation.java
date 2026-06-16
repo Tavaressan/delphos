@@ -26,6 +26,10 @@ public class Conversation {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agent_id")
+    private Agent agent;
+
     @NotBlank
     @Size(max = 255)
     @Column(nullable = false)
@@ -36,6 +40,15 @@ public class Conversation {
 
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
+
+    public Agent getAgent() {
+        return agent;
+    }
+
+    public void setAgent(Agent agent) {
+        this.agent = agent;
+    }
+
 
     @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("createdAt ASC")

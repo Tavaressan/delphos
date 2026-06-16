@@ -196,8 +196,8 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
 
   test('T007 e T008 - Teste do Endpoint de Chat / RAG de ponta a ponta', async () => {
     // Validar se provedor real exige chaves de acesso
-    if (config.embeddingProvider === 'real' && !config.vertexAiApiKey) {
-      console.log('⚠️ Provedor configurado como REAL, mas VERTEX_AI_API_KEY está ausente no ambiente. Ignorando teste real e reportando precondição.');
+    if (config.embeddingProvider === 'real' && !config.vertexAiApiKey && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      console.log('⚠️ Provedor configurado como REAL, mas VERTEX_AI_API_KEY e GOOGLE_APPLICATION_CREDENTIALS estão ausentes no ambiente. Ignorando teste real e reportando precondição.');
       return;
     }
 

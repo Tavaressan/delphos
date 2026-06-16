@@ -6,6 +6,8 @@ import { ChatInput } from '../../components/forms/ChatInput';
 import { Message } from '../../domain/entities';
 import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../../providers/AuthProvider';
+import { apiClient } from '../../infrastructure/api/apiClient';
 
 const INITIAL_MOCK_CHAT: Message[] = [
   { role: 'SYSTEM', content: 'Iniciando Assistente Técnico Alfabra. RAG ativo com busca híbrida de cosseno parametrizada.' },
@@ -18,12 +20,15 @@ const INITIAL_MOCK_CHAT: Message[] = [
 ];
 
 export const ChatCanvas: React.FC = () => {
+  const { tenantId } = useAuth();
+  const [agents, setAgents] = useState<any[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [chatHistory, setChatHistory] = useState<Message[]>(INITIAL_MOCK_CHAT);
   const [inputMsg, setInputMsg] = useState<string>('');
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState<boolean>(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const { submitPrompt, isLoading, timeline, error } = useExecution((output) => {
+  const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output) => {
     // Callback when prompt execution finishes successfully
     setChatHistory(prev => [
       ...prev,
@@ -34,6 +39,23 @@ export const ChatCanvas: React.FC = () => {
       }
     ]);
   });
+
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        const list = await apiClient.get<any[]>(`/api/agents?tenantId=${tenantId}`);
+        setAgents(list);
+        if (list.length > 0) {
+          setSelectedAgentId(list[0].id);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar agentes:", err);
+      }
+    };
+    if (tenantId) {
+      fetchAgents();
+    }
+  }, [tenantId]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,8 +68,9 @@ export const ChatCanvas: React.FC = () => {
     setChatHistory(prev => [...prev, { role: 'USER', content: userPrompt }]);
 
     // Submit prompt to backend (hook starts polling)
-    submitPrompt(userPrompt);
+    submitPrompt(userPrompt, selectedAgentId || undefined, activeExecution?.conversationId || undefined);
   };
+
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -60,7 +83,7 @@ export const ChatCanvas: React.FC = () => {
       <div className="flex-1 bg-surface border border-border-color rounded-lg shadow-sm flex flex-col min-h-0 overflow-hidden transition-all duration-300">
         
         {/* Header */}
-        <div className="px-6 py-4 border-b border-border-color bg-secondary/15 dark:bg-slate-900/40 flex items-center justify-between transition-colors duration-200">
+        <div className="px-6 py-4 border-b border-border-color bg-secondary/15 dark:bg-slate-900/40 flex items-center justify-between transition-colors duration-200 flex-wrap gap-4">
           <div className="flex items-center gap-2.5">
             <Terminal className="w-5 h-5 text-primary" />
             <div>
@@ -68,12 +91,32 @@ export const ChatCanvas: React.FC = () => {
               <p className="text-[11px] text-text-secondary">Comunicação e busca vetorial em tempo real via Spring Boot & pgvector.</p>
             </div>
           </div>
-          {isLoading && (
-            <span className="flex items-center gap-1.5 text-xs text-accent font-semibold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-accent" />
-              Executando...
-            </span>
-          )}
+          
+          <div className="flex items-center gap-3">
+            {agents.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-text-secondary">Agente:</span>
+                <select
+                  value={selectedAgentId}
+                  onChange={(e) => setSelectedAgentId(e.target.value)}
+                  className="bg-surface border border-border-color rounded px-2.5 py-1 text-xs text-text-primary focus:outline-none focus:border-primary transition-colors cursor-pointer"
+                >
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {isLoading && (
+              <span className="flex items-center gap-1.5 text-xs text-accent font-semibold animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-accent" />
+                Executando...
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Message Log */}

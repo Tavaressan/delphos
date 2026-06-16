@@ -3,6 +3,7 @@ package com.company.core.infrastructure.external;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.company.core.domain.entities.AgentExecution;
+import com.company.core.domain.entities.Message;
 import com.company.core.domain.entities.RetrievalEvent;
 import com.company.core.domain.entities.ToolCall;
 import com.company.core.domain.repositories.AgentExecutionRepository;
@@ -27,15 +28,18 @@ public class AgentExecutionEventListener {
     private final ToolCallRepository toolCallRepository;
     private final RetrievalEventRepository retrievalEventRepository;
     private final ObjectMapper objectMapper;
+    private final com.company.core.domain.repositories.MessageRepository messageRepository;
 
     public AgentExecutionEventListener(AgentExecutionRepository executionRepository,
                                        ToolCallRepository toolCallRepository,
                                        RetrievalEventRepository retrievalEventRepository,
-                                       ObjectMapper objectMapper) {
+                                       ObjectMapper objectMapper,
+                                       com.company.core.domain.repositories.MessageRepository messageRepository) {
         this.executionRepository = executionRepository;
         this.toolCallRepository = toolCallRepository;
         this.retrievalEventRepository = retrievalEventRepository;
         this.objectMapper = objectMapper;
+        this.messageRepository = messageRepository;
     }
 
     @RabbitListener(queues = "agent.execution.events")
@@ -120,9 +124,20 @@ public class AgentExecutionEventListener {
                     execution.setStatus("COMPLETED");
                     execution.setFinishedAt(Instant.now());
                     Map<String, Object> finishPayload = (Map<String, Object>) event.get("payload");
-                    execution.setOutputResult((String) finishPayload.get("outputResult"));
+                    String outputResult = (String) finishPayload.get("outputResult");
+                    execution.setOutputResult(outputResult);
                     execution.setTokensConsumed(((Number) finishPayload.get("tokensConsumed")).intValue());
                     executionRepository.save(execution);
+
+                    // Save assistant message to chat history
+                    if (execution.getConversation() != null) {
+                        Message assistantMessage = new Message();
+                        assistantMessage.setConversation(execution.getConversation());
+                        assistantMessage.setAuthorRole("ASSISTANT");
+                        assistantMessage.setContent(outputResult);
+                        messageRepository.save(assistantMessage);
+                    }
+
                     log.info("Agent execution {} COMPLETED successfully", executionId);
                     break;
 

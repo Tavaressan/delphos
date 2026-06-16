@@ -338,20 +338,51 @@ impl RabbitMQManager {
             .ok_or_else(|| WorkerError::Embedding("Empty embedding list received".to_string()))?
             .embedding.clone();
 
-        // 2. Busca vetorial por similaridade (cosseno) no Postgres
-        println!("Searching database for similar chunks...");
-        let start_db = std::time::Instant::now();
-        let rows = sqlx::query(
-            "SELECT id, content, 1 - (embedding <=> $1::vector) as similarity \
-             FROM document_chunks \
-             WHERE tenant_id = $2 \
-             ORDER BY similarity DESC \
-             LIMIT 5"
+        // Fetch agent_id from agent_executions
+        let execution_row: Option<sqlx::postgres::PgRow> = sqlx::query(
+            "SELECT agent_id FROM agent_executions WHERE id = $1"
         )
-        .bind(&embedding)
-        .bind(job.tenant_id)
-        .fetch_all(db_pool)
+        .bind(job.execution_id)
+        .fetch_optional(db_pool)
         .await
+        .map_err(|e| WorkerError::Database(format!("SQL execution error fetching execution agent_id: {}", e)))?;
+
+        let agent_id: Option<uuid::Uuid> = match execution_row {
+            Some(row) => row.try_get("agent_id").ok(),
+            None => None,
+        };
+
+        // 2. Busca vetorial por similaridade (cosseno) no Postgres
+        println!("Searching database for similar chunks (agent_id={:?})...", agent_id);
+        let start_db = std::time::Instant::now();
+        let rows = if let Some(aid) = agent_id {
+            sqlx::query(
+                "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
+                 FROM document_chunks dc \
+                 JOIN documents d ON dc.document_id = d.id \
+                 WHERE dc.tenant_id = $2 AND (d.agent_id = $3 OR d.agent_id IS NULL) \
+                 ORDER BY similarity DESC \
+                 LIMIT 5"
+            )
+            .bind(&embedding)
+            .bind(job.tenant_id)
+            .bind(aid)
+            .fetch_all(db_pool)
+            .await
+        } else {
+            sqlx::query(
+                "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
+                 FROM document_chunks dc \
+                 JOIN documents d ON dc.document_id = d.id \
+                 WHERE dc.tenant_id = $2 AND d.agent_id IS NULL \
+                 ORDER BY similarity DESC \
+                 LIMIT 5"
+            )
+            .bind(&embedding)
+            .bind(job.tenant_id)
+            .fetch_all(db_pool)
+            .await
+        }
         .map_err(|e| WorkerError::Database(format!("SQL execution error: {}", e)))?;
 
         let duration_db = start_db.elapsed();
@@ -376,9 +407,23 @@ impl RabbitMQManager {
             context_str.push_str(&format!("Documento {} (Similaridade: {:.4}):\n{}\n\n", i + 1, chunk.score, chunk.content));
         }
 
-        let system_instruction = "Você é um assistente virtual especialista no contexto de negócios e transportes verticais da Alfabra. \
-                                  Use as informações do Contexto abaixo para responder de forma precisa, objetiva e em português à pergunta do usuário. \
-                                  Se o contexto não tiver a resposta ou as informações necessárias, utilize o seu conhecimento geral para fornecer a resposta técnica mais adequada, informando porém que a resposta não consta diretamente dos documentos indexados.";
+        let mut system_instruction = "Você é um assistente virtual especialista no contexto de negócios e transportes verticais da Alfabra. \
+                                      Use as informações do Contexto abaixo para responder de forma precisa, objetiva e em português à pergunta do usuário. \
+                                      Se o contexto não tiver a resposta ou as informações necessárias, utilize o seu conhecimento geral para fornecer a resposta técnica mais adequada, informando porém que a resposta não consta diretamente dos documentos indexados.".to_string();
+
+        if let Some(aid) = agent_id {
+            if let Ok(Some(row)) = sqlx::query("SELECT system_instructions FROM agents WHERE id = $1")
+                .bind(aid)
+                .fetch_optional(db_pool)
+                .await
+            {
+                if let Ok(instructions) = row.try_get::<String, _>("system_instructions") {
+                    if !instructions.trim().is_empty() {
+                        system_instruction = instructions;
+                    }
+                }
+            }
+        }
 
         let user_content = format!(
             "Contexto:\n{}\nPergunta: {}\n\nResposta:",

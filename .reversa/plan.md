@@ -1,4 +1,4 @@
-# Plano de Exploração — enterprise_rag_platform
+# Plano de Exploração — Alfabra-Vector
 
 > Criado pelo Reversa em 2026-06-02
 > Marque cada tarefa com ✅ quando concluída.
@@ -8,9 +8,9 @@
 
 ## Fase 1: Reconhecimento 🔍
 
-- [ ] **Scout** — Mapeamento de estrutura de pastas e tecnologias
-- [ ] **Scout** — Análise de dependências e gerenciadores de pacotes
-- [ ] **Scout** — Identificação de entry points, CI/CD e configurações
+- [x] **Scout** — Mapeamento de estrutura de pastas e tecnologias
+- [x] **Scout** — Análise de dependências e gerenciadores de pacotes
+- [x] **Scout** — Identificação de entry points, CI/CD e configurações
 
 ## Decisão de organização das specs 🗂️
 
@@ -18,12 +18,11 @@
 
 ## Fase 2: Escavação 🏗️
 
-- [ ] **Arqueólogo** — Análise do módulo `frontend`
-- [ ] **Arqueólogo** — Análise do módulo `java-core`
-- [ ] **Arqueólogo** — Análise do módulo `rust-services`
-- [ ] **Arqueólogo** — Análise do módulo `python-services`
-- [ ] **Arqueólogo** — Análise do módulo `infrastructure`
-- [ ] **Arqueólogo** — Análise do módulo `anythingllm`
+- [x] **Arqueólogo** — Análise do módulo `frontend`
+- [x] **Arqueólogo** — Análise do módulo `java-core`
+- [x] **Arqueólogo** — Análise do módulo `rust-services`
+- [x] **Arqueólogo** — Análise do módulo `python-services`
+- [x] **Arqueólogo** — Análise do módulo `infrastructure`
 
 ## Fase 3: Interpretação 🧠
 

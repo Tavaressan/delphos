@@ -7,7 +7,7 @@ Este documento descreve os passos práticos para compilar, executar e testar o `
 
 ## 1. Variáveis de Ambiente Necessárias
 
-Crie ou atualize o arquivo `.env` na raiz da pasta `enterprise_rag_platform` com as seguintes variáveis de configuração:
+Crie ou atualize o arquivo `.env` na raiz da pasta `Alfabra-Vector` com as seguintes variáveis de configuração:
 
 ```bash
 # Provedor ativo de embeddings: real | mock

@@ -3,6 +3,8 @@ import { ExecutionStatus } from '../../types';
 export interface SubmitExecutionRequest {
   prompt: string;
   tenantId?: string;
+  agentId?: string;
+  conversationId?: string;
 }
 
 export interface SubmitExecutionResponse {

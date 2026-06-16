@@ -1,0 +1,33 @@
+repos:
+  - repo: local
+    hooks:
+
+      - id: rust-fmt
+        name: Rust Format
+        entry: bash -c 'cd rust-services && cargo fmt --check'
+        language: system
+        pass_filenames: false
+
+      - id: rust-clippy
+        name: Rust Clippy
+        entry: bash -c 'cd rust-services && cargo clippy -- -D warnings'
+        language: system
+        pass_filenames: false
+
+      - id: frontend-lint
+        name: Frontend Lint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        pass_filenames: false
+
+      - id: frontend-types
+        name: Frontend Type Check
+        entry: bash -c 'cd frontend && npm run type-check'
+        language: system
+        pass_filenames: false
+
+      - id: gitleaks
+        name: Gitleaks
+        entry: gitleaks protect --staged
+        language: system
+        pass_filenames: false
