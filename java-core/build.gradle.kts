@@ -28,9 +28,9 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation("io.cucumber:cucumber-java:7.18.0")
-    testImplementation("io.cucumber:cucumber-spring:7.18.0")
-    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.18.0")
+    testImplementation("io.cucumber:cucumber-java:7.34.3")
+    testImplementation("io.cucumber:cucumber-spring:7.34.3")
+    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.3")
     testImplementation("org.junit.platform:junit-platform-suite:1.10.2")
 }
 
