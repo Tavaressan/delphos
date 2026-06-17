@@ -1,17 +1,13 @@
 use crate::config::Config;
 use crate::error::WorkerError;
 use anyhow::Result;
-use lapin::{
-    options::*,
-    types::FieldTable,
-    Connection, ConnectionProperties, Channel,
-};
+use futures_lite::stream::StreamExt;
+use lapin::{options::*, types::FieldTable, Channel, Connection, ConnectionProperties};
 use serde::{Deserialize, Serialize};
+use shared::gcp::GcpAuthenticator;
+use sqlx::{PgPool, Row};
 use std::time::Duration;
 use tokio::time::sleep;
-use futures_lite::stream::StreamExt;
-use sqlx::{PgPool, Row};
-use shared::gcp::GcpAuthenticator;
 
 #[derive(Deserialize, Debug)]
 struct RetrievalJob {
@@ -134,7 +130,10 @@ impl RabbitMQManager {
                     break;
                 }
                 Err(e) => {
-                    println!("Attempt {} to connect to RabbitMQ failed: {}. Retrying in 5s...", attempt, e);
+                    println!(
+                        "Attempt {} to connect to RabbitMQ failed: {}. Retrying in 5s...",
+                        attempt, e
+                    );
                     sleep(Duration::from_secs(5)).await;
                 }
             }
@@ -153,32 +152,38 @@ impl RabbitMQManager {
         let routing_key_out = "agent.execution.event".to_string();
 
         // Declarar Exchange e Fila
-        channel.exchange_declare(
-            &exchange,
-            lapin::ExchangeKind::Direct,
-            ExchangeDeclareOptions {
-                durable: true,
-                ..Default::default()
-            },
-            FieldTable::default(),
-        ).await?;
+        channel
+            .exchange_declare(
+                &exchange,
+                lapin::ExchangeKind::Direct,
+                ExchangeDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await?;
 
-        channel.queue_declare(
-            &queue,
-            QueueDeclareOptions {
-                durable: true,
-                ..Default::default()
-            },
-            FieldTable::default(),
-        ).await?;
+        channel
+            .queue_declare(
+                &queue,
+                QueueDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await?;
 
-        channel.queue_bind(
-            &queue,
-            &exchange,
-            &routing_key_in,
-            QueueBindOptions::default(),
-            FieldTable::default(),
-        ).await?;
+        channel
+            .queue_bind(
+                &queue,
+                &exchange,
+                &routing_key_in,
+                QueueBindOptions::default(),
+                FieldTable::default(),
+            )
+            .await?;
 
         // QoS
         channel.basic_qos(1, BasicQosOptions::default()).await?;
@@ -192,10 +197,15 @@ impl RabbitMQManager {
         })
     }
 
-    pub async fn run_consumer(&self, db_pool: PgPool, authenticator: Option<GcpAuthenticator>) -> Result<(), WorkerError> {
+    pub async fn run_consumer(
+        &self,
+        db_pool: PgPool,
+        authenticator: Option<GcpAuthenticator>,
+    ) -> Result<(), WorkerError> {
         println!("Listening to '{}' queue...", self.queue);
 
-        let mut consumer = self.channel
+        let mut consumer = self
+            .channel
             .basic_consume(
                 &self.queue,
                 "rag_worker_tag",
@@ -223,10 +233,12 @@ impl RabbitMQManager {
                 }
                 Err(e) => {
                     println!("Error processing RAG job: {}. Negative acknowledging.", e);
-                    delivery.nack(BasicNackOptions {
-                        requeue: false,
-                        ..Default::default()
-                    }).await?;
+                    delivery
+                        .nack(BasicNackOptions {
+                            multiple: false,
+                            requeue: false,
+                        })
+                        .await?;
                 }
             }
         }
@@ -234,7 +246,12 @@ impl RabbitMQManager {
         Ok(())
     }
 
-    async fn process_job(&self, body: &str, db_pool: &PgPool, authenticator: &Option<GcpAuthenticator>) -> Result<(), WorkerError> {
+    async fn process_job(
+        &self,
+        body: &str,
+        db_pool: &PgPool,
+        authenticator: &Option<GcpAuthenticator>,
+    ) -> Result<(), WorkerError> {
         let job: RetrievalJob = serde_json::from_str(body)
             .map_err(|e| WorkerError::Serialization(format!("Invalid RAG Job format: {}", e)))?;
 
@@ -291,11 +308,16 @@ impl RabbitMQManager {
         }
     }
 
-    async fn execute_rag(&self, job: &RetrievalJob, db_pool: &PgPool, authenticator: &Option<GcpAuthenticator>) -> Result<(String, Vec<ChunkData>), WorkerError> {
+    async fn execute_rag(
+        &self,
+        job: &RetrievalJob,
+        db_pool: &PgPool,
+        authenticator: &Option<GcpAuthenticator>,
+    ) -> Result<(String, Vec<ChunkData>), WorkerError> {
         // 1. Obter embeddings do embedding-service
         println!("Calling embedding-service for query embedding...");
         let client = reqwest::Client::new();
-        
+
         #[derive(Serialize)]
         struct EmbeddingRequest {
             input: Vec<String>,
@@ -313,14 +335,17 @@ impl RabbitMQManager {
         }
 
         let start_emb = std::time::Instant::now();
-        let emb_res = client.post(&self.config.embedding_service_url)
+        let emb_res = client
+            .post(&self.config.embedding_service_url)
             .json(&EmbeddingRequest {
                 input: vec![job.query.clone()],
                 dimensions: 768,
             })
             .send()
             .await
-            .map_err(|e| WorkerError::Embedding(format!("HTTP error calling embedding-service: {}", e)))?;
+            .map_err(|e| {
+                WorkerError::Embedding(format!("HTTP error calling embedding-service: {}", e))
+            })?;
 
         let duration_emb = start_emb.elapsed();
         println!("Embedding generation completed in {:?}", duration_emb);
@@ -328,24 +353,35 @@ impl RabbitMQManager {
         let status = emb_res.status();
         if !status.is_success() {
             let err_body = emb_res.text().await.unwrap_or_default();
-            return Err(WorkerError::Embedding(format!("Embedding-service error {}: {}", status, err_body)));
+            return Err(WorkerError::Embedding(format!(
+                "Embedding-service error {}: {}",
+                status, err_body
+            )));
         }
 
-        let emb_payload: RespPayload = emb_res.json().await
-            .map_err(|e| WorkerError::Serialization(format!("Failed to parse embedding response: {}", e)))?;
+        let emb_payload: RespPayload = emb_res.json().await.map_err(|e| {
+            WorkerError::Serialization(format!("Failed to parse embedding response: {}", e))
+        })?;
 
-        let embedding = emb_payload.data.first()
+        let embedding = emb_payload
+            .data
+            .first()
             .ok_or_else(|| WorkerError::Embedding("Empty embedding list received".to_string()))?
-            .embedding.clone();
+            .embedding
+            .clone();
 
         // Fetch agent_id from agent_executions
-        let execution_row: Option<sqlx::postgres::PgRow> = sqlx::query(
-            "SELECT agent_id FROM agent_executions WHERE id = $1"
-        )
-        .bind(job.execution_id)
-        .fetch_optional(db_pool)
-        .await
-        .map_err(|e| WorkerError::Database(format!("SQL execution error fetching execution agent_id: {}", e)))?;
+        let execution_row: Option<sqlx::postgres::PgRow> =
+            sqlx::query("SELECT agent_id FROM agent_executions WHERE id = $1")
+                .bind(job.execution_id)
+                .fetch_optional(db_pool)
+                .await
+                .map_err(|e| {
+                    WorkerError::Database(format!(
+                        "SQL execution error fetching execution agent_id: {}",
+                        e
+                    ))
+                })?;
 
         let agent_id: Option<uuid::Uuid> = match execution_row {
             Some(row) => row.try_get("agent_id").ok(),
@@ -353,7 +389,10 @@ impl RabbitMQManager {
         };
 
         // 2. Busca vetorial por similaridade (cosseno) no Postgres
-        println!("Searching database for similar chunks (agent_id={:?})...", agent_id);
+        println!(
+            "Searching database for similar chunks (agent_id={:?})...",
+            agent_id
+        );
         let start_db = std::time::Instant::now();
         let rows = if let Some(aid) = agent_id {
             sqlx::query(
@@ -362,7 +401,7 @@ impl RabbitMQManager {
                  JOIN documents d ON dc.document_id = d.id \
                  WHERE dc.tenant_id = $2 AND (d.agent_id = $3 OR d.agent_id IS NULL) \
                  ORDER BY similarity DESC \
-                 LIMIT 5"
+                 LIMIT 5",
             )
             .bind(&embedding)
             .bind(job.tenant_id)
@@ -376,7 +415,7 @@ impl RabbitMQManager {
                  JOIN documents d ON dc.document_id = d.id \
                  WHERE dc.tenant_id = $2 AND d.agent_id IS NULL \
                  ORDER BY similarity DESC \
-                 LIMIT 5"
+                 LIMIT 5",
             )
             .bind(&embedding)
             .bind(job.tenant_id)
@@ -386,7 +425,10 @@ impl RabbitMQManager {
         .map_err(|e| WorkerError::Database(format!("SQL execution error: {}", e)))?;
 
         let duration_db = start_db.elapsed();
-        println!("Vector search for tenant_id={} completed in {:?}", job.tenant_id, duration_db);
+        println!(
+            "Vector search for tenant_id={} completed in {:?}",
+            job.tenant_id, duration_db
+        );
 
         let mut chunks = Vec::new();
         for row in rows {
@@ -404,7 +446,12 @@ impl RabbitMQManager {
         // 3. Construir prompt do sistema
         let mut context_str = String::new();
         for (i, chunk) in chunks.iter().enumerate() {
-            context_str.push_str(&format!("Documento {} (Similaridade: {:.4}):\n{}\n\n", i + 1, chunk.score, chunk.content));
+            context_str.push_str(&format!(
+                "Documento {} (Similaridade: {:.4}):\n{}\n\n",
+                i + 1,
+                chunk.score,
+                chunk.content
+            ));
         }
 
         let mut system_instruction = "Você é um assistente virtual especialista no contexto de negócios e transportes verticais da Alfabra. \
@@ -412,10 +459,11 @@ impl RabbitMQManager {
                                       Se o contexto não tiver a resposta ou as informações necessárias, utilize o seu conhecimento geral para fornecer a resposta técnica mais adequada, informando porém que a resposta não consta diretamente dos documentos indexados.".to_string();
 
         if let Some(aid) = agent_id {
-            if let Ok(Some(row)) = sqlx::query("SELECT system_instructions FROM agents WHERE id = $1")
-                .bind(aid)
-                .fetch_optional(db_pool)
-                .await
+            if let Ok(Some(row)) =
+                sqlx::query("SELECT system_instructions FROM agents WHERE id = $1")
+                    .bind(aid)
+                    .fetch_optional(db_pool)
+                    .await
             {
                 if let Ok(instructions) = row.try_get::<String, _>("system_instructions") {
                     if !instructions.trim().is_empty() {
@@ -431,7 +479,10 @@ impl RabbitMQManager {
         );
 
         // 4. Chamada de chat para a API do Vertex AI
-        println!("Calling Vertex AI Gemini chat API (model: {})...", self.config.gcp_chat_model_id);
+        println!(
+            "Calling Vertex AI Gemini chat API (model: {})...",
+            self.config.gcp_chat_model_id
+        );
         let auth = authenticator.as_ref().ok_or_else(|| {
             WorkerError::Config("GCP Authenticator is not initialized".to_string())
         })?;
@@ -452,9 +503,7 @@ impl RabbitMQManager {
         let request_body = GeminiRequest {
             contents: vec![GeminiContent {
                 role: "user".to_string(),
-                parts: vec![GeminiPart {
-                    text: user_content,
-                }],
+                parts: vec![GeminiPart { text: user_content }],
             }],
             system_instruction: Some(GeminiSystemInstruction {
                 parts: vec![GeminiPart {
@@ -468,7 +517,8 @@ impl RabbitMQManager {
         };
 
         let start_llm = std::time::Instant::now();
-        let llm_res = client.post(&url)
+        let llm_res = client
+            .post(&url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", token.as_str()))
             .json(&request_body)
@@ -482,17 +532,24 @@ impl RabbitMQManager {
         let status = llm_res.status();
         if !status.is_success() {
             let err_body = llm_res.text().await.unwrap_or_default();
-            return Err(WorkerError::VertexAI(format!("Vertex AI API returned error status {}: {}", status, err_body)));
+            return Err(WorkerError::VertexAI(format!(
+                "Vertex AI API returned error status {}: {}",
+                status, err_body
+            )));
         }
 
-        let response_body: GeminiResponse = llm_res.json().await
-            .map_err(|e| WorkerError::Serialization(format!("Failed to parse Vertex AI response body: {}", e)))?;
+        let response_body: GeminiResponse = llm_res.json().await.map_err(|e| {
+            WorkerError::Serialization(format!("Failed to parse Vertex AI response body: {}", e))
+        })?;
 
-        let response_text = response_body.candidates
+        let response_text = response_body
+            .candidates
             .and_then(|c| c.into_iter().next())
             .and_then(|cand| cand.content.parts.into_iter().next())
             .and_then(|part| part.text)
-            .ok_or_else(|| WorkerError::VertexAI("Empty text response received from Gemini".to_string()))?;
+            .ok_or_else(|| {
+                WorkerError::VertexAI("Empty text response received from Gemini".to_string())
+            })?;
 
         Ok((response_text, chunks))
     }

@@ -12,7 +12,10 @@ impl GcpAuthenticator {
     pub async fn new() -> Result<Self, String> {
         // Verifica se a variável de ambiente está definida para melhorar a mensagem de erro
         if std::env::var("GOOGLE_APPLICATION_CREDENTIALS").is_err() {
-            return Err("A variável de ambiente GOOGLE_APPLICATION_CREDENTIALS não está definida.".to_string());
+            return Err(
+                "A variável de ambiente GOOGLE_APPLICATION_CREDENTIALS não está definida."
+                    .to_string(),
+            );
         }
 
         let manager = AuthenticationManager::new()
@@ -26,10 +29,12 @@ impl GcpAuthenticator {
 
     /// Obtém um token de acesso OAuth2 para o escopo fornecido.
     pub async fn get_token(&self, scopes: &[&str]) -> Result<Token, String> {
-        self.manager
-            .get_token(scopes)
-            .await
-            .map_err(|e| format!("Falha ao obter token GCP para os escopos {:?}: {}", scopes, e))
+        self.manager.get_token(scopes).await.map_err(|e| {
+            format!(
+                "Falha ao obter token GCP para os escopos {:?}: {}",
+                scopes, e
+            )
+        })
     }
 }
 

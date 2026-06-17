@@ -1,4 +1,4 @@
-use crate::db::{DbNode, DbEdge};
+use crate::db::{DbEdge, DbNode};
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
 use tokio::time::{sleep, Duration};
@@ -40,7 +40,14 @@ impl WorkflowEngine {
                 // Visit all dependencies (nodes pointing to this node)
                 for edge in edges {
                     if edge.to_node_id == node_id {
-                        visit(edge.from_node_id, node_map, edges, sorted, visited, temp_visited)?;
+                        visit(
+                            edge.from_node_id,
+                            node_map,
+                            edges,
+                            sorted,
+                            visited,
+                            temp_visited,
+                        )?;
                     }
                 }
 
@@ -55,7 +62,14 @@ impl WorkflowEngine {
         }
 
         for node in &self.nodes {
-            visit(node.id, &node_map, &self.edges, &mut sorted, &mut visited, &mut temp_visited)?;
+            visit(
+                node.id,
+                &node_map,
+                &self.edges,
+                &mut sorted,
+                &mut visited,
+                &mut temp_visited,
+            )?;
         }
 
         Ok(sorted)
@@ -97,7 +111,10 @@ impl WorkflowEngine {
                     }
                 }
             }
-            Ok(format!("DAG executed successfully ({} nodes).", sorted_nodes.len()))
+            Ok(format!(
+                "DAG executed successfully ({} nodes).",
+                sorted_nodes.len()
+            ))
         };
 
         // Enforce 15 seconds execution limit using tokio::time::timeout

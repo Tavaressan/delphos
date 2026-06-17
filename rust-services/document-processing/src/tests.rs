@@ -3,36 +3,48 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use tower::ServiceExt;
 use http_body_util::BodyExt;
+use tower::ServiceExt;
 
 fn create_test_pdf() -> Vec<u8> {
     let mut doc = lopdf::Document::with_version("1.5");
     let pages_id = doc.new_object_id();
-    
+
     // Criar conteúdo simples para a página
     let content = lopdf::content::Content {
         operations: vec![
             lopdf::content::Operation::new("BT", vec![]),
             lopdf::content::Operation::new("Tf", vec!["F1".into(), 12.into()]),
             lopdf::content::Operation::new("Td", vec![100.into(), 100.into()]),
-            lopdf::content::Operation::new("Tj", vec![lopdf::Object::string_literal("Alfabra Vector Test. Page 1 text.")]),
+            lopdf::content::Operation::new(
+                "Tj",
+                vec![lopdf::Object::string_literal(
+                    "Alfabra Vector Test. Page 1 text.",
+                )],
+            ),
             lopdf::content::Operation::new("ET", vec![]),
         ],
     };
-    
+
     let mut content_dict = lopdf::Dictionary::new();
-    content_dict.set("Length", lopdf::Object::Integer(content.operations.len() as i64));
+    content_dict.set(
+        "Length",
+        lopdf::Object::Integer(content.operations.len() as i64),
+    );
     let content_id = doc.add_object(content_dict);
-    
+
     let stream = lopdf::Stream::new(lopdf::Dictionary::new(), content.encode().unwrap());
-    doc.objects.insert(content_id, lopdf::Object::Stream(stream));
+    doc.objects
+        .insert(content_id, lopdf::Object::Stream(stream));
 
     // Recursos: Fonte
     let mut font_dict = lopdf::Dictionary::new();
     font_dict.set("Type", lopdf::Object::Name("Font".as_bytes().to_vec()));
     font_dict.set("Subtype", lopdf::Object::Name("Type1".as_bytes().to_vec()));
-    font_dict.set("BaseFont", lopdf::Object::Name("Helvetica".as_bytes().to_vec()));
+    font_dict.set(
+        "BaseFont",
+        lopdf::Object::Name("Helvetica".as_bytes().to_vec()),
+    );
     let font_id = doc.add_object(font_dict);
 
     let mut font_res_dict = lopdf::Dictionary::new();
@@ -47,7 +59,10 @@ fn create_test_pdf() -> Vec<u8> {
     page_dict.set("Type", lopdf::Object::Name("Page".as_bytes().to_vec()));
     page_dict.set("Parent", pages_id);
     page_dict.set("Resources", resources_id);
-    page_dict.set("MediaBox", lopdf::Object::Array(vec![0.into(), 0.into(), 612.into(), 792.into()]));
+    page_dict.set(
+        "MediaBox",
+        lopdf::Object::Array(vec![0.into(), 0.into(), 612.into(), 792.into()]),
+    );
     page_dict.set("Contents", content_id);
     let page_id = doc.add_object(page_dict);
 
@@ -55,7 +70,8 @@ fn create_test_pdf() -> Vec<u8> {
     pages_dict.set("Type", lopdf::Object::Name("Pages".as_bytes().to_vec()));
     pages_dict.set("Kids", lopdf::Object::Array(vec![page_id.into()]));
     pages_dict.set("Count", lopdf::Object::Integer(1));
-    doc.objects.insert(pages_id, lopdf::Object::Dictionary(pages_dict));
+    doc.objects
+        .insert(pages_id, lopdf::Object::Dictionary(pages_dict));
 
     let mut catalog_dict = lopdf::Dictionary::new();
     catalog_dict.set("Type", lopdf::Object::Name("Catalog".as_bytes().to_vec()));
@@ -63,7 +79,7 @@ fn create_test_pdf() -> Vec<u8> {
     let catalog_id = doc.add_object(catalog_dict);
 
     doc.trailer.set("Root", catalog_id);
-    
+
     let mut buf = Vec::new();
     doc.save_to(&mut buf).unwrap();
     buf
@@ -100,11 +116,14 @@ async fn test_healthz() {
 fn test_sentence_chunker_basic() {
     let chunker = SentenceChunker;
     let text = "Primeira sentenca. Segunda sentenca! Terceira sentenca?";
-    
+
     // Chunk size grande o suficiente para tudo
     let chunks = chunker.chunk(text, 100, 20);
     assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0], "Primeira sentenca. Segunda sentenca! Terceira sentenca?");
+    assert_eq!(
+        chunks[0],
+        "Primeira sentenca. Segunda sentenca! Terceira sentenca?"
+    );
 
     // Chunk size pequeno (corta por sentenças)
     let chunks = chunker.chunk(text, 25, 5);
@@ -119,13 +138,13 @@ fn test_sentence_chunker_overlap() {
     let chunker = SentenceChunker;
     // O overlap deve incluir a frase anterior se couber no tamanho do overlap
     let text = "Frase um. Frase dois. Frase tres.";
-    
+
     // Tamanho do chunk = 25, overlap = 15
     // "Frase um." (8 chars) + " " + "Frase dois." (10 chars) = 19 chars -> Cabe
     // Proximo chunk: "Frase dois." (10 chars) cabe no overlap de 15? Sim.
     // Então o segundo chunk deve começar com "Frase dois." e incluir "Frase tres."
     let chunks = chunker.chunk(text, 25, 12);
-    
+
     assert!(chunks.len() >= 2);
     assert_eq!(chunks[0], "Frase um. Frase dois.");
     assert_eq!(chunks[1], "Frase dois. Frase tres.");
@@ -135,10 +154,10 @@ fn test_sentence_chunker_overlap() {
 fn test_token_chunker_word_boundaries() {
     let chunker = TokenChunker;
     let text = "Esta e uma frase com palavras inteiras que nao devem ser cortadas no meio.";
-    
+
     // Chunk size = 30, overlap = 5
     let chunks = chunker.chunk(text, 30, 5);
-    
+
     // Nenhum chunk deve terminar com uma palavra incompleta se encontrar espaco no lookback
     for c in &chunks {
         println!("Token chunk: '{}'", c);
@@ -149,24 +168,51 @@ fn test_token_chunker_word_boundaries() {
 #[test]
 fn test_doctype_detection() {
     // Pelo Content-Type
-    assert!(matches!(DocType::from_mime_or_filename(Some("application/pdf"), None), DocType::Pdf));
-    assert!(matches!(DocType::from_mime_or_filename(Some("text/html"), None), DocType::Html));
-    assert!(matches!(DocType::from_mime_or_filename(Some("text/markdown"), None), DocType::Markdown));
-    
+    assert!(matches!(
+        DocType::from_mime_or_filename(Some("application/pdf"), None),
+        DocType::Pdf
+    ));
+    assert!(matches!(
+        DocType::from_mime_or_filename(Some("text/html"), None),
+        DocType::Html
+    ));
+    assert!(matches!(
+        DocType::from_mime_or_filename(Some("text/markdown"), None),
+        DocType::Markdown
+    ));
+
     // Pela Extensão do Nome do Arquivo
-    assert!(matches!(DocType::from_mime_or_filename(None, Some("doc.pdf")), DocType::Pdf));
-    assert!(matches!(DocType::from_mime_or_filename(None, Some("index.html")), DocType::Html));
-    assert!(matches!(DocType::from_mime_or_filename(None, Some("README.md")), DocType::Markdown));
-    assert!(matches!(DocType::from_mime_or_filename(None, Some("documento.docx")), DocType::Docx));
-    assert!(matches!(DocType::from_mime_or_filename(None, Some("notes.txt")), DocType::Txt));
+    assert!(matches!(
+        DocType::from_mime_or_filename(None, Some("doc.pdf")),
+        DocType::Pdf
+    ));
+    assert!(matches!(
+        DocType::from_mime_or_filename(None, Some("index.html")),
+        DocType::Html
+    ));
+    assert!(matches!(
+        DocType::from_mime_or_filename(None, Some("README.md")),
+        DocType::Markdown
+    ));
+    assert!(matches!(
+        DocType::from_mime_or_filename(None, Some("documento.docx")),
+        DocType::Docx
+    ));
+    assert!(matches!(
+        DocType::from_mime_or_filename(None, Some("notes.txt")),
+        DocType::Txt
+    ));
 }
 
 #[test]
 fn test_html_parser() {
     let html_bytes = b"<html><body><h1>Titulo</h1><p>Paragrafo de teste.</p></body></html>";
     let parser = HtmlParser;
-    let config = ParserConfig { ocr_enabled: false, ocr_lang: "por".to_string() };
-    
+    let config = ParserConfig {
+        ocr_enabled: false,
+        ocr_lang: "por".to_string(),
+    };
+
     let parsed = parser.parse(html_bytes, &config).unwrap();
     assert_eq!(parsed.pages.len(), 1);
     // Deve remover as tags HTML rudimentarmente
@@ -179,7 +225,10 @@ fn test_html_parser() {
 fn test_pdf_parser_success() {
     let pdf_bytes = create_test_pdf();
     let parser = PdfParser;
-    let config = ParserConfig { ocr_enabled: false, ocr_lang: "por".to_string() };
+    let config = ParserConfig {
+        ocr_enabled: false,
+        ocr_lang: "por".to_string(),
+    };
 
     let parsed = parser.parse(&pdf_bytes, &config).unwrap();
     assert!(!parsed.pages.is_empty());
@@ -203,9 +252,13 @@ async fn test_process_endpoint_success() {
 
     // Campo file
     body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\n");
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\n",
+    );
     body.extend_from_slice(b"Content-Type: text/plain\r\n\r\n");
-    body.extend_from_slice(b"Esta e a primeira sentenca de teste. E esta e a segunda sentenca de teste.");
+    body.extend_from_slice(
+        b"Esta e a primeira sentenca de teste. E esta e a segunda sentenca de teste.",
+    );
     body.extend_from_slice(b"\r\n");
 
     // Campo document_id
@@ -227,7 +280,10 @@ async fn test_process_endpoint_success() {
             Request::builder()
                 .uri("/process")
                 .method("POST")
-                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
                 .body(Body::from(body))
                 .unwrap(),
         )
@@ -261,7 +317,9 @@ async fn test_process_endpoint_payload_too_large() {
     let mut body = Vec::new();
 
     body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\n");
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\n",
+    );
     body.extend_from_slice(b"Content-Type: text/plain\r\n\r\n");
     body.extend_from_slice(b"Qualquer conteudo");
     body.extend_from_slice(b"\r\n");
@@ -272,7 +330,10 @@ async fn test_process_endpoint_payload_too_large() {
             Request::builder()
                 .uri("/process")
                 .method("POST")
-                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
                 .body(Body::from(body))
                 .unwrap(),
         )

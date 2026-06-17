@@ -353,13 +353,13 @@ impl DocumentParser for PdfParser {
             }
         }
 
-        if pages.is_empty() || pages.iter().all(|p| p.text.trim().is_empty()) {
-            if config.ocr_enabled {
-                pages = vec![ParsedPage {
-                    page_number: 1,
-                    text: format!("[OCR Fallback Text - Lang {}]\n(O conteúdo do PDF era imagem ou texto escaneado)", config.ocr_lang),
-                }];
-            }
+        if (pages.is_empty() || pages.iter().all(|p| p.text.trim().is_empty()))
+            && config.ocr_enabled
+        {
+            pages = vec![ParsedPage {
+                page_number: 1,
+                text: format!("[OCR Fallback Text - Lang {}]\n(O conteúdo do PDF era imagem ou texto escaneado)", config.ocr_lang),
+            }];
         }
 
         Ok(ParsedDocument { pages })

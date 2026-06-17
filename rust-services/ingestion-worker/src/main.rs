@@ -144,8 +144,8 @@ async fn main() -> Result<()> {
                 );
                 delivery
                     .nack(BasicNackOptions {
+                        multiple: false,
                         requeue: false,
-                        ..Default::default()
                     })
                     .await
                     .unwrap_or_else(|ne| {
@@ -299,9 +299,7 @@ async fn download_file(file_path: &str) -> Result<Vec<u8>> {
 
     // Fallback: Se for desenvolvimento, retornar um texto padrão de sucesso
     println!("Arquivo não encontrado. Utilizando fallback textual de desenvolvimento.");
-    let mock_text = format!(
-        "Alfabra Vector - Documento de Teste de Auditoria de TI.\nEste documento detalha os controles de segurança do sistema, incluindo autenticação stateless via JWT de 256 bits, segregação de banco por tenantId e o isolamento rígido dos runtimes dos workers utilizando KEDA e sandbox AST de Groovy para prevenir qualquer tipo de injeção de dependências no host."
-    );
+    let mock_text = "Alfabra Vector - Documento de Teste de Auditoria de TI.\nEste documento detalha os controles de segurança do sistema, incluindo autenticação stateless via JWT de 256 bits, segregação de banco por tenantId e o isolamento rígido dos runtimes dos workers utilizando KEDA e sandbox AST de Groovy para prevenir qualquer tipo de injeção de dependências no host.".to_string();
     Ok(mock_text.into_bytes())
 }
 

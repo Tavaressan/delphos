@@ -1,0 +1,8 @@
+{"ts":"2026-06-17T17:27:00Z","action":"T001","status":"done","files":["rust-services/Cargo.toml"]}
+{"ts":"2026-06-17T17:27:05Z","action":"T002","status":"done","files":["rust-services/Cargo.toml"]}
+{"ts":"2026-06-17T17:27:10Z","action":"T003","status":"done","files":["rust-services/rag-worker/src/rabbitmq.rs"]}
+{"ts":"2026-06-17T17:27:15Z","action":"T004","status":"done","files":["rust-services/workflow-worker/src/rabbitmq.rs"]}
+{"ts":"2026-06-17T17:27:20Z","action":"T005","status":"done","files":["rust-services/ingestion-worker/src/main.rs"]}
+{"ts":"2026-06-17T17:27:25Z","action":"T006","status":"done","files":["rust-services/Cargo.toml"]}
+{"ts":"2026-06-17T17:27:30Z","action":"T007","status":"done","files":["rust-services/Cargo.toml"]}
+{"ts":"2026-06-17T17:27:35Z","action":"T008","status":"done","files":["_reversa_forward/014-rust-nack-warnings/regression-watch.md"]}

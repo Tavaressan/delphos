@@ -13,3 +13,4 @@
 {"ts":"2026-06-16T13:02:00Z","action":"T013","status":"done","files":["frontend/src/features/documents/components/DocumentUploadList.tsx"]}
 {"ts":"2026-06-16T13:03:00Z","action":"T014","status":"done","files":["java-core/src/main/java/com/company/core/domain/entities/AuditLog.java","java-core/src/main/java/com/company/core/domain/repositories/AuditLogRepository.java","java-core/src/main/java/com/company/core/application/AuditService.java","java-core/src/main/java/com/company/core/application/AgentService.java","java-core/src/main/java/com/company/core/interfaces/rest/DocumentController.java","java-core/src/main/java/com/company/core/interfaces/rest/ExecutionController.java"]}
 {"ts":"2026-06-16T13:04:00Z","action":"T015","status":"done","files":["docs/architecture/api-spec.md"]}
+{"ts":"2026-06-17T17:31:50Z","action":"T008","status":"corrected","files":["java-core/src/main/java/com/company/core/domain/repositories/DocumentChunkRepository.java"]}

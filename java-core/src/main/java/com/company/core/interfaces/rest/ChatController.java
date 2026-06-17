@@ -6,7 +6,6 @@ import com.company.core.domain.entities.Message;
 import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.ConversationRepository;
-import com.company.core.domain.repositories.MessageRepository;
 import com.company.core.domain.repositories.UserRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,16 +19,13 @@ import java.util.UUID;
 public class ChatController {
 
     private final ConversationRepository conversationRepository;
-    private final MessageRepository messageRepository;
     private final AgentRepository agentRepository;
     private final UserRepository userRepository;
 
     public ChatController(ConversationRepository conversationRepository,
-                          MessageRepository messageRepository,
                           AgentRepository agentRepository,
                           UserRepository userRepository) {
         this.conversationRepository = conversationRepository;
-        this.messageRepository = messageRepository;
         this.agentRepository = agentRepository;
         this.userRepository = userRepository;
     }

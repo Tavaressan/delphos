@@ -4,30 +4,40 @@ repos:
 
       - id: rust-fmt
         name: Rust Format
-        entry: bash -c 'cd rust-services && cargo fmt --check'
+        # Parâmetro oficial do Cargo para mapear subpastas sem depender de shell
+        entry: cargo fmt --manifest-path rust-services/Cargo.toml --all -- --check
         language: system
         pass_filenames: false
 
       - id: rust-clippy
         name: Rust Clippy
-        entry: bash -c 'cd rust-services && cargo clippy -- -D warnings'
+        entry: cargo clippy --manifest-path rust-services/Cargo.toml -- -D warnings
         language: system
         pass_filenames: false
 
       - id: frontend-lint
         name: Frontend Lint
-        entry: bash -c 'cd frontend && npm run lint'
+        # Sintaxe universal de workspaces aceita por Mac, Linux e Git Bash
+        entry: npm run lint -w frontend
         language: system
         pass_filenames: false
 
       - id: frontend-types
         name: Frontend Type Check
-        entry: bash -c 'cd frontend && npm run type-check'
+        entry: npx -w frontend tsc --noEmit
         language: system
         pass_filenames: false
 
       - id: gitleaks
         name: Gitleaks
         entry: gitleaks protect --staged
+        language: system
+        pass_filenames: false
+
+      - id: gradle-wrapper-check
+        name: Verificar Gradle Wrapper no Git
+        # Script portátil em Python (instalado por padrão onde o pre-commit roda)
+        # Funciona nativamente em Mac, WSL, Linux e Windows sem quebras de sintaxe
+        entry: python -c "import os, sys; p='java-core/gradle/wrapper/gradle-wrapper.properties'; j='java-core/gradle/wrapper/gradle-wrapper.jar'; sys.exit(1 if os.path.exists(p) and not os.path.exists(j) else 0)"
         language: system
         pass_filenames: false

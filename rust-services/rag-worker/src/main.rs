@@ -6,8 +6,8 @@ mod tests;
 use crate::config::Config;
 use crate::rabbitmq::RabbitMQManager;
 use axum::{routing::get, Router};
-use std::net::SocketAddr;
 use sqlx::postgres::PgPoolOptions;
+use std::net::SocketAddr;
 
 #[tokio::main]
 async fn main() {
@@ -52,7 +52,7 @@ async fn main() {
     // 4. Inicializar Servidor HTTP de Healthcheck (Axum na porta 8000)
     let app = Router::new().route("/healthz", get(|| async { "OK" }));
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
-    
+
     println!("HTTP Healthcheck server listening on http://{}", addr);
     tokio::spawn(async move {
         let listener = match tokio::net::TcpListener::bind(addr).await {

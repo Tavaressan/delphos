@@ -44,6 +44,7 @@ public class AgentExecutionEventListener {
 
     @RabbitListener(queues = "agent.execution.events")
     @Transactional
+    @SuppressWarnings("unchecked")
     public void handleExecutionEvent(String messageBody) {
         log.info("Received execution event: {}", messageBody);
         try {

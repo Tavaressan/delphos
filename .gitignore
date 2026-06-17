@@ -19,6 +19,8 @@ out/
 bin/
 *.class
 *.jar
+# EXCEÇÃO: Permite explicitamente o JAR essencial do Gradle Wrapper
+!java-core/gradle/wrapper/gradle-wrapper.jar
 *.war
 *.ear
 
@@ -37,6 +39,11 @@ Cargo.lock
 *.log
 .env
 
+# Bloqueio absoluto de chaves de nuvem
+infrastructure/gcp/
+*.json
+
+
 # Python
 .venv/
 __pycache__/
@@ -46,4 +53,9 @@ test_models.py
 # Agents
 .agents/
 
+# Força a normalização de quebras de linha para LF em qualquer sistema operacional
+* text=auto eol=lf
 
+# Mantém arquivos binários intactos
+*.jar binary
+*.png binary

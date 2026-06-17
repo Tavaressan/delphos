@@ -1,0 +1,15 @@
+# Arquivo: .github/dependabot.yml
+version: 2
+updates:
+  # Configuração para atualizar o Gradle Wrapper
+  - package-ecosystem: "gradle"
+    directory: "/java-core"      # Aponta para a pasta onde está seu ecossistema Java
+    schedule:
+      interval: "weekly"         # Verifica novas versões toda semana
+    open-pull-requests-limit: 3
+
+  # BÔNUS: Mantém as dependências do ecossistema Node/Next.js também atualizadas
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"

@@ -2,8 +2,19 @@
   "name": "alfabra-vector-root",
   "version": "1.0.0",
   "type": "module",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "test:e2e": "node --test tests/e2e/runner.test.js"
+    "test:e2e": "node --test tests/e2e/runner.test.js",
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "eslint": "^9.00.0",
+    "eslint-config-next": "^16.2.9",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "pg": "^8.11.5",

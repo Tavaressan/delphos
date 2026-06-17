@@ -28,19 +28,37 @@ mod tests {
         assert!(config.is_ok());
         let cfg = config.unwrap();
         assert_eq!(cfg.rabbitmq_url, "amqp://guest:guest@rabbitmq:5672");
-        assert_eq!(cfg.database_url, "postgresql://postgres:postgres@postgres:5432/rag_db");
-        assert_eq!(cfg.embedding_service_url, "http://embedding-service:8000/embeddings");
+        assert_eq!(
+            cfg.database_url,
+            "postgresql://postgres:postgres@postgres:5432/rag_db"
+        );
+        assert_eq!(
+            cfg.embedding_service_url,
+            "http://embedding-service:8000/embeddings"
+        );
         assert_eq!(cfg.gcp_project_id, "alfabra-platform");
         assert_eq!(cfg.gcp_location, "us-central1");
         assert_eq!(cfg.gcp_chat_model_id, "gemini-2.5-flash");
 
         // Restore variables
-        if let Some(val) = old_rabbitmq { env::set_var("RABBITMQ_URL", val); }
-        if let Some(val) = old_database { env::set_var("DATABASE_URL", val); }
-        if let Some(val) = old_embedding { env::set_var("EMBEDDING_SERVICE_URL", val); }
-        if let Some(val) = old_project { env::set_var("GCP_PROJECT_ID", val); }
-        if let Some(val) = old_location { env::set_var("GCP_LOCATION", val); }
-        if let Some(val) = old_chat_model { env::set_var("GCP_CHAT_MODEL_ID", val); }
+        if let Some(val) = old_rabbitmq {
+            env::set_var("RABBITMQ_URL", val);
+        }
+        if let Some(val) = old_database {
+            env::set_var("DATABASE_URL", val);
+        }
+        if let Some(val) = old_embedding {
+            env::set_var("EMBEDDING_SERVICE_URL", val);
+        }
+        if let Some(val) = old_project {
+            env::set_var("GCP_PROJECT_ID", val);
+        }
+        if let Some(val) = old_location {
+            env::set_var("GCP_LOCATION", val);
+        }
+        if let Some(val) = old_chat_model {
+            env::set_var("GCP_CHAT_MODEL_ID", val);
+        }
     }
 
     #[test]
@@ -58,7 +76,15 @@ mod tests {
         assert_eq!(cfg.rabbitmq_url, "amqp://user:pass@localhost:5672");
         assert_eq!(cfg.database_url, "postgresql://user:pass@localhost:5432/db");
 
-        if let Some(val) = old_rabbitmq { env::set_var("RABBITMQ_URL", val); } else { env::remove_var("RABBITMQ_URL"); }
-        if let Some(val) = old_database { env::set_var("DATABASE_URL", val); } else { env::remove_var("DATABASE_URL"); }
+        if let Some(val) = old_rabbitmq {
+            env::set_var("RABBITMQ_URL", val);
+        } else {
+            env::remove_var("RABBITMQ_URL");
+        }
+        if let Some(val) = old_database {
+            env::set_var("DATABASE_URL", val);
+        } else {
+            env::remove_var("DATABASE_URL");
+        }
     }
 }

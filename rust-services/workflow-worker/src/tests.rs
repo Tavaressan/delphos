@@ -42,7 +42,10 @@ fn test_parse_job_payload() {
     let job = job.unwrap();
     assert_eq!(job.workflow_version, 1);
     assert_eq!(job.tenant_id, "default-tenant");
-    assert_eq!(job.workflow_id, Uuid::parse_str("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d").unwrap());
+    assert_eq!(
+        job.workflow_id,
+        Uuid::parse_str("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d").unwrap()
+    );
 }
 
 #[test]
@@ -62,18 +65,16 @@ fn test_topological_sort_linear() {
         config: json!({}),
     };
 
-    let edges = vec![
-        Edge {
-            id: Uuid::new_v4(),
-            from_node_id: node_1_id,
-            to_node_id: node_2_id,
-            condition: None,
-        }
-    ];
+    let edges = vec![Edge {
+        id: Uuid::new_v4(),
+        from_node_id: node_1_id,
+        to_node_id: node_2_id,
+        condition: None,
+    }];
 
     // Simple sorting assertion: node_1 must be executed before node_2
     let nodes = vec![node_2.clone(), node_1.clone()];
-    
+
     // Sort nodes manually based on edges
     let mut sorted = Vec::new();
     let mut visited = std::collections::HashSet::new();

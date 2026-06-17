@@ -1,9 +1,9 @@
 {
   "schema-version": 1,
-  "feature-dir": "_reversa_forward/013-ci-security-hardening",
-  "feature-id": "013",
-  "short-name": "ci-security-hardening",
-  "started-at": "2026-06-16T13:37:00Z",
+  "feature-dir": "_reversa_forward/014-rust-nack-warnings",
+  "feature-id": "014",
+  "short-name": "rust-nack-warnings",
+  "started-at": "2026-06-17T17:25:20Z",
   "current-stage": "requirements",
   "stages-completed": [],
   "paused-features": []

@@ -38,9 +38,10 @@ public class ApplicationTests {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void testActuatorHealth() {
         String url = "http://localhost:" + port + "/actuator/health";
-        ResponseEntity<Map> response = restTemplate.getForEntity(url, Map.class);
+        ResponseEntity<Map<String, Object>> response = (ResponseEntity<Map<String, Object>>)(ResponseEntity<?>)restTemplate.getForEntity(url, Map.class);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -56,7 +57,6 @@ public class ApplicationTests {
         assertThat(adminRoleOpt).isPresent();
         assertThat(userRoleOpt).isPresent();
 
-        Role adminRole = adminRoleOpt.get();
         Role userRole = userRoleOpt.get();
 
         // Validate essential permissions exist

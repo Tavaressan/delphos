@@ -21,14 +21,13 @@ impl Config {
         let embedding_service_url = env::var("EMBEDDING_SERVICE_URL")
             .unwrap_or_else(|_| "http://embedding-service:8000/embeddings".to_string());
 
-        let gcp_project_id = env::var("GCP_PROJECT_ID")
-            .unwrap_or_else(|_| "alfabra-platform".to_string());
+        let gcp_project_id =
+            env::var("GCP_PROJECT_ID").unwrap_or_else(|_| "alfabra-platform".to_string());
 
-        let gcp_location = env::var("GCP_LOCATION")
-            .unwrap_or_else(|_| "us-central1".to_string());
+        let gcp_location = env::var("GCP_LOCATION").unwrap_or_else(|_| "us-central1".to_string());
 
-        let gcp_chat_model_id = env::var("GCP_CHAT_MODEL_ID")
-            .unwrap_or_else(|_| "gemini-2.5-flash".to_string());
+        let gcp_chat_model_id =
+            env::var("GCP_CHAT_MODEL_ID").unwrap_or_else(|_| "gemini-2.5-flash".to_string());
 
         Ok(Config {
             rabbitmq_url,

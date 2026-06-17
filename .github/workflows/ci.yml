@@ -34,11 +34,15 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: 'gradle'
+          cache-dependency-path: |
+            java-core/*.gradle*
+            java-core/gradle/wrapper/gradle-wrapper.properties
+
       - name: Build with Gradle
         run: |
           cd java-core
           chmod +x gradlew || true
-          ./gradlew build -x test || gradle build -x test || echo "Gradle build wrapper missing, built via fallback"
+          ./gradlew build -x test
 
   frontend-check:
     name: Frontend Lint & Build
