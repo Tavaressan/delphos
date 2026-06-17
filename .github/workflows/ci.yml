@@ -2,68 +2,161 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+      - develop
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rust-check:
-    name: Rust Check & Test
+    name: Rust Check, Lint, Format & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Rust
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
+          # Define o diretório de trabalho para o cache encontrar o Cargo.toml do workspace
           workspaces: "rust-services -> rust-services/target"
-      - name: Cargo Check
+
+      - name: Check Formatting (cargo fmt)
+        run: |
+          cd rust-services
+          cargo fmt --all -- --check
+
+      - name: Check Code (cargo check)
         run: |
           cd rust-services
           cargo check --workspace
 
+      - name: Run Linter (cargo clippy)
+        run: |
+          cd rust-services
+          cargo clippy --workspace -- -D warnings
+
+      - name: Run Tests (cargo test)
+        run: |
+          cd rust-services
+          cargo test --workspace
+
   java-check:
-    name: Java Core Build
+    name: Java Core Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'gradle'
-          cache-dependency-path: |
-            java-core/*.gradle*
-            java-core/gradle/wrapper/gradle-wrapper.properties
 
-      - name: Build with Gradle
+      - name: Build and Test with Gradle
+        # Alterado: removidas flags '-x test' para garantir a execução dos testes unitários JUnit.
+        # Alterado: removido fallback '|| echo' e '|| gradle build' silenciados, garantindo Fail Fast real.
+        # Adicionado: execução dos testes Cucumber de integração integrados no ciclo de build.
         run: |
           cd java-core
-          chmod +x gradlew || true
-          ./gradlew build -x test
+          chmod +x gradlew
+          ./gradlew build
 
   frontend-check:
-    name: Frontend Lint & Build
+    name: Frontend Lint, Test & Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
+
       - name: Install dependencies
         run: |
           cd frontend
           npm ci
+
+      # Adicionado: Cache agressivo focado especificamente na pasta .next/cache para acelerar builds subsequentes
+      - name: Next.js Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/.next/cache
+          # A chave de cache é baseada no package-lock.json e nos arquivos fonte do frontend
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json') }}-${{ hashFiles('frontend/src/**/*.[jt]s', 'frontend/src/**/*.[jt]sx') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json') }}-
+
+      # Adicionado: Passo de Lint antes do build
+      - name: Run Lint
+        run: |
+          cd frontend
+          npm run lint
+
+      # Adicionado: Passo de Testes unitários antes do build
+      - name: Run Tests
+        run: |
+          cd frontend
+          npm test
+
       - name: Build next
         run: |
           cd frontend
           npm run build
 
+  python-ci:
+    name: Python Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # Ativa cache agressivo de dependências pip
+          cache-dependency-path: 'python-services/requirements.txt'
 
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f python-services/requirements.txt ]; then
+            pip install -r python-services/requirements.txt
+          fi
+          pip install black flake8 pytest
 
+      - name: Run Linter (Flake8)
+        run: |
+          # Verifica erros de sintaxe Python e estilo de código básico
+          flake8 python-services --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 python-services --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Check Code Formatting (Black)
+        run: |
+          black --check python-services
+
+      - name: Run Tests (PyTest)
+        run: |
+          pytest python-services

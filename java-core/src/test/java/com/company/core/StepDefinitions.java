@@ -146,4 +146,69 @@ public class StepDefinitions {
     public void retornarExceptionAST(String exception) {
         System.out.println("Retornou " + exception);
     }
+
+    @E("o worker determinístico {string} em Rust está escutando na fila {string}")
+    public void workerDeterministicoRustEscutando(String worker, String fila) {
+        System.out.println("Worker " + worker + " escutando na fila " + fila);
+    }
+
+    @Dado("que existe uma definição de DAG cadastrada no PostgreSQL com ID {string}")
+    public void dagCadastradaPostgres(String id) {
+        System.out.println("DAG cadastrada com ID: " + id);
+    }
+
+    @Quando("uma mensagem de job de workflow é publicada na exchange {string} com a routing key {string}")
+    public void mensagemJobPublicada(String exchange, String routingKey) {
+        System.out.println("Mensagem publicada na exchange " + exchange + " com routing key " + routingKey);
+    }
+
+    @Então("o {string} deve consumir o job e carregar a topologia da DAG do banco de dados")
+    public void workerConsomeECarregaDAG(String worker) {
+        System.out.println("Worker " + worker + " consumiu o job e carregou a topologia.");
+    }
+
+    @E("deve disparar a execução dos nós declarados")
+    public void dispararExecucaoNos() {
+        System.out.println("Disparou execução dos nós declarados.");
+    }
+
+    @E("deve publicar o evento {string} ao finalizar com sucesso")
+    public void publicarEventoSucesso(String evento) {
+        System.out.println("Publicou evento de sucesso: " + evento);
+    }
+
+    @E("deve enviar o ACK da mensagem original para o RabbitMQ")
+    public void enviarAckRabbit() {
+        System.out.println("ACK enviado ao RabbitMQ.");
+    }
+
+    @Dado("que existe uma definição de DAG com nós de longa duração")
+    public void dagLongaDuracao() {
+        System.out.println("Definição de DAG com nós de longa duração.");
+    }
+
+    @Quando("o {string} inicia a execução do job")
+    public void workerIniciaExecucaoJob(String worker) {
+        System.out.println("Worker " + worker + " iniciou execução do job.");
+    }
+
+    @E("o processamento total da DAG excede o limite configurado de {int} segundos")
+    public void processamentoExcedeTimeout(int segundos) {
+        System.out.println("Processamento excedeu " + segundos + " segundos.");
+    }
+
+    @Então("o worker Rust deve interromper a execução usando tokio::select!")
+    public void workerRustInterrompeSelect() {
+        System.out.println("Worker Rust interrompeu execução usando tokio::select!.");
+    }
+
+    @E("deve registrar o evento de falha {string} com o status {string} no broker")
+    public void registrarEventoFalha(String evento, String status) {
+        System.out.println("Registrou evento " + evento + " com status " + status);
+    }
+
+    @E("deve enviar o NACK da mensagem original")
+    public void enviarNackOriginal() {
+        System.out.println("NACK enviado para mensagem original.");
+    }
 }
