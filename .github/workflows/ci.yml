@@ -58,6 +58,20 @@ jobs:
   java-check:
     name: Java Core Build & Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: rag_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,7 +84,12 @@ jobs:
           cache: 'gradle'
 
       - name: Build and Test with Gradle
-        # Execução dos testes Cucumber de integração integrados no ciclo de build.
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: rag_db
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         run: |
           cd java-core
           chmod +x gradlew
@@ -157,4 +176,4 @@ jobs:
 
       - name: Run Tests (PyTest)
         run: |
-          pytest python-services --ignore=python-services/crew-worker/.venv; code=$?; [ $code -eq 0 ] || [ $code -eq 5 ] || exit $code
+          pytest python-services --ignore=python-services/crew-worker/.venv || [ $? -eq 5 ]
