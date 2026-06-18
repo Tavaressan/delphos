@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../providers/AuthProvider';
-import { ChevronDown, ShieldCheck, LogOut, Activity, Sun, Moon } from 'lucide-react';
+import { ChevronDown, ShieldCheck, LogOut, Activity, Sun, Moon, Menu } from 'lucide-react';
 import { apiClient } from '../../infrastructure/api/apiClient';
+import Link from 'next/link';
 
 export const Header: React.FC = () => {
-  const { user, isLogged, tenantId, logout } = useAuth();
+  const { user, isLogged, logout } = useAuth();
+
+  const openMobileSidebar = () => window.dispatchEvent(new Event('mobile-sidebar-open'));
   const [tenant, setTenant] = useState<string>('Alfabra Elevadores - Matriz');
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
@@ -56,18 +59,26 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-16 bg-surface border-b border-border-color flex items-center justify-between px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
+    <header className="h-16 bg-surface border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
       <div className="flex items-center gap-3">
-        <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-8 object-contain dark:brightness-0 dark:invert transition-all duration-200" />
-        <span className="h-5 w-[1px] bg-border-color" />
-        <h1 className="text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
+        {/* Hamburger — mobile only */}
+        <button
+          onClick={openMobileSidebar}
+          className="md:hidden text-text-secondary hover:text-text-primary p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          aria-label="Abrir menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-14 object-contain dark:brightness-0 dark:invert transition-all duration-200" />
+        <span className="hidden sm:block h-5 w-[1px] bg-border-color" />
+        <h1 className="hidden sm:block text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
           Enterprise Agent Operating Platform
         </h1>
       </div>
 
-      <div className="flex items-center gap-6">
+      <div className="flex items-center gap-3 md:gap-6">
         {/* Health Check Status Indicator */}
-        <div className="flex items-center gap-1.5 text-xs">
+        <div className="hidden sm:flex items-center gap-1.5 text-xs">
           <Activity className={`w-4 h-4 ${isBackendOnline === true ? 'text-success' : isBackendOnline === false ? 'text-danger' : 'text-slate-400'}`} />
           <span className="font-mono text-[10px] uppercase font-bold text-text-secondary">
             Backend: {isBackendOnline === true ? (
@@ -90,9 +101,9 @@ export const Header: React.FC = () => {
         </button>
 
         {isLogged && user ? (
-          <div className="flex items-center gap-4 text-xs font-body">
-            {/* Tenant Selection */}
-            <div className="relative flex items-center gap-1.5 bg-secondary/30 dark:bg-slate-900/50 border border-border-color rounded px-3 py-1.5 cursor-pointer group hover:bg-secondary/50 dark:hover:bg-slate-900 transition-all duration-150">
+          <div className="flex items-center gap-2 md:gap-4 text-xs font-body">
+            {/* Tenant Selection — hidden on mobile */}
+            <div className="hidden md:relative md:flex items-center gap-1.5 bg-secondary/30 dark:bg-slate-900/50 border border-border-color rounded px-3 py-1.5 cursor-pointer group hover:bg-secondary/50 dark:hover:bg-slate-900 transition-all duration-150">
               <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
               <span className="font-semibold text-text-secondary">{tenant}</span>
               <ChevronDown className="w-3 h-3 text-text-secondary group-hover:text-text-primary" />
@@ -105,10 +116,10 @@ export const Header: React.FC = () => {
 
             {/* User Profile */}
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded bg-primary text-white font-bold flex items-center justify-center text-sm shadow-sm select-none">
+              <div className="w-8 h-8 rounded bg-primary text-white font-bold flex items-center justify-center text-sm shadow-sm select-none flex-shrink-0">
                 {getInitials(user.firstName ? `${user.firstName} ${user.lastName || ''}` : user.username)}
               </div>
-              <div className="flex flex-col text-left">
+              <div className="hidden sm:flex flex-col text-left">
                 <span className="font-bold text-text-primary">{user.firstName} {user.lastName}</span>
                 <span className="text-[10px] uppercase bg-secondary/40 dark:bg-slate-900/50 text-text-secondary px-1 py-0.5 rounded font-mono font-bold border border-border-color flex items-center gap-0.5">
                   <ShieldCheck className="w-2.5 h-2.5 text-primary" /> ROLE_ADMIN
@@ -121,9 +132,9 @@ export const Header: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="text-xs">
-            <span className="text-text-secondary">Acesso Restrito</span>
-          </div>
+          <Link href="/auth/login" className="btn-primary text-xs px-4 py-2 rounded">
+            Entrar
+          </Link>
         )}
       </div>
     </header>

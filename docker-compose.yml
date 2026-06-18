@@ -208,6 +208,8 @@ services:
       - /app/frontend/.next
     env_file:
       - .env
+    environment:
+      - WATCHPACK_POLLING=true
     depends_on:
       core:
         condition: service_healthy

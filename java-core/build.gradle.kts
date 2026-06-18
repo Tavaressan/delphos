@@ -28,6 +28,7 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    testRuntimeOnly("com.h2database:h2")
     testImplementation("io.cucumber:cucumber-java:7.34.3")
     testImplementation("io.cucumber:cucumber-spring:7.34.3")
     testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.3")
@@ -35,5 +36,16 @@ dependencies {
 }
 
 tasks.withType<Test> {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Executa testes de integração (requer PostgreSQL+pgvector, Redis, RabbitMQ, MinIO)"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("integration")
+    }
+    shouldRunAfter("test")
 }

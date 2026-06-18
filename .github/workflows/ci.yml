@@ -73,7 +73,7 @@ jobs:
         run: |
           cd java-core
           chmod +x gradlew
-          ./gradlew assemble
+          ./gradlew test
 
   frontend-check:
     name: Frontend Lint, Test & Build
