@@ -2,27 +2,24 @@ package com.company.core.interfaces.rest;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.MockMvc;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest
+@AutoConfigureMockMvc
 public class AgentControllerIT {
 
-    @LocalServerPort
-    private int port;
-
     @Autowired
-    private TestRestTemplate restTemplate;
+    private MockMvc mockMvc;
 
     @Test
-    void testListAgentsEndpointExists() {
-        String url = "http://localhost:" + port + "/api/agents";
-        ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
-        assertThat(response.getStatusCode()).isNotEqualTo(HttpStatus.NOT_FOUND);
+    void testListAgentsEndpointExists() throws Exception {
+        mockMvc.perform(get("/api/agents"))
+                .andExpect(status().is(not(404)));
     }
 }
