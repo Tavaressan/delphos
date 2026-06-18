@@ -70,9 +70,7 @@ jobs:
           cache: 'gradle'
 
       - name: Build and Test with Gradle
-        # Alterado: removidas flags '-x test' para garantir a execução dos testes unitários JUnit.
-        # Alterado: removido fallback '|| echo' e '|| gradle build' silenciados, garantindo Fail Fast real.
-        # Adicionado: execução dos testes Cucumber de integração integrados no ciclo de build.
+        # Execução dos testes Cucumber de integração integrados no ciclo de build.
         run: |
           cd java-core
           chmod +x gradlew
