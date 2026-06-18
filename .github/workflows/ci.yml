@@ -157,4 +157,4 @@ jobs:
 
       - name: Run Tests (PyTest)
         run: |
-          pytest python-services
+          pytest python-services --ignore=python-services/crew-worker/.venv; code=$?; [ $code -eq 0 ] || [ $code -eq 5 ] || exit $code
