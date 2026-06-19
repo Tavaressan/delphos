@@ -35,10 +35,14 @@ dependencies {
     testImplementation("org.junit.platform:junit-platform-suite:1.10.2")
 }
 
-tasks.withType<Test> {
+tasks.named<Test>("test") {
     useJUnitPlatform {
         excludeTags("integration")
     }
+    // Cucumber engine auto-descobre cenários independentemente do @Suite;
+    // sem essa propriedade ele rodaria todos os cenários (que precisam de infra).
+    // @__unit__ não existe nos feature files → 0 cenários selecionados.
+    systemProperty("cucumber.filter.tags", "@__unit__")
 }
 
 tasks.register<Test>("integrationTest") {
