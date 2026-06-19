@@ -36,8 +36,7 @@ repos:
 
       - id: gradle-wrapper-check
         name: Verificar Gradle Wrapper no Git
-        # Script portátil em Python (instalado por padrão onde o pre-commit roda)
-        # Funciona nativamente em Mac, WSL, Linux e Windows sem quebras de sintaxe
-        entry: python3 -c "import os, sys; p='java-core/gradle/wrapper/gradle-wrapper.properties'; j='java-core/gradle/wrapper/gradle-wrapper.jar'; sys.exit(1 if os.path.exists(p) and not os.path.exists(j) else 0)"
+        # Shell puro — sem dependência de Python, funciona em Git Bash, Mac e Linux
+        entry: sh -c "test ! -f java-core/gradle/wrapper/gradle-wrapper.properties || test -f java-core/gradle/wrapper/gradle-wrapper.jar"
         language: system
         pass_filenames: false
