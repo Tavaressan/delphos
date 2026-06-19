@@ -69,10 +69,15 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Build and Test with Gradle
+      - name: Compile with Gradle
         run: |
           cd java-core
           chmod +x gradlew
+          ./gradlew compileJava compileTestJava
+
+      - name: Test with Gradle
+        run: |
+          cd java-core
           ./gradlew test
 
   frontend-check:

@@ -3,13 +3,14 @@ package com.company.core.interfaces.rest;
 import com.company.core.application.AgentService;
 import com.company.core.domain.entities.Agent;
 import com.company.core.domain.repositories.AgentRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.UUID;
@@ -20,18 +21,21 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(AgentController.class)
-@TestPropertySource(properties = "app.cors.allowed-origins=http://localhost")
+@ExtendWith(MockitoExtension.class)
 class AgentControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean
+    @Mock
     private AgentService agentService;
 
-    @MockitoBean
+    @Mock
     private AgentRepository agentRepository;
+
+    private MockMvc mockMvc;
+
+    @BeforeEach
+    void setup() {
+        mockMvc = MockMvcBuilders.standaloneSetup(new AgentController(agentService, agentRepository)).build();
+    }
 
     @Test
     void listAgents_withNoTenantId_returnsEmptyList() throws Exception {

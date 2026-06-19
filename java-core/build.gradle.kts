@@ -27,7 +27,6 @@ dependencies {
     implementation("io.minio:minio:8.5.9")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.springframework.boot:spring-boot-test-autoconfigure")
     testImplementation("org.springframework.security:spring-security-test")
     testRuntimeOnly("com.h2database:h2")
     testImplementation("io.cucumber:cucumber-java:7.34.3")
