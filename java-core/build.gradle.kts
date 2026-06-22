@@ -24,11 +24,14 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
     implementation("io.minio:minio:8.5.9")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testRuntimeOnly("com.h2database:h2")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
+    testImplementation("org.testcontainers:postgresql")
+    testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("io.cucumber:cucumber-java:7.34.3")
     testImplementation("io.cucumber:cucumber-spring:7.34.3")
     testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.3")
@@ -46,10 +49,13 @@ tasks.named<Test>("test") {
 }
 
 tasks.register<Test>("integrationTest") {
-    description = "Executa testes de integração (requer PostgreSQL+pgvector, Redis, RabbitMQ, MinIO)"
+    description = "Executa cenários BDD Cucumber com Testcontainers (pgvector/pgvector:pg16)"
     group = "verification"
-    useJUnitPlatform {
-        includeTags("integration")
+    useJUnitPlatform()
+    filter {
+        includeTestsMatching("com.company.core.CucumberTestSuite")
     }
+    // Filtra cenários Cucumber: apenas @integration, excluindo @pending
+    systemProperty("cucumber.filter.tags", "@integration and not @pending")
     shouldRunAfter("test")
 }

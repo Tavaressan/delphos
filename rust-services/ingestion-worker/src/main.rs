@@ -138,10 +138,29 @@ async fn main() -> Result<()> {
                     });
             }
             Err(e) => {
+                let parsed_job = serde_json::from_str::<IngestionJob>(&body).ok();
                 println!(
-                    "Error processing ingestion job: {}. Negative acknowledging.",
+                    "Error processing ingestion job: document_id={:?} tenant_id={:?} error={:#}. Inserting into DLQ and NACKing.",
+                    parsed_job.as_ref().map(|j| j.document_id),
+                    parsed_job.as_ref().map(|j| j.tenant_id),
                     e
                 );
+                if let Some(ref job) = parsed_job {
+                    let dlq_result = sqlx::query(
+                        "INSERT INTO failed_jobs (document_id, tenant_id, queue, payload, error_message) \
+                         VALUES ($1, $2, $3, $4::jsonb, $5)",
+                    )
+                    .bind(job.document_id)
+                    .bind(job.tenant_id)
+                    .bind("document.ingestion.jobs")
+                    .bind(body.as_ref())
+                    .bind(format!("{:#}", e))
+                    .execute(&db_pool)
+                    .await;
+                    if let Err(dlq_err) = dlq_result {
+                        println!("WARN: Failed to insert job into DLQ: {}", dlq_err);
+                    }
+                }
                 delivery
                     .nack(BasicNackOptions {
                         multiple: false,
@@ -209,6 +228,10 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
     // 2. Extrair texto com base no file_type
     let text = if job.file_type.eq_ignore_ascii_case("pdf") {
         extract_text_from_pdf(&bytes)?
+    } else if job.file_type.eq_ignore_ascii_case("docx")
+        || job.file_type.eq_ignore_ascii_case(".docx")
+    {
+        extract_text_from_docx(&bytes)?
     } else {
         // Assume text/plain por padrão
         String::from_utf8(bytes).unwrap_or_else(|_| "Conteúdo binário não textual".to_string())
@@ -219,8 +242,14 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
     }
 
     // 3. Fazer chunking do texto
-    let chunk_size = 1000;
-    let chunk_overlap = 200;
+    let chunk_size: usize = env::var("CHUNK_SIZE")
+        .unwrap_or_else(|_| "1000".to_string())
+        .parse()
+        .unwrap_or(1000);
+    let chunk_overlap: usize = env::var("CHUNK_OVERLAP")
+        .unwrap_or_else(|_| "200".to_string())
+        .parse()
+        .unwrap_or(200);
     let chunks = chunk_text(&text, chunk_size, chunk_overlap);
     println!("Divided document into {} chunks.", chunks.len());
 
@@ -334,6 +363,27 @@ fn extract_text_from_pdf(pdf_bytes: &[u8]) -> Result<String> {
         }
     }
 
+    Ok(text)
+}
+
+fn extract_text_from_docx(bytes: &[u8]) -> Result<String> {
+    let docx =
+        docx_rs::read_docx(bytes).map_err(|e| anyhow::anyhow!("Failed to parse .docx: {:?}", e))?;
+    let mut text = String::new();
+    for child in &docx.document.children {
+        if let docx_rs::DocumentChild::Paragraph(p) = child {
+            for pc in &p.children {
+                if let docx_rs::ParagraphChild::Run(r) = pc {
+                    for rc in &r.children {
+                        if let docx_rs::RunChild::Text(t) = rc {
+                            text.push_str(&t.text);
+                        }
+                    }
+                }
+            }
+            text.push('\n');
+        }
+    }
     Ok(text)
 }
 

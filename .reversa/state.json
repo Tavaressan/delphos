@@ -8,16 +8,15 @@
   "doc_level": "essencial",
   "output_folder": "_reversa_sdd",
   "forward_folder": "_reversa_forward",
-  "phase": null,
+  "phase": "interpretacao",
   "completed": [
     "reconhecimento",
-    "escavacao"
-  ],
-  "pending": [
+    "escavacao",
     "interpretacao",
     "geracao",
     "revisao"
   ],
+  "pending": [],
   "checkpoints": {
     "scout": {
       "completed_at": "2026-06-16T14:50:09.396944Z",
@@ -33,12 +32,38 @@
         "_reversa_sdd/code-analysis.md",
         ".reversa/context/modules.json"
       ]
+    },
+    "detective": {
+      "completed_at": "2026-06-19T00:00:00.000000Z",
+      "files": [
+        "_reversa_sdd/detective.md"
+      ]
+    },
+    "architect": {
+      "completed_at": "2026-06-19T01:00:00.000000Z",
+      "files": [
+        "_reversa_sdd/architect.md"
+      ]
+    },
+    "writer": {
+      "completed_at": "2026-06-19T02:00:00.000000Z",
+      "files": [
+        "_reversa_sdd/domain.md",
+        "_reversa_sdd/sdd.md"
+      ]
+    },
+    "reviewer": {
+      "completed_at": "2026-06-19T03:00:00.000000Z",
+      "files": [
+        "_reversa_sdd/review.md"
+      ]
     }
   },
   "engines": [],
   "agents": [
     "reversa-scout",
-    "reversa-archaeologist"
+    "reversa-archaeologist",
+    "reversa-detective"
   ],
   "created_files": [
     ".agents/skills/reversa-scout",
@@ -109,6 +134,7 @@
     "_reversa_sdd/dependencies.md",
     ".reversa/context/surface.json",
     "_reversa_sdd/code-analysis.md",
-    ".reversa/context/modules.json"
+    ".reversa/context/modules.json",
+    "_reversa_sdd/detective.md"
   ]
 }
