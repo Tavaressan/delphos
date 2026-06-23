@@ -35,7 +35,11 @@
       ]
     }
   },
-  "engines": [],
+  "engines": [
+    "claude-code",
+    "codex",
+    "antigravity"
+  ],
   "agents": [
     "reversa-scout",
     "reversa-archaeologist"
@@ -109,6 +113,8 @@
     "_reversa_sdd/dependencies.md",
     ".reversa/context/surface.json",
     "_reversa_sdd/code-analysis.md",
-    ".reversa/context/modules.json"
+    ".reversa/context/modules.json",
+    ".claude/skills/reversa-scout",
+    ".claude/skills/reversa-archaeologist"
   ]
 }

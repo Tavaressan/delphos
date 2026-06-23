@@ -60,3 +60,6 @@ test_models.py
 # Mantém arquivos binários intactos
 *.jar binary
 *.png binary
+
+# Impede que arquivos de worktrees do Claude Code sejam rastreados
+.claude/worktrees/
