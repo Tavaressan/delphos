@@ -2,7 +2,7 @@
 FROM rust:slim-bookworm as builder
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=embedding-service-target,target=/app/target \
     cargo build --release --package embedding-service && \
     cp /app/target/release/embedding-service /usr/local/bin/service

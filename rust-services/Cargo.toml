@@ -13,4 +13,4 @@ resolver = "2"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
-gcp-auth = { package = "gcp_auth", version = "0.9" } # Gerencia a geração de tokens OAuth automaticamente
+gcp-auth = { package = "gcp_auth", version = "0.12" } # Gerencia a geração de tokens OAuth automaticamente

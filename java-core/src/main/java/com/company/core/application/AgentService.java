@@ -6,7 +6,7 @@ import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
 import com.company.core.domain.repositories.UserRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import org.slf4j.Logger;

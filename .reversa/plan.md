@@ -26,25 +26,25 @@
 
 ## Fase 3: Interpretação 🧠
 
-- [ ] **Detetive** — Arqueologia Git e ADRs retroativos
-- [ ] **Detetive** — Regras de negócio implícitas e máquinas de estado
-- [ ] **Detetive** — Matriz de permissões (RBAC/ACL)
-- [ ] **Arquiteto** — Diagramas C4 (Contexto, Containers, Componentes)
-- [ ] **Arquiteto** — ERD completo e integrações externas
-- [ ] **Arquiteto** — Spec Impact Matrix
+- [x] **Detetive** — Arqueologia Git e ADRs retroativos
+- [x] **Detetive** — Regras de negócio implícitas e máquinas de estado
+- [x] **Detetive** — Matriz de permissões (RBAC/ACL)
+- [x] **Arquiteto** — Diagramas C4 (Contexto, Containers, Componentes)
+- [x] **Arquiteto** — ERD completo e integrações externas
+- [x] **Arquiteto** — Spec Impact Matrix
 
 ## Fase 4: Geração 📝
 
-- [ ] **Redator** — Specs SDD por componente
-- [ ] **Redator** — OpenAPI (se aplicável)
-- [ ] **Redator** — User Stories (se aplicável)
-- [ ] **Redator** — Code/Spec Matrix
+- [x] **Redator** — Specs SDD por componente
+- [x] **Redator** — OpenAPI (se aplicável)
+- [x] **Redator** — User Stories (se aplicável)
+- [x] **Redator** — Code/Spec Matrix
 
 ## Fase 5: Revisão ✅
 
-- [ ] **Revisor** — Revisão cruzada de specs
-- [ ] **Revisor** — Resolução de lacunas com o usuário
-- [ ] **Revisor** — Relatório de confiança final
+- [x] **Revisor** — Revisão cruzada de specs
+- [x] **Revisor** — Resolução de lacunas com o usuário
+- [x] **Revisor** — Relatório de confiança final
 
 ---
 

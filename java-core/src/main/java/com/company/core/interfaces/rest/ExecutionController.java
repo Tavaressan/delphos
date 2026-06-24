@@ -4,7 +4,7 @@ import com.company.core.domain.entities.Agent;
 import com.company.core.domain.entities.Message;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.MessageRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.company.core.domain.entities.AgentExecution;
 import com.company.core.domain.entities.Conversation;
 import com.company.core.domain.entities.User;
@@ -80,6 +80,11 @@ public class ExecutionController {
             Agent agent = null;
             if (agentIdStr != null && !agentIdStr.isEmpty()) {
                 agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
+                if (agent == null) {
+                    Map<String, Object> errorResp = new HashMap<>();
+                    errorResp.put("error", "Agent not found: " + agentIdStr);
+                    return ResponseEntity.status(404).body(errorResp);
+                }
             }
 
             if (conversation == null) {
@@ -118,11 +123,21 @@ public class ExecutionController {
             payload.put("prompt_final", prompt);
 
             // 5. Publish to RabbitMQ
-            rabbitTemplate.convertAndSend(
-                "agent.execution.exchange",
-                "agent.execution.jobs",
-                objectMapper.writeValueAsString(payload)
-            );
+            try {
+                rabbitTemplate.convertAndSend(
+                    "agent.execution.exchange",
+                    "agent.execution.jobs",
+                    objectMapper.writeValueAsString(payload)
+                );
+            } catch (org.springframework.amqp.AmqpException amqpEx) {
+                execution.setStatus("FAILED");
+                execution.setErrorMessage(amqpEx.getMessage());
+                executionRepository.save(execution);
+                Map<String, Object> errorResp = new HashMap<>();
+                errorResp.put("error", "Message broker unavailable");
+                errorResp.put("executionId", execution.getId().toString());
+                return ResponseEntity.internalServerError().body(errorResp);
+            }
 
             // 6. Transition to QUEUED status
             execution.setStatus("QUEUED");
