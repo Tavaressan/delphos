@@ -36,6 +36,7 @@ def process_job(ch, method, properties, body):
         execution_id = job_data.get("execution_id")
         tenant_id = job_data.get("tenant_id", "default-tenant")
         prompt = job_data.get("prompt_final", "Default prompt")
+        agent_id = job_data.get("agent_id")
 
         if not execution_id:
             print("Missing execution_id in job payload, acknowledging and dropping")
@@ -43,7 +44,7 @@ def process_job(ch, method, properties, body):
             return
 
         # Instantiate and execute via the CrewAI Adapter
-        adapter = CrewAiRuntimeAdapter(ch, execution_id, tenant_id, prompt)
+        adapter = CrewAiRuntimeAdapter(ch, execution_id, tenant_id, prompt, agent_id=agent_id)
         adapter.execute()
 
         # Manual Acknowledge (ACK) to remove message from queue

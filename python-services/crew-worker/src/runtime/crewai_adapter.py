@@ -9,6 +9,21 @@ from typing import Any, List, Mapping, Optional
 from crewai import Agent, Task, Crew, Process, BaseLLM, LLM
 from crewai.tools import tool
 
+from runtime.instruction_parser import parse as parse_instructions
+
+_HARDCODED_ROLE = "Elevator Specialist"
+_HARDCODED_GOAL = (
+    "Analyze and respond to technical questions about vertical transport systems "
+    "(elevators and escalators), especially in the brazilian market, using the retrieved "
+    "knowledge base."
+)
+_HARDCODED_BACKSTORY = (
+    "You are an expert in elevators and escalators with access to the company's technical "
+    "knowledge base. You operate within the Alfabra company context, a major player in the "
+    "vertical transport systems industry. Your responses should be concise, accurate, directly "
+    "answer the user query based on the retrieved documents, and always be in portuguese."
+)
+
 
 class MockLLM(BaseLLM):
     # Standard Mock LLM for local development to avoid OpenAI API key errors
@@ -24,11 +39,12 @@ class MockLLM(BaseLLM):
 
 
 class CrewAiRuntimeAdapter:
-    def __init__(self, channel, execution_id: str, tenant_id: str, prompt: str):
+    def __init__(self, channel, execution_id: str, tenant_id: str, prompt: str, agent_id: str = None):
         self.channel = channel
         self.execution_id = execution_id
         self.tenant_id = tenant_id
         self.prompt = prompt
+        self.agent_id = agent_id
 
         # Detect Vertex AI environment variables
         api_key = os.environ.get("VERTEX_AI_API_KEY")
@@ -59,6 +75,51 @@ class CrewAiRuntimeAdapter:
                 "[CrewAiRuntimeAdapter] Vertex credentials or API Key missing/placeholder. Using MockLLM."
             )
             self.llm = MockLLM(model="mock-model")
+
+        # Load agent config from DB or use hardcoded legacy fallback
+        self._agent_role = _HARDCODED_ROLE
+        self._agent_goal = _HARDCODED_GOAL
+        self._agent_backstory = _HARDCODED_BACKSTORY
+
+        if agent_id is not None:
+            self._load_agent_config(agent_id)
+
+    def _load_agent_config(self, agent_id: str):
+        db_url = os.environ.get(
+            "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/rag_db"
+        )
+        try:
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT name, system_instructions FROM agents WHERE id = %s",
+                (agent_id,),
+            )
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+
+            if row is None:
+                self.publish_event(
+                    "AgentExecutionFailed",
+                    {"reason": f"agent_id '{agent_id}' not found in database"},
+                )
+                raise ValueError(f"Agent '{agent_id}' not found")
+
+            name, system_instructions = row
+            parsed = parse_instructions(system_instructions, name)
+            self._agent_role = parsed["role"]
+            self._agent_goal = parsed["goal"]
+            self._agent_backstory = parsed["backstory"]
+
+        except ValueError:
+            raise
+        except Exception as e:
+            self.publish_event(
+                "AgentExecutionFailed",
+                {"reason": f"DB lookup failed for agent_id '{agent_id}': {str(e)}"},
+            )
+            raise
 
     def publish_event(self, event_type: str, payload: dict):
         event_body = {
@@ -102,7 +163,7 @@ class CrewAiRuntimeAdapter:
             )
             return "Falha ao se comunicar com o serviço de embeddings."
 
-        # 2. Busca vetorial por similaridade (cosseno) no Postgres
+        # 2. Busca vetorial por similaridade (cosseno) no Postgres filtrada por agent_id
         db_url = os.environ.get(
             "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/rag_db"
         )
@@ -113,18 +174,19 @@ class CrewAiRuntimeAdapter:
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
 
-            # Formatar o vetor de embedding como string: '[0.1, 0.2, ...]'
             embedding_str = "[" + ",".join(map(str, embedding)) + "]"
 
             cur.execute(
                 """
-                SELECT content, 1 - (embedding <=> %s::vector) as similarity
-                FROM document_chunks
-                WHERE tenant_id = %s
+                SELECT dc.content, 1 - (dc.embedding <=> %s::vector) as similarity
+                FROM document_chunks dc
+                JOIN documents d ON dc.document_id = d.id
+                WHERE dc.tenant_id = %s
+                  AND (d.agent_id = %s OR d.agent_id IS NULL)
                 ORDER BY similarity DESC
                 LIMIT 5
                 """,
-                (embedding_str, self.tenant_id),
+                (embedding_str, self.tenant_id, self.agent_id),
             )
             rows = cur.fetchall()
             cur.close()
@@ -221,12 +283,16 @@ class CrewAiRuntimeAdapter:
             self.publish_event("ToolCallFinished", tool_finish_payload)
             return response_payload
 
-        # 4. Inicializar CrewAI Agent
-        print("[CrewAiRuntimeAdapter] Initializing CrewAI Agent...")
+        # 4. Inicializar CrewAI Agent com role/goal/backstory dinâmicos
+        print(
+            f"[CrewAiRuntimeAdapter] Initializing CrewAI Agent | "
+            f"agent_id={self.agent_id} | role={self._agent_role!r} | "
+            f"backstory={self._agent_backstory[:80]!r}..."
+        )
         agent = Agent(
-            role="Elevator Specialist",
-            goal="Analyze and respond to technical questions about vertical transport systems (elevators and escalators), especially in the brazilian market, using the retrieved knowledge base.",
-            backstory="You are an expert in elevators and escalators with access to the company's technical knowledge base. You operate within the Alfabra company context, a major player in the vertical transport systems industry. Your responses should be concise, accurate, directly answer the user query based on the retrieved documents, and always be in portuguese.",
+            role=self._agent_role,
+            goal=self._agent_goal,
+            backstory=self._agent_backstory,
             tools=[calculate_sandbox_quota, search_knowledge_base],
             llm=self.llm,
             verbose=True,
