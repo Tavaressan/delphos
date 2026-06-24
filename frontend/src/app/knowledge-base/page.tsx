@@ -109,8 +109,8 @@ export default function KnowledgeBasePage() {
 
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Gerenciador de Bases de Conhecimento</h2>
-              <p className="text-slate-400 text-xs mt-1">Carregue documentos corporativos para o pipeline de processamento vetorial PostgreSQL com pgvector.</p>
+              <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Bases de Conhecimento</h2>
+              <p className="text-slate-400 text-xs mt-1">Carregue suas fontes para processamento</p>
             </div>
 
             <div className="flex gap-4 text-xs">
@@ -138,7 +138,7 @@ export default function KnowledgeBasePage() {
 
             <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="font-bold text-text-primary text-sm heading-font uppercase">Documentos da Coleção</h3>
+                <h3 className="font-bold text-text-primary text-sm heading-font uppercase">Documentos</h3>
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <div className="flex items-center bg-surface border border-border-color rounded focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all duration-200">

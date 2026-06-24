@@ -41,7 +41,7 @@ export default function LoginPage() {
         {/* Header */}
         <div className="bg-primary p-6 text-center text-white flex flex-col items-center gap-3">
           <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra" className="h-10 object-contain brightness-0 invert" />
-          <span className="text-xs库 uppercase font-mono font-bold tracking-widest text-accent">Login Unificado</span>
+          <span className="text-xs uppercase font-mono font-bold tracking-widest text-accent">Login Unificado</span>
         </div>
         
         {/* Form Body */}
@@ -78,7 +78,7 @@ export default function LoginPage() {
                 className="accent-primary h-4 w-4 rounded border-slate-200 focus:ring-primary cursor-pointer"
               />
               <label htmlFor="mfa" className="text-xs text-slate-600 font-semibold select-none cursor-pointer">
-                Autenticação MFA ativa (LibreChat)
+                Autenticação em dois fatores
               </label>
             </div>
           </div>
@@ -92,8 +92,8 @@ export default function LoginPage() {
                 className="p-4 bg-slate-50 border border-slate-200 rounded overflow-hidden"
               >
                 <label className="label-alfabra flex items-center justify-between">
-                  <span>Token TOTP de 6 dígitos</span>
-                  <span className="text-[9px] text-primary lowercase font-mono">auth app</span>
+                  <span>Código de verificação</span>
+                  <span className="text-[9px] text-primary lowercase font-mono">app autenticador</span>
                 </label>
                 <input 
                   type="text" 

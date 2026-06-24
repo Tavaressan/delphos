@@ -72,7 +72,7 @@ export const Header: React.FC = () => {
         <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-14 object-contain dark:brightness-0 dark:invert transition-all duration-200" />
         <span className="hidden sm:block h-5 w-[1px] bg-border-color" />
         <h1 className="hidden sm:block text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
-          Enterprise Agent Operating Platform
+          Agent Operating Platform
         </h1>
       </div>
 
@@ -102,18 +102,6 @@ export const Header: React.FC = () => {
 
         {isLogged && user ? (
           <div className="flex items-center gap-2 md:gap-4 text-xs font-body">
-            {/* Tenant Selection — hidden on mobile */}
-            <div className="hidden md:relative md:flex items-center gap-1.5 bg-secondary/30 dark:bg-slate-900/50 border border-border-color rounded px-3 py-1.5 cursor-pointer group hover:bg-secondary/50 dark:hover:bg-slate-900 transition-all duration-150">
-              <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-              <span className="font-semibold text-text-secondary">{tenant}</span>
-              <ChevronDown className="w-3 h-3 text-text-secondary group-hover:text-text-primary" />
-              
-              <div className="absolute right-0 top-full mt-1.5 bg-surface border border-border-color rounded shadow-lg hidden group-hover:block w-52 overflow-hidden z-20">
-                <div onClick={() => setTenant('Alfabra Elevadores - Matriz')} className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-text-primary">Alfabra Elevadores - Matriz</div>
-                <div onClick={() => setTenant('Alfabra Infra - Global')} className="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer text-text-primary">Alfabra Infra - Global</div>
-              </div>
-            </div>
-
             {/* User Profile */}
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded bg-primary text-white font-bold flex items-center justify-center text-sm shadow-sm select-none flex-shrink-0">
