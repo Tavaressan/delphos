@@ -1,6 +1,8 @@
 import yaml
 
-_FALLBACK_GOAL = "Responder perguntas com base no contexto técnico da base de conhecimento."
+_FALLBACK_GOAL = (
+    "Responder perguntas com base no contexto técnico da base de conhecimento."
+)
 
 _FALLBACK_BACKSTORY = (
     "You are an expert in elevators and escalators with access to the company's "

@@ -10,8 +10,9 @@ def _get_last_sql(mock_cur):
 def _make_adapter_for_search(agent_id="agent-a"):
     channel = MagicMock()
 
-    with patch("runtime.crewai_adapter.LLM"), \
-         patch("runtime.crewai_adapter.psycopg2") as mock_pg:
+    with patch("runtime.crewai_adapter.LLM"), patch(
+        "runtime.crewai_adapter.psycopg2"
+    ) as mock_pg:
 
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -20,10 +21,12 @@ def _make_adapter_for_search(agent_id="agent-a"):
         mock_pg.connect.return_value = mock_conn
 
         import os
+
         os.environ.setdefault("VERTEX_AI_API_KEY", "x" * 25)
         os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
         from runtime.crewai_adapter import CrewAiRuntimeAdapter
+
         adapter = CrewAiRuntimeAdapter(
             channel, "exec-search", "tenant-t", "query", agent_id=agent_id
         )
@@ -34,11 +37,14 @@ def _make_adapter_for_search(agent_id="agent-a"):
 def test_search_db_sql_includes_join_documents():
     adapter = _make_adapter_for_search()
 
-    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, \
-         patch("runtime.crewai_adapter.requests") as mock_req:
+    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, patch(
+        "runtime.crewai_adapter.requests"
+    ) as mock_req:
 
         mock_req.post.return_value.status_code = 200
-        mock_req.post.return_value.json.return_value = {"data": [{"embedding": [0.1] * 768}]}
+        mock_req.post.return_value.json.return_value = {
+            "data": [{"embedding": [0.1] * 768}]
+        }
 
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -55,11 +61,14 @@ def test_search_db_sql_includes_join_documents():
 def test_search_db_sql_filters_agent_id_or_null():
     adapter = _make_adapter_for_search()
 
-    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, \
-         patch("runtime.crewai_adapter.requests") as mock_req:
+    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, patch(
+        "runtime.crewai_adapter.requests"
+    ) as mock_req:
 
         mock_req.post.return_value.status_code = 200
-        mock_req.post.return_value.json.return_value = {"data": [{"embedding": [0.1] * 768}]}
+        mock_req.post.return_value.json.return_value = {
+            "data": [{"embedding": [0.1] * 768}]
+        }
 
         mock_conn = MagicMock()
         mock_cur = MagicMock()
@@ -76,11 +85,14 @@ def test_search_db_sql_filters_agent_id_or_null():
 def test_search_db_uses_parameterized_agent_id():
     adapter = _make_adapter_for_search(agent_id="agent-a")
 
-    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, \
-         patch("runtime.crewai_adapter.requests") as mock_req:
+    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, patch(
+        "runtime.crewai_adapter.requests"
+    ) as mock_req:
 
         mock_req.post.return_value.status_code = 200
-        mock_req.post.return_value.json.return_value = {"data": [{"embedding": [0.1] * 768}]}
+        mock_req.post.return_value.json.return_value = {
+            "data": [{"embedding": [0.1] * 768}]
+        }
 
         mock_conn = MagicMock()
         mock_cur = MagicMock()

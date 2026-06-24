@@ -10,8 +10,9 @@ def channel():
 
 
 def _make_adapter(channel, agent_id=None, db_row=None, db_raises=None):
-    with patch("runtime.crewai_adapter.LLM"), \
-         patch("runtime.crewai_adapter.psycopg2") as mock_pg:
+    with patch("runtime.crewai_adapter.LLM"), patch(
+        "runtime.crewai_adapter.psycopg2"
+    ) as mock_pg:
 
         if db_raises:
             mock_pg.connect.side_effect = db_raises
@@ -23,10 +24,12 @@ def _make_adapter(channel, agent_id=None, db_row=None, db_raises=None):
             mock_pg.connect.return_value = mock_conn
 
         import os
+
         os.environ.setdefault("VERTEX_AI_API_KEY", "x" * 25)
         os.environ.setdefault("GCP_PROJECT_ID", "test-project")
 
         from runtime.crewai_adapter import CrewAiRuntimeAdapter
+
         adapter = CrewAiRuntimeAdapter(
             channel, "exec-001", "tenant-abc", "prompt text", agent_id=agent_id
         )
@@ -40,8 +43,12 @@ def test_no_agent_id_uses_hardcoded_fallback(channel):
 
 
 def test_valid_agent_id_sets_dynamic_fields(channel):
-    instructions = "---\nrole: HVAC Specialist\ngoal: Meu goal\nbackstory: Minha história\n---\n"
-    adapter, _ = _make_adapter(channel, agent_id="abc-123", db_row=("HVAC Specialist", instructions))
+    instructions = (
+        "---\nrole: HVAC Specialist\ngoal: Meu goal\nbackstory: Minha história\n---\n"
+    )
+    adapter, _ = _make_adapter(
+        channel, agent_id="abc-123", db_row=("HVAC Specialist", instructions)
+    )
     assert adapter._agent_role == "HVAC Specialist"
     assert adapter._agent_goal == "Meu goal"
     assert adapter._agent_backstory == "Minha história"

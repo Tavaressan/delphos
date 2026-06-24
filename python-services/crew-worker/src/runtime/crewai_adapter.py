@@ -39,7 +39,14 @@ class MockLLM(BaseLLM):
 
 
 class CrewAiRuntimeAdapter:
-    def __init__(self, channel, execution_id: str, tenant_id: str, prompt: str, agent_id: str = None):
+    def __init__(
+        self,
+        channel,
+        execution_id: str,
+        tenant_id: str,
+        prompt: str,
+        agent_id: str = None,
+    ):
         self.channel = channel
         self.execution_id = execution_id
         self.tenant_id = tenant_id

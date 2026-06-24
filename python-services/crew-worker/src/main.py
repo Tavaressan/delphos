@@ -44,7 +44,9 @@ def process_job(ch, method, properties, body):
             return
 
         # Instantiate and execute via the CrewAI Adapter
-        adapter = CrewAiRuntimeAdapter(ch, execution_id, tenant_id, prompt, agent_id=agent_id)
+        adapter = CrewAiRuntimeAdapter(
+            ch, execution_id, tenant_id, prompt, agent_id=agent_id
+        )
         adapter.execute()
 
         # Manual Acknowledge (ACK) to remove message from queue
