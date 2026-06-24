@@ -102,7 +102,7 @@ Quando achar que vale uma pausa, pergunte assim:
 
 Antes de oferecer a opção 2, **confirme que o checkpoint está salvo** em `.reversa/state.json` (campo `phase`, `completed`, `checkpoints` do agente que acabou de rodar). Sem checkpoint válido, oferecer pausa é arriscado.
 
-Não force a pausa. O usuário decide. Se he não responder ou disser para continuar, prossiga normalmente.
+Não force a pausa. O usuário decide. Se ele não responder ou disser para continuar, prossiga normalmente.
 
 ## Escala de confiança
 
@@ -119,5 +119,5 @@ A verificação compara cada watch item declarado em `_reversa_forward/<feature>
 
 ## Regra absoluta
 
-**Nunca apague, modifique ou sobrescreva arquivos pré-existentes do projeto legado.**
+**Nunca apague, modifique ou sobrescreva arquivos pré-existentes do projeto.**
 O Reversa escreve APENAS em `.reversa/`, `_reversa_sdd/` e em `_reversa_forward/<feature>/regression-watch.md` (apenas seção de histórico, nunca a tabela principal).

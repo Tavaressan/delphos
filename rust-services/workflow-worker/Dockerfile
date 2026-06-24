@@ -2,7 +2,7 @@
 FROM rust:slim as builder
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=workflow-worker-target,target=/app/target \
     cargo build --release --package workflow-worker && \
     cp /app/target/release/workflow-worker /usr/local/bin/service

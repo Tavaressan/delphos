@@ -24,16 +24,38 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
     implementation("io.minio:minio:8.5.9")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
+    testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
+    testImplementation("org.testcontainers:postgresql")
+    testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("io.cucumber:cucumber-java:7.34.3")
     testImplementation("io.cucumber:cucumber-spring:7.34.3")
     testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.3")
-    testImplementation("org.junit.platform:junit-platform-suite:1.10.2")
+    testImplementation("org.junit.platform:junit-platform-suite:6.1.0")
 }
 
-tasks.withType<Test> {
+tasks.named<Test>("test") {
+    useJUnitPlatform {
+        excludeTags("integration")
+    }
+    // Cucumber engine auto-descobre cenários independentemente do @Suite;
+    // sem essa propriedade ele rodaria todos os cenários (que precisam de infra).
+    // @__unit__ não existe nos feature files → 0 cenários selecionados.
+    systemProperty("cucumber.filter.tags", "@__unit__")
+}
+
+tasks.register<Test>("integrationTest") {
+    description = "Executa cenários BDD Cucumber com Testcontainers (pgvector/pgvector:pg16)"
+    group = "verification"
     useJUnitPlatform()
+    filter {
+        includeTestsMatching("com.company.core.CucumberTestSuite")
+    }
+    // Filtra cenários Cucumber: apenas @integration, excluindo @pending
+    systemProperty("cucumber.filter.tags", "@integration and not @pending")
+    shouldRunAfter("test")
 }

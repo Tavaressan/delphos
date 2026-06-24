@@ -1,7 +1,7 @@
 # Dockerfile for Java Core (Spring Boot)
 
 # Stage 1: Build the application using Gradle
-FROM gradle:8.7-jdk21 AS builder
+FROM gradle:8.14-jdk21 AS builder
 WORKDIR /app
 
 # Copy gradle configuration files
@@ -19,7 +19,7 @@ RUN gradle bootJar -x test --no-daemon
 
 # Stage 2: Runtime image
 FROM eclipse-temurin:21-jre-jammy
-WORKDIR /app
+WORKDIR /opt/app
 
 # Copy the build artifact from the builder stage
 # Spring Boot gradle plugin puts the jar in build/libs/

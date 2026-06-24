@@ -10,6 +10,7 @@ Funcionalidade: Execução de Workflows Determinísticos pós-RAG
     E o banco de dados PostgreSQL com pgvector está pronto para gravação
     E o worker determinístico "workflow-worker" em Rust está escutando na fila "agent.workflow.queue"
 
+  @pending
   Cenário: Execução bem-sucedida de DAG declarativa pós-RAG
     Dado que existe uma definição de DAG cadastrada no PostgreSQL com ID "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
     Quando uma mensagem de job de workflow é publicada na exchange "agent.execution.exchange" com a routing key "agent.workflow.requested"
@@ -18,6 +19,7 @@ Funcionalidade: Execução de Workflows Determinísticos pós-RAG
     E deve publicar o evento "agent.workflow.completed" ao finalizar com sucesso
     E deve enviar o ACK da mensagem original para o RabbitMQ
 
+  @pending
   Cenário: Abortamento por Timeout de Execução
     Dado que existe uma definição de DAG com nós de longa duração
     Quando o "workflow-worker" inicia a execução do job

@@ -2,7 +2,7 @@
 FROM rust:slim-bookworm as builder
 WORKDIR /app
 COPY . .
-RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=rag-worker-target,target=/app/target \
     cargo build --release --package rag-worker && \
     cp /app/target/release/rag-worker /usr/local/bin/service

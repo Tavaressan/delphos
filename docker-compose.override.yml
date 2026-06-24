@@ -37,6 +37,8 @@ services:
   embedding-service:
     ports:
       - "8000:8000"
+    environment:
+      EMBEDDING_PROVIDER: mock
 
   frontend:
     ports:

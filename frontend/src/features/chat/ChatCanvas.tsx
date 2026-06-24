@@ -9,21 +9,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 
-const INITIAL_MOCK_CHAT: Message[] = [
-  { role: 'SYSTEM', content: 'Iniciando Assistente Técnico Alfabra. RAG ativo com busca híbrida de cosseno parametrizada.' },
-  { role: 'USER', content: 'Qual a periodicidade obrigatória para checagem dos cabos de tração em elevadores industriais de carga?' },
-  { 
-    role: 'ASSISTANT', 
-    content: 'De acordo com a seção 4.2.1 do manual_manutencao_elevadores_seda_v5.pdf, elevadores de carga industriais exigem uma inspeção visual completa dos cabos de tração a cada 30 dias operacionais ou 500 ciclos de viagem, o que ocorrer primeiro. Caso apresentem desgaste superior a 10% do diâmetro nominal, a troca imediata é mandatória.', 
-    citation: 'manual_manutencao_elevadores_seda_v5.pdf - Pág. 12' 
-  }
-];
-
 export const ChatCanvas: React.FC = () => {
   const { tenantId } = useAuth();
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
-  const [chatHistory, setChatHistory] = useState<Message[]>(INITIAL_MOCK_CHAT);
+  const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [inputMsg, setInputMsg] = useState<string>('');
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState<boolean>(false);
   const chatEndRef = useRef<HTMLDivElement>(null);

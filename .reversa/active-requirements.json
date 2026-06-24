@@ -1,10 +1,21 @@
 {
   "schema-version": 1,
-  "feature-dir": "_reversa_forward/014-rust-nack-warnings",
-  "feature-id": "014",
-  "short-name": "rust-nack-warnings",
-  "started-at": "2026-06-17T17:25:20Z",
+  "feature-dir": "_reversa_forward/017-crewai-parametrizado-agent-id",
+  "feature-id": "017",
+  "short-name": "crewai-parametrizado-agent-id",
+  "started-at": "2026-06-19T07:20:00Z",
   "current-stage": "requirements",
   "stages-completed": [],
-  "paused-features": []
+  "paused-features": [
+    {
+      "feature-dir": "_reversa_forward/016-bdd-stepdefs-impl",
+      "feature-id": "016",
+      "short-name": "bdd-stepdefs-impl",
+      "started-at": "2026-06-19T05:30:00Z",
+      "current-stage": "requirements",
+      "stages-completed": [],
+      "paused-at": "2026-06-19T06:00:00Z",
+      "paused-from-stage": "coding-em-progresso"
+    }
+  ]
 }

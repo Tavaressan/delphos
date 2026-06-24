@@ -1,0 +1,10 @@
+{"ts":"2026-06-19T06:10:00Z","action":"T001","status":"done","files":["java-core/src/main/resources/db/migration/V6__failed_jobs.sql"]}
+{"ts":"2026-06-19T06:10:00Z","action":"T002","status":"done","files":["rust-services/ingestion-worker/Cargo.toml"]}
+{"ts":"2026-06-19T06:11:00Z","action":"T003","status":"done","files":["rust-services/ingestion-worker/src/main.rs"]}
+{"ts":"2026-06-19T06:12:00Z","action":"T004","status":"done","files":["rust-services/ingestion-worker/src/main.rs"]}
+{"ts":"2026-06-19T06:13:00Z","action":"T005","status":"done","files":["rust-services/ingestion-worker/src/main.rs"]}
+{"ts":"2026-06-19T06:14:00Z","action":"T006","status":"done","files":["java-core/src/main/java/com/company/core/domain/entities/FailedJob.java"]}
+{"ts":"2026-06-19T06:15:00Z","action":"T007","status":"done","files":["java-core/src/main/java/com/company/core/domain/repositories/FailedJobRepository.java"]}
+{"ts":"2026-06-19T06:16:00Z","action":"T008","status":"done","files":["java-core/src/main/java/com/company/core/interfaces/rest/FailedJobController.java"]}
+{"ts":"2026-06-19T06:17:00Z","action":"T009","status":"done","files":["rust-services/ingestion-worker/src/main.rs"],"note":"logging estruturado implementado junto com T005"}
+{"ts":"2026-06-19T06:18:00Z","action":"T010","status":"done","files":["docker-compose.yml"]}

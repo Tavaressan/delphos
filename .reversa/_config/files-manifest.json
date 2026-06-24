@@ -150,5 +150,9 @@
   ".reversa/setup.json": "d88ecc9feceecfcc5eb6a080506254458070b16b262c581d65efa6847b1b5278",
   ".reversa/config.user.toml": "59a1a98ae308ad6799e831e51fad9cc2af8941ef3cc08712c361544224ef5561",
   ".reversa/version": "e9c2bcffc3e97f8df729023b9bd111a809b3141eece6faa18b0f8b6061249795",
-  ".reversa/_config/manifest.yaml": "01e5195e862e937373561525b57b49fd48fdeb1df4fd44c3de4aa1e79466801f"
+  ".reversa/_config/manifest.yaml": "01e5195e862e937373561525b57b49fd48fdeb1df4fd44c3de4aa1e79466801f",
+  ".claude/skills/reversa-scout/SKILL.md": "69d00ef31aececf02df531552848d3b41a1b793f600fbdc26a42456ad28edd54",
+  ".claude/skills/reversa-scout/references/surface-schema.md": "82d6824cc4ad574e880d5ff49651dc70669f3e04dbeb0511da22c99e97ad18e1",
+  ".claude/skills/reversa-archaeologist/SKILL.md": "ff52b4380d6670af57d3985b530290c752d68989c093680de6589a922e93d034",
+  ".claude/skills/reversa-archaeologist/references/modules-schema.md": "9443c2aa31f59d9aa0d30bf2bd39808f5ae848fde7bc697d0aacc16c10f35fe2"
 }

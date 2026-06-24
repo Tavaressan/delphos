@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { Upload, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../../../providers/AuthProvider';
 
-export const AgentUploadManager: React.FC = () => {
+interface AgentUploadManagerProps {
+  onSuccess?: () => void;
+}
+
+export const AgentUploadManager: React.FC<AgentUploadManagerProps> = ({ onSuccess }) => {
   const { tenantId } = useAuth();
   const [name, setName] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -53,7 +57,7 @@ export const AgentUploadManager: React.FC = () => {
       });
 
       if (!response.ok) {
-        let errData;
+        let errData: { error?: string } | undefined;
         try {
           errData = await response.json();
         } catch {
@@ -67,6 +71,7 @@ export const AgentUploadManager: React.FC = () => {
       setFile(null);
       const inputEl = document.getElementById('agent-zip-file') as HTMLInputElement;
       if (inputEl) inputEl.value = '';
+      onSuccess?.();
     } catch (err: any) {
       setError(err.message || 'Falha ao criar o agente.');
     } finally {
