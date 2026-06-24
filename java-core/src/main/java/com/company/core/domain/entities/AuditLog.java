@@ -3,6 +3,8 @@ package com.company.core.domain.entities;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -35,6 +37,7 @@ public class AuditLog {
     @Column(name = "user_agent")
     private String userAgent = "Mozilla/5.0";
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String details;
 

@@ -7,6 +7,7 @@ import com.company.core.domain.repositories.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -22,7 +23,7 @@ public class AuditService {
         this.userRepository = userRepository;
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logAction(String action, String target, String detailsJson) {
         log.info("Audit Log: action={}, target={}, details={}", action, target, detailsJson);
         try {
