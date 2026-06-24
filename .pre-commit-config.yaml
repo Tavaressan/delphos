@@ -34,6 +34,13 @@ repos:
         language: system
         pass_filenames: false
 
+      - id: python-black
+        name: Python Format (Black)
+        entry: python3 -m black --check python-services/
+        language: system
+        pass_filenames: false
+        types: [python]
+
       - id: gradle-wrapper-check
         name: Verificar Gradle Wrapper no Git
         # Shell puro — sem dependência de Python, funciona em Git Bash, Mac e Linux
