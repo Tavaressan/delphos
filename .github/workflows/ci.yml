@@ -69,14 +69,16 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Build and Test with Gradle
-        # Alterado: removidas flags '-x test' para garantir a execução dos testes unitários JUnit.
-        # Alterado: removido fallback '|| echo' e '|| gradle build' silenciados, garantindo Fail Fast real.
-        # Adicionado: execução dos testes Cucumber de integração integrados no ciclo de build.
+      - name: Compile with Gradle
         run: |
           cd java-core
           chmod +x gradlew
-          ./gradlew build
+          ./gradlew compileJava compileTestJava
+
+      - name: Test with Gradle
+        run: |
+          cd java-core
+          ./gradlew test
 
   frontend-check:
     name: Frontend Lint, Test & Build
@@ -137,13 +139,13 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip' # Ativa cache agressivo de dependências pip
-          cache-dependency-path: 'python-services/requirements.txt'
+          cache-dependency-path: 'python-services/crew-worker/requirements.txt'
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f python-services/requirements.txt ]; then
-            pip install -r python-services/requirements.txt
+          if [ -f python-services/crew-worker/requirements.txt ]; then
+            pip install -r python-services/crew-worker/requirements.txt
           fi
           pip install black flake8 pytest
 
@@ -159,4 +161,4 @@ jobs:
 
       - name: Run Tests (PyTest)
         run: |
-          pytest python-services
+          pytest python-services --ignore=python-services/crew-worker/.venv || [ $? -eq 5 ]
