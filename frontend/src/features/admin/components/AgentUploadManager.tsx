@@ -66,7 +66,7 @@ export const AgentUploadManager: React.FC<AgentUploadManagerProps> = ({ onSucces
         throw new Error(errData?.error || `Falha no upload (Status ${response.status})`);
       }
 
-      setSuccess(`Agente "${name}" criado com sucesso! ZIP e documentos associados foram processados.`);
+      setSuccess(`Agente "${name}" publicado com sucesso.`);
       setName('');
       setFile(null);
       const inputEl = document.getElementById('agent-zip-file') as HTMLInputElement;
@@ -82,8 +82,8 @@ export const AgentUploadManager: React.FC<AgentUploadManagerProps> = ({ onSucces
   return (
     <div className="bg-surface border border-border-color rounded-lg p-6 shadow-sm flex flex-col gap-5 max-w-md w-full transition-colors duration-200">
       <div>
-        <h3 className="text-sm font-bold text-text-primary heading-font uppercase">Gerenciar Agentes (Admin)</h3>
-        <p className="text-[11px] text-text-secondary">Faça upload de pacotes ZIP com instruções markdown e conhecimento para novos agentes.</p>
+        <h3 className="text-sm font-bold text-text-primary heading-font uppercase">Novo Agente</h3>
+        <p className="text-[11px] text-text-secondary">Publique um novo agente a partir de um pacote ZIP.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -115,7 +115,7 @@ export const AgentUploadManager: React.FC<AgentUploadManagerProps> = ({ onSucces
             <span className="text-xs font-medium text-text-primary">
               {file ? file.name : 'Selecione ou arraste o arquivo ZIP'}
             </span>
-            <span className="text-[10px] text-text-secondary">ZIP contendo arquivos .md, pdf, docx ou txt</span>
+            <span className="text-[10px] text-text-secondary">Pacote ZIP com documentos e instruções</span>
           </div>
         </div>
 
