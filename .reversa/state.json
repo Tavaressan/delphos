@@ -139,7 +139,7 @@
     ".reversa/context/surface.json",
     "_reversa_sdd/code-analysis.md",
     ".reversa/context/modules.json",
-    "_reversa_sdd/detective.md"
+    "_reversa_sdd/detective.md",
     ".claude/skills/reversa-scout",
     ".claude/skills/reversa-archaeologist"
   ]
