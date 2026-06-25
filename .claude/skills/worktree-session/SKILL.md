@@ -413,15 +413,15 @@ Apresente o resultado de forma resumida.
 
 ### 5.2 — Se todos os checks passarem
 
-Marque o PR como pronto para revisão:
+Marque o PR como pronto e faça o merge imediatamente:
 ```bash
 gh pr ready <PR-number>
+gh pr merge <PR-number> --squash --delete-branch --yes
 ```
 
-Informe:
-> PR marcado como pronto para revisão. Aguardando aprovação.
+Se o merge falhar por conflito com master, informe o usuário, resolva os conflitos no worktree (`git merge master`, corrija, commit, push) e volte ao início da Fase 5 para remonitorar.
 
-Avance para a Fase 6 (aguardar merge).
+Se o merge for bem-sucedido, avance direto para a Fase 6 (sincronizar root).
 
 ### 5.3 — Se algum check falhar
 
@@ -442,20 +442,9 @@ Repita até todos os checks passarem.
 
 ---
 
-## FASE 6 — Aguardar merge e sincronizar root
+## FASE 6 — Sincronizar root após merge
 
-### 6.1 — Aguardar merge
-
-Verifique periodicamente:
-```bash
-gh pr view <PR-number> --json state,mergedAt
-```
-
-Quando `state` for `MERGED`, avance para 6.2.
-
-Se o PR for fechado sem merge (rejected), informe o usuário e pergunte como prosseguir.
-
-### 6.2 — Sincronizar o root com master
+### 6.1 — Sincronizar o root com master
 
 Saia do contexto do worktree (use `ExitWorktree`) e execute no root:
 
@@ -465,9 +454,9 @@ git pull origin master
 ```
 
 Confirme:
-> Root sincronizado com master. Branch `<branch>` foi mergeada com sucesso.
+> Root sincronizado com master. Branch `<branch>` mergeada e deletada remotamente.
 
-### 6.3 — Limpeza do worktree (opcional)
+### 6.2 — Limpeza do worktree (opcional)
 
 Pergunte:
 > Deseja remover o worktree local `<path>`? A branch remota já foi mergeada.
@@ -478,7 +467,7 @@ Pergunte:
 Se o usuário confirmar:
 ```bash
 git worktree remove <path>
-git branch -d <branch>
+git branch -d <branch>   # branch remota já foi deletada pelo --delete-branch no merge
 ```
 
 ---
