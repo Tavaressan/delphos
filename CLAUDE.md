@@ -80,6 +80,21 @@ npm run test:e2e
 - Use conventional commits: feat/fix/chore/refactor/test
 - Run ./gradlew build before creating any PR
 
+## Fluxo de sessão com worktree
+
+Este projeto tem um skill dedicado para gerenciar sessões de desenvolvimento com isolamento via Git worktree. **Lembre o usuário deste fluxo ao iniciar qualquer sessão nova**, especialmente quando ele mencionar que vai desenvolver uma feature, fix ou refatoração.
+
+**Como ativar:** `/worktree-session` ou digitar "iniciar sessão"
+
+**O que o skill faz:**
+1. Pergunta se o trabalho será no root ou em worktree isolado
+2. Lista worktrees existentes ou cria um novo (branch descritiva + worktree separado)
+3. Conduz o desenvolvimento com commits incrementais no worktree
+4. Abre PR como draft, monitora CI, resolve falhas automaticamente
+5. Ao fazer merge, sincroniza o root com master e oferece limpeza do worktree
+
+O skill está em `.claude/skills/worktree-session/SKILL.md`.
+
 ---
 
 # Reversa

@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Header, Sidebar, Footer } from '../../components/layout';
 import { AgentUploadManager } from '../../features/admin/components/AgentUploadManager';
-import { Search } from 'lucide-react';
+import { Search, Pencil, Check, X, PowerOff } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 
@@ -17,11 +17,21 @@ interface Agent {
   tenant?: string;
 }
 
+interface EditState {
+  name: string;
+  description: string;
+  tag: string;
+  version: string;
+}
+
 export default function CatalogPage() {
   const { tenantId } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [searchAgent, setSearchAgent] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editState, setEditState] = useState<EditState>({ name: '', description: '', tag: '', version: '' });
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const fetchAgents = useCallback(async () => {
     if (!tenantId) return;
@@ -47,8 +57,84 @@ export default function CatalogPage() {
     );
   }, [agents, searchAgent]);
 
-  const handleApproveAgent = async (id: string) => {
-    setAgents(old => old.map(a => a.id === id ? { ...a, status: 'PUBLISHED' } : a));
+  const startEdit = (agent: Agent) => {
+    setEditingId(agent.id);
+    setEditState({
+      name: agent.name,
+      description: agent.description ?? '',
+      tag: agent.tag ?? '',
+      version: agent.version ?? '',
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const saveEdit = async (id: string) => {
+    setActionLoading(id);
+    try {
+      const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+      const res = await fetch(`${BASE_URL.replace(/\/$/, '')}/api/admin/agents/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editState),
+      });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const updated: Agent = await res.json();
+      setAgents(old => old.map(a => a.id === id ? { ...a, ...updated } : a));
+      setEditingId(null);
+    } catch (err) {
+      console.error('Erro ao salvar agente:', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handlePublish = async (id: string) => {
+    setActionLoading(id);
+    try {
+      const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+      const res = await fetch(`${BASE_URL.replace(/\/$/, '')}/api/admin/agents/${id}/publish`, { method: 'PATCH' });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      setAgents(old => old.map(a => a.id === id ? { ...a, status: 'PUBLISHED' } : a));
+    } catch (err) {
+      console.error('Erro ao publicar agente:', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeactivate = async (id: string) => {
+    setActionLoading(id);
+    try {
+      const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+      const res = await fetch(`${BASE_URL.replace(/\/$/, '')}/api/admin/agents/${id}/deactivate`, { method: 'PATCH' });
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      setAgents(old => old.map(a => a.id === id ? { ...a, status: 'INACTIVE' } : a));
+    } catch (err) {
+      console.error('Erro ao desativar agente:', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const statusLabel = (status?: string) => {
+    if (status === 'PUBLISHED') return 'Publicado';
+    if (status === 'INACTIVE') return 'Inativo';
+    return 'Em Revisão';
+  };
+
+  const statusClass = (status?: string) => {
+    if (status === 'PUBLISHED') return 'bg-success/10 text-success border border-success/10';
+    if (status === 'INACTIVE') return 'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700';
+    return 'bg-warning/10 text-warning border border-warning/10';
+  };
+
+  const dotClass = (status?: string) => {
+    if (status === 'PUBLISHED') return 'bg-success';
+    if (status === 'INACTIVE') return 'bg-slate-400';
+    return 'bg-warning animate-pulse';
   };
 
   return (
@@ -89,52 +175,126 @@ export default function CatalogPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredAgents.map((agent) => (
-                    <div key={agent.id} className="card-alfabra flex flex-col justify-between gap-4">
-                      <div className="flex flex-col gap-2 text-left">
-                        <div className="flex justify-between items-start gap-2">
-                          <h3 className="font-bold text-text-primary text-base">{agent.name}</h3>
-                          {agent.version && (
-                            <span className="text-[10px] bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-border-color px-2 py-0.5 rounded font-mono font-bold flex-shrink-0">
-                              {agent.version}
-                            </span>
+                  {filteredAgents.map((agent) => {
+                    const isEditing = editingId === agent.id;
+                    const isActing = actionLoading === agent.id;
+
+                    return (
+                      <div key={agent.id} className="card-alfabra flex flex-col justify-between gap-4">
+                        <div className="flex flex-col gap-2 text-left">
+                          {isEditing ? (
+                            <div className="flex flex-col gap-2">
+                              <input
+                                className="bg-secondary/20 border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:outline-none focus:border-primary w-full"
+                                value={editState.name}
+                                onChange={e => setEditState(s => ({ ...s, name: e.target.value }))}
+                                placeholder="Nome do agente"
+                              />
+                              <input
+                                className="bg-secondary/20 border border-border-color rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary w-full"
+                                value={editState.description}
+                                onChange={e => setEditState(s => ({ ...s, description: e.target.value }))}
+                                placeholder="Descrição (opcional)"
+                              />
+                              <div className="flex gap-2">
+                                <input
+                                  className="bg-secondary/20 border border-border-color rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary flex-1"
+                                  value={editState.tag}
+                                  onChange={e => setEditState(s => ({ ...s, tag: e.target.value }))}
+                                  placeholder="Tag (opcional)"
+                                />
+                                <input
+                                  className="bg-secondary/20 border border-border-color rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary w-20"
+                                  value={editState.version}
+                                  onChange={e => setEditState(s => ({ ...s, version: e.target.value }))}
+                                  placeholder="Versão"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-start gap-2">
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <h3 className="font-bold text-text-primary text-base">{agent.name}</h3>
+                                {agent.description && (
+                                  <p className="text-text-secondary text-xs leading-relaxed">{agent.description}</p>
+                                )}
+                              </div>
+                              {agent.version && (
+                                <span className="text-[10px] bg-slate-100 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-border-color px-2 py-0.5 rounded font-mono font-bold flex-shrink-0">
+                                  {agent.version}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
-                        {agent.description && (
-                          <p className="text-text-secondary text-xs leading-relaxed">{agent.description}</p>
-                        )}
-                      </div>
 
-                      <div className="flex items-center justify-between border-t border-border-color pt-3">
-                        {agent.tag ? (
-                          <span className="bg-primary/5 text-primary text-[10px] font-bold px-2 py-0.5 rounded border border-primary/10">
-                            #{agent.tag}
-                          </span>
-                        ) : <span />}
-
-                        <div className="flex items-center gap-2">
-                          {agent.status && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${
-                              agent.status === 'PUBLISHED' ? 'bg-success/10 text-success border border-success/10' :
-                              'bg-warning/10 text-warning border border-warning/10'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${agent.status === 'PUBLISHED' ? 'bg-success' : 'bg-warning animate-pulse'}`} />
-                              {agent.status === 'PUBLISHED' ? 'Publicado' : 'Em Revisão'}
+                        <div className="flex items-center justify-between border-t border-border-color pt-3">
+                          {!isEditing && agent.tag ? (
+                            <span className="bg-primary/5 text-primary text-[10px] font-bold px-2 py-0.5 rounded border border-primary/10">
+                              #{agent.tag}
                             </span>
-                          )}
+                          ) : <span />}
 
-                          {agent.status === 'IN_REVIEW' && (
-                            <button
-                              onClick={() => handleApproveAgent(agent.id)}
-                              className="bg-primary hover:bg-primary-dark text-white text-[10px] font-bold py-1 px-2.5 rounded transition-colors"
-                            >
-                              Aprovar
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  onClick={() => saveEdit(agent.id)}
+                                  disabled={isActing}
+                                  className="flex items-center gap-1 bg-success/10 hover:bg-success/20 text-success text-[10px] font-bold py-1 px-2 rounded border border-success/20 transition-colors disabled:opacity-50"
+                                >
+                                  <Check className="w-3 h-3" /> Salvar
+                                </button>
+                                <button
+                                  onClick={cancelEdit}
+                                  className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-secondary text-[10px] font-bold py-1 px-2 rounded border border-border-color transition-colors"
+                                >
+                                  <X className="w-3 h-3" /> Cancelar
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                {agent.status && (
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${statusClass(agent.status)}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${dotClass(agent.status)}`} />
+                                    {statusLabel(agent.status)}
+                                  </span>
+                                )}
+
+                                {agent.status === 'IN_REVIEW' && (
+                                  <button
+                                    onClick={() => handlePublish(agent.id)}
+                                    disabled={isActing}
+                                    className="bg-primary hover:bg-primary-dark text-white text-[10px] font-bold py-1 px-2.5 rounded transition-colors disabled:opacity-50"
+                                  >
+                                    Aprovar
+                                  </button>
+                                )}
+
+                                <button
+                                  onClick={() => startEdit(agent)}
+                                  disabled={isActing}
+                                  className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-secondary text-[10px] font-bold py-1 px-2 rounded border border-border-color transition-colors disabled:opacity-50"
+                                >
+                                  <Pencil className="w-3 h-3" /> Editar
+                                </button>
+
+                                {agent.status !== 'INACTIVE' && (
+                                  <button
+                                    onClick={() => handleDeactivate(agent.id)}
+                                    disabled={isActing}
+                                    className="flex items-center gap-1 bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-danger text-[10px] font-bold py-1 px-2 rounded border border-red-200 dark:border-red-900/50 transition-colors disabled:opacity-50"
+                                  >
+                                    <PowerOff className="w-3 h-3" /> Desativar
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

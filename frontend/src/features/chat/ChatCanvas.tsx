@@ -4,22 +4,25 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useExecution } from '../../hooks/useExecution';
 import { ChatInput } from '../../components/forms/ChatInput';
 import { Message } from '../../domain/entities';
-import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Terminal, Activity, FileText, CheckCircle2, ChevronLeft, ChevronRight, MessageSquarePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
+import { useConversations } from '../../providers/ConversationProvider';
+import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId } = useAuth();
+  const { activeConversationId, setActiveConversationId, createConversation, refreshConversations } = useConversations();
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [inputMsg, setInputMsg] = useState<string>('');
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState<boolean>(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const currentConversationIdRef = useRef<string | null>(null);
 
   const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output) => {
-    // Callback when prompt execution finishes successfully
     setChatHistory(prev => [
       ...prev,
       {
@@ -28,6 +31,7 @@ export const ChatCanvas: React.FC = () => {
         citation: 'Resposta do agente'
       }
     ]);
+    refreshConversations();
   });
 
   useEffect(() => {
@@ -47,18 +51,52 @@ export const ChatCanvas: React.FC = () => {
     }
   }, [tenantId]);
 
-  const handleSend = (e: React.FormEvent) => {
+  // Load message history when active conversation changes
+  useEffect(() => {
+    if (activeConversationId === currentConversationIdRef.current) return;
+    currentConversationIdRef.current = activeConversationId;
+    setChatHistory([]);
+
+    if (!activeConversationId) return;
+
+    conversationRepository.getMessages(activeConversationId).then((messages) => {
+      setChatHistory(messages.map(m => ({
+        id: m.id,
+        conversationId: m.conversationId,
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+      })));
+    }).catch((err) => {
+      console.error('Erro ao carregar mensagens:', err);
+    });
+  }, [activeConversationId]);
+
+  const handleNewChat = async () => {
+    currentConversationIdRef.current = null;
+    setChatHistory([]);
+    setActiveConversationId(null);
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMsg.trim() || isLoading) return;
 
     const userPrompt = inputMsg.trim();
     setInputMsg('');
 
-    // Add user message to history
-    setChatHistory(prev => [...prev, { role: 'USER', content: userPrompt }]);
+    // Determine conversation: use active or create new
+    let conversationId = activeConversationId;
+    if (!conversationId) {
+      const firstWords = userPrompt.split(' ').slice(0, 6).join(' ');
+      const title = firstWords.length > 50 ? firstWords.substring(0, 50) + '…' : firstWords;
+      const conv = await createConversation(title, selectedAgentId || undefined);
+      conversationId = conv.id;
+      currentConversationIdRef.current = conv.id;
+    }
 
-    // Submit prompt to backend (hook starts polling)
-    submitPrompt(userPrompt, selectedAgentId || undefined, activeExecution?.conversationId || undefined);
+    setChatHistory(prev => [...prev, { role: 'USER', content: userPrompt }]);
+    submitPrompt(userPrompt, selectedAgentId || undefined, conversationId);
   };
 
 
@@ -106,6 +144,15 @@ export const ChatCanvas: React.FC = () => {
                 Executando...
               </span>
             )}
+
+            <button
+              onClick={handleNewChat}
+              className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-primary border border-border-color hover:border-primary rounded px-2.5 py-1 transition-colors"
+              title="Nova conversa"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5" />
+              Novo Chat
+            </button>
           </div>
         </div>
 
