@@ -98,12 +98,16 @@ Cenário: Execução bem-sucedida com input seguro
 
 ## 9. Esclarecimentos
 
-> Nenhuma sessão de dúvidas registrada ainda. Rode `/reversa-clarify` quando houver `[DÚVIDA]` pendente.
+### Sessão 2026-06-25
+
+- **Q:** Devemos usar um modelo classificador auxiliar leve (como um minúsculo LLM ou BERT local) para detecção inteligente de Prompt Injection ou nos limitaremos inicialmente a análise heurística de regras/regex?
+  **R:** Usar inicialmente apenas análise heurística de regras/regex (mais rápido, determinístico e leve).
+- **Q:** A rejeição de Prompt Injection deve ser tratada como um erro de execução normal ou deve banir/bloquear temporariamente o Tenant de novas requisições?
+  **R:** Tratar como um erro de execução normal (apenas aborta a execução corrente e retorna erro).
 
 ## 10. Lacunas
 
-- 🔴 [DÚVIDA] Devemos usar um modelo classificador auxiliar leve (como um minúsculo LLM ou BERT local) para detecção inteligente de Prompt Injection ou nos limitaremos inicialmente a análise heurística de regras/regex?
-- 🔴 [DÚVIDA] A rejeição de Prompt Injection deve ser tratada como um erro de execução normal ou deve banir/bloquear temporariamente o Tenant de novas requisições?
+Nenhuma lacuna pendente de esclarecimento.
 
 ## 11. Histórico de alterações
 
