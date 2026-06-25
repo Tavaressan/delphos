@@ -27,7 +27,10 @@ bin/
 
 # Rust
 target/
+# Cargo.lock é ignorado globalmente, mas o workspace de binários deve ter o lock comitado.
+# A exceção abaixo garante que rust-services/Cargo.lock seja rastreado.
 Cargo.lock
+!rust-services/Cargo.lock
 
 # IDEs
 .idea/
