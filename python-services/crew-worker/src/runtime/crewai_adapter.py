@@ -231,10 +231,13 @@ class CrewAiRuntimeAdapter:
     def execute(self) -> str:
         # 1. Validar e sanitizar input do usuário contra Prompt Injection
         from runtime.prompt_validator import validate_and_sanitize
+
         try:
             self.prompt = validate_and_sanitize(self.prompt)
         except ValueError as e:
-            print(f"WARNING: [Security] Prompt Injection or size violation detected! Aborting execution. Error: {str(e)}")
+            print(
+                f"WARNING: [Security] Prompt Injection or size violation detected! Aborting execution. Error: {str(e)}"
+            )
             self.publish_event("AgentExecutionFailed", {"reason": str(e)})
             raise
 
@@ -302,9 +305,12 @@ class CrewAiRuntimeAdapter:
 
             try:
                 from runtime.prompt_validator import validate_and_sanitize
+
                 query = validate_and_sanitize(query)
             except ValueError as e:
-                print(f"WARNING: [Security] Tool call search_knowledge_base blocked due to validation error: {str(e)}")
+                print(
+                    f"WARNING: [Security] Tool call search_knowledge_base blocked due to validation error: {str(e)}"
+                )
                 return f"Busca bloqueada por política de segurança: {str(e)}"
 
             response_payload = self._search_db(query)
