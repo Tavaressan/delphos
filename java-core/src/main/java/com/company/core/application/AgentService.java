@@ -38,7 +38,7 @@ public class AgentService {
     private final AuditService auditService;
 
     @Value("${minio.bucket:agents-data}")
-    private String minioBucket;
+    private String minioBucket = "agents-data";
 
     public AgentService(AgentRepository agentRepository,
                         DocumentRepository documentRepository,

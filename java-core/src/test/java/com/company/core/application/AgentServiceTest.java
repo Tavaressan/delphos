@@ -1,6 +1,7 @@
 package com.company.core.application;
 
 import com.company.core.domain.entities.Agent;
+import com.company.core.domain.entities.Document;
 import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
@@ -101,6 +102,13 @@ public class AgentServiceTest {
             }
             return savedAgent;
         });
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
+        });
 
         // Act
         Agent result = agentService.createAgent("Orchestrator Agent", file, tenantId);
@@ -136,6 +144,13 @@ public class AgentServiceTest {
                 savedAgent.setId(UUID.randomUUID());
             }
             return savedAgent;
+        });
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
         });
 
         // Act
