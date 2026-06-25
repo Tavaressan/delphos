@@ -84,4 +84,13 @@ public class ChatController {
         }
         return ResponseEntity.ok(conversation.getMessages());
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteConversation(@PathVariable UUID id) {
+        if (!conversationRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        conversationRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
 }
