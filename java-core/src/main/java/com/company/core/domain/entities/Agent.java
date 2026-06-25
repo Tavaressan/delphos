@@ -1,5 +1,6 @@
 package com.company.core.domain.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -28,6 +29,7 @@ public class Agent {
     private String systemInstructions;
 
     @Size(max = 512)
+    @JsonIgnore
     @Column(name = "zip_path")
     private String zipPath;
 
