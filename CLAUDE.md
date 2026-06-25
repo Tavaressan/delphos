@@ -74,6 +74,23 @@ npm run test:e2e
 - Embeddings: Vertex AI / Gemini (sem fallback atual — dívida técnica)
 - Migrações de banco: Flyway (em `java-core/src/main/resources/db/migration/`)
 
+## Sessão tmux (recomendado)
+
+Para sobreviver a sleep/lock do macOS, rode o Claude Code CLI dentro de uma sessão tmux. O script abaixo cria automaticamente uma janela de shell e uma janela `claude` para o root + uma janela por worktree ativo:
+
+```bash
+./scripts/tmux-session.sh          # cria ou reanexe a sessão
+./scripts/tmux-session.sh --kill   # recria do zero (fecha a sessão atual)
+```
+
+**Fluxo diário:**
+1. `./scripts/tmux-session.sh` — abre tudo
+2. `Ctrl+B <número>` — navega entre janelas (0 = shell, 1 = claude-root, 2+ = worktrees)
+3. `Ctrl+B D` — **desanexa antes de bloquear a tela** (sessão continua em background)
+4. Ao voltar: `./scripts/tmux-session.sh` — reanexe onde parou
+
+Se um novo worktree for criado durante a sessão, rode `--kill` para regenerar as janelas.
+
 ## Git
 - Never commit directly to main or master
 - Always work on a feature branch
