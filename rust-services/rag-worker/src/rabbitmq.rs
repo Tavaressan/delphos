@@ -109,6 +109,22 @@ struct GeminiResponse {
     candidates: Option<Vec<GeminiCandidate>>,
 }
 
+#[derive(Serialize, Debug)]
+struct DelegatedChunkData {
+    chunk_id: uuid::Uuid,
+    text: String,
+    score: f32,
+}
+
+#[derive(Serialize, Debug)]
+struct DelegatedResponseEvent {
+    execution_id: uuid::Uuid,
+    status: String,
+    results: Vec<DelegatedChunkData>,
+    error_message: Option<String>,
+}
+
+#[derive(Clone)]
 pub struct RabbitMQManager {
     channel: Channel,
     exchange: String,
@@ -185,6 +201,54 @@ impl RabbitMQManager {
             )
             .await?;
 
+        // Declarar Filas de Delegação para Multi-Agent
+        let delegated_jobs_queue = "agent.retrieval.delegated.jobs";
+        let delegated_jobs_routing_key = "agent.retrieval.delegated.requested";
+        let delegated_events_queue = "agent.retrieval.delegated.events";
+        let delegated_events_routing_key = "agent.retrieval.delegated.finished";
+
+        channel
+            .queue_declare(
+                delegated_jobs_queue,
+                QueueDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await?;
+
+        channel
+            .queue_bind(
+                delegated_jobs_queue,
+                &exchange,
+                delegated_jobs_routing_key,
+                QueueBindOptions::default(),
+                FieldTable::default(),
+            )
+            .await?;
+
+        channel
+            .queue_declare(
+                delegated_events_queue,
+                QueueDeclareOptions {
+                    durable: true,
+                    ..Default::default()
+                },
+                FieldTable::default(),
+            )
+            .await?;
+
+        channel
+            .queue_bind(
+                delegated_events_queue,
+                &exchange,
+                delegated_events_routing_key,
+                QueueBindOptions::default(),
+                FieldTable::default(),
+            )
+            .await?;
+
         // QoS
         channel.basic_qos(1, BasicQosOptions::default()).await?;
 
@@ -198,6 +262,35 @@ impl RabbitMQManager {
     }
 
     pub async fn run_consumer(
+        &self,
+        db_pool: PgPool,
+        authenticator: Option<GcpAuthenticator>,
+    ) -> Result<(), WorkerError> {
+        let db_pool_1 = db_pool.clone();
+        let auth_1 = authenticator.clone();
+        let manager_1 = self.clone();
+
+        let db_pool_2 = db_pool.clone();
+        let auth_2 = authenticator.clone();
+        let manager_2 = self.clone();
+
+        let task_original = tokio::spawn(async move {
+            if let Err(e) = manager_1.run_original_consumer(db_pool_1, auth_1).await {
+                println!("Error in original consumer: {}", e);
+            }
+        });
+
+        let task_delegated = tokio::spawn(async move {
+            if let Err(e) = manager_2.run_delegated_consumer(db_pool_2, auth_2).await {
+                println!("Error in delegated consumer: {}", e);
+            }
+        });
+
+        let _ = tokio::join!(task_original, task_delegated);
+        Ok(())
+    }
+
+    async fn run_original_consumer(
         &self,
         db_pool: PgPool,
         authenticator: Option<GcpAuthenticator>,
@@ -243,6 +336,114 @@ impl RabbitMQManager {
             }
         }
 
+        Ok(())
+    }
+
+    async fn run_delegated_consumer(
+        &self,
+        db_pool: PgPool,
+        authenticator: Option<GcpAuthenticator>,
+    ) -> Result<(), WorkerError> {
+        let delegated_queue = "agent.retrieval.delegated.jobs";
+        println!("Listening to '{}' queue...", delegated_queue);
+
+        let mut consumer = self
+            .channel
+            .basic_consume(
+                delegated_queue,
+                "rag_worker_delegated_tag",
+                BasicConsumeOptions::default(),
+                FieldTable::default(),
+            )
+            .await?;
+
+        while let Some(delivery) = consumer.next().await {
+            let delivery = match delivery {
+                Ok(d) => d,
+                Err(e) => {
+                    println!("Error in delegated RabbitMQ delivery: {}", e);
+                    continue;
+                }
+            };
+
+            let body = String::from_utf8_lossy(&delivery.data);
+            println!("Received delegated RAG job: {}", body);
+
+            match self.process_delegated_job(&body, &db_pool, &authenticator).await {
+                Ok(_) => {
+                    delivery.ack(BasicAckOptions::default()).await?;
+                }
+                Err(e) => {
+                    println!("Error processing delegated RAG job: {}. Nacking.", e);
+                    delivery
+                        .nack(BasicNackOptions {
+                            multiple: false,
+                            requeue: false,
+                        })
+                        .await?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn process_delegated_job(
+        &self,
+        body: &str,
+        db_pool: &PgPool,
+        authenticator: &Option<GcpAuthenticator>,
+    ) -> Result<(), WorkerError> {
+        let job: RetrievalJob = serde_json::from_str(body)
+            .map_err(|e| WorkerError::Serialization(format!("Invalid Delegated RAG Job format: {}", e)))?;
+
+        match self.execute_rag(&job, db_pool, authenticator).await {
+            Ok((_response_text, chunks)) => {
+                let results = chunks.into_iter().map(|c| {
+                    let chunk_id_str = c.id.as_str().unwrap_or("");
+                    let chunk_id = uuid::Uuid::parse_str(chunk_id_str).unwrap_or_default();
+                    DelegatedChunkData {
+                        chunk_id,
+                        text: c.content,
+                        score: c.score,
+                    }
+                }).collect();
+
+                let event = DelegatedResponseEvent {
+                    execution_id: job.execution_id,
+                    status: "COMPLETED".to_string(),
+                    results,
+                    error_message: None,
+                };
+
+                let payload = serde_json::to_string(&event)?;
+                self.publish_delegated_event(&payload).await?;
+                Ok(())
+            }
+            Err(e) => {
+                let event = DelegatedResponseEvent {
+                    execution_id: job.execution_id,
+                    status: "FAILED".to_string(),
+                    results: Vec::new(),
+                    error_message: Some(format!("{}", e)),
+                };
+                let payload = serde_json::to_string(&event)?;
+                self.publish_delegated_event(&payload).await?;
+                Err(e)
+            }
+        }
+    }
+
+    async fn publish_delegated_event(&self, payload: &str) -> Result<(), WorkerError> {
+        self.channel
+            .basic_publish(
+                &self.exchange,
+                "agent.retrieval.delegated.finished",
+                BasicPublishOptions::default(),
+                payload.as_bytes(),
+                lapin::BasicProperties::default(),
+            )
+            .await?;
         Ok(())
     }
 

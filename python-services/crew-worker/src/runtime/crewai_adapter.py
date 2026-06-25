@@ -8,6 +8,7 @@ import psycopg2
 from typing import Any, List, Mapping, Optional
 from crewai import Agent, Task, Crew, Process, BaseLLM, LLM
 from crewai.tools import tool
+import yaml
 
 from runtime.instruction_parser import parse as parse_instructions
 
@@ -46,12 +47,14 @@ class CrewAiRuntimeAdapter:
         tenant_id: str,
         prompt: str,
         agent_id: str = None,
+        manifest_config: str = None,
     ):
         self.channel = channel
         self.execution_id = execution_id
         self.tenant_id = tenant_id
         self.prompt = prompt
         self.agent_id = agent_id
+        self.manifest_config = manifest_config
 
         # Detect Vertex AI environment variables
         worker_mode = os.environ.get("CREW_WORKER_MODE", "real").lower()
@@ -303,7 +306,28 @@ class CrewAiRuntimeAdapter:
             self.publish_event("ToolCallFinished", tool_finish_payload)
             return response_payload
 
-        # 4. Inicializar CrewAI Agent com role/goal/backstory dinâmicos
+        # 4. Inicializar CrewAI Agent com ferramentas dinâmicas
+        allow_delegation = False
+        if self.manifest_config:
+            try:
+                manifest = yaml.safe_load(self.manifest_config)
+                settings = manifest.get("agent_settings", {})
+                allow_delegation = settings.get("allow_delegation", False)
+            except Exception as ex:
+                print(f"[CrewAiRuntimeAdapter] Error parsing manifest_config: {ex}")
+
+        if allow_delegation:
+            print("[CrewAiRuntimeAdapter] Multi-Agent Delegation enabled. Instantiating DelegatedSearchTool...")
+            from tools.delegated_search_tool import DelegatedSearchTool
+            search_tool = DelegatedSearchTool(
+                channel=self.channel,
+                execution_id=self.execution_id,
+                tenant_id=self.tenant_id
+            )
+        else:
+            print("[CrewAiRuntimeAdapter] Multi-Agent Delegation disabled. Using local search tool.")
+            search_tool = search_knowledge_base
+
         print(
             f"[CrewAiRuntimeAdapter] Initializing CrewAI Agent | "
             f"agent_id={self.agent_id} | role={self._agent_role!r} | "
@@ -313,7 +337,7 @@ class CrewAiRuntimeAdapter:
             role=self._agent_role,
             goal=self._agent_goal,
             backstory=self._agent_backstory,
-            tools=[calculate_sandbox_quota, search_knowledge_base],
+            tools=[calculate_sandbox_quota, search_tool],
             llm=self.llm,
             verbose=True,
             allow_delegation=False,
