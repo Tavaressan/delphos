@@ -45,18 +45,18 @@ fn escape_xml(text: &str) -> String {
 
 pub fn validate_and_sanitize(text: &str) -> Result<String, String> {
     let cleaned = clean_invisible_characters(text);
-    
+
     // 1. Limitação de tamanho (max 4000 caracteres)
     if cleaned.len() > 4000 {
         return Err("Input length exceeds maximum allowed limit".to_string());
     }
-    
+
     // 2. Detecção de padrões de prompt injection
     let set = get_patterns();
     if set.is_match(&cleaned) {
         return Err("Security policy violation: Prompt Injection pattern detected".to_string());
     }
-    
+
     // 3. Sanitização/Escape de tags XML
     let sanitized = escape_xml(&cleaned);
     Ok(sanitized)

@@ -2,9 +2,9 @@ mod config;
 mod error;
 mod rabbitmq;
 mod security;
-mod tests;
 #[cfg(test)]
 mod security_tests;
+mod tests;
 
 use crate::config::Config;
 use crate::rabbitmq::RabbitMQManager;

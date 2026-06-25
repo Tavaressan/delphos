@@ -28,7 +28,10 @@ mod tests {
         let long_input = "A".repeat(4001);
         let result = validate_and_sanitize(&long_input);
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), "Input length exceeds maximum allowed limit");
+        assert_eq!(
+            result.unwrap_err(),
+            "Input length exceeds maximum allowed limit"
+        );
     }
 
     #[test]
@@ -49,7 +52,10 @@ mod tests {
         for input in malicious_inputs {
             let result = validate_and_sanitize(input);
             assert!(result.is_err(), "Expected error for input: {}", input);
-            assert_eq!(result.unwrap_err(), "Security policy violation: Prompt Injection pattern detected");
+            assert_eq!(
+                result.unwrap_err(),
+                "Security policy violation: Prompt Injection pattern detected"
+            );
         }
     }
 }

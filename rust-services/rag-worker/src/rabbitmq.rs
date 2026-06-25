@@ -315,11 +315,13 @@ impl RabbitMQManager {
         authenticator: &Option<GcpAuthenticator>,
     ) -> Result<(String, Vec<ChunkData>), WorkerError> {
         // Validate and sanitize user input against prompt injection and size limits
-        let sanitized_query = crate::security::validate_and_sanitize(&job.query)
-            .map_err(|e| {
-                println!("WARNING: [Security] Prompt Injection or size violation detected! Error: {}", e);
-                WorkerError::Security(e)
-            })?;
+        let sanitized_query = crate::security::validate_and_sanitize(&job.query).map_err(|e| {
+            println!(
+                "WARNING: [Security] Prompt Injection or size violation detected! Error: {}",
+                e
+            );
+            WorkerError::Security(e)
+        })?;
 
         // 1. Obter embeddings do embedding-service
         println!("Calling embedding-service for query embedding...");
