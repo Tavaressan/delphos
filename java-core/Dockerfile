@@ -7,9 +7,10 @@ WORKDIR /app
 # Copy gradle configuration files
 COPY java-core/build.gradle.kts java-core/settings.gradle.kts ./
 
-# Cache dependencies (this helps speed up subsequent builds)
-# We run build with --no-daemon to avoid keeping the gradle daemon alive
-RUN gradle build -x test --no-daemon || true
+# Pre-download dependencies for layer caching
+RUN gradle dependencies --no-daemon --configuration runtimeClasspath 2>/dev/null; \
+    gradle dependencies --no-daemon --configuration testRuntimeClasspath 2>/dev/null; \
+    true
 
 # Copy the source code
 COPY java-core/src ./src
