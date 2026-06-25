@@ -271,13 +271,21 @@ async fn main() {
 
     let authenticator = if provider == "real" {
         println!("Inicializando GcpAuthenticator para o provider real...");
-        match shared::gcp::GcpAuthenticator::new().await {
-            Ok(auth) => Some(auth),
+        let auth = match shared::gcp::GcpAuthenticator::new().await {
+            Ok(a) => a,
             Err(e) => {
                 eprintln!("Erro crítico ao inicializar o autenticador GCP: {}", e);
                 std::process::exit(1);
             }
+        };
+        println!("Verificando conectividade com o GCP...");
+        if let Err(e) = auth.verify_connectivity().await {
+            eprintln!("Erro crítico: falha ao obter token GCP no startup: {}", e);
+            eprintln!("Verifique se ADC_PATH aponta para credenciais válidas e ativas.");
+            std::process::exit(1);
         }
+        println!("Conectividade com GCP confirmada.");
+        Some(auth)
     } else {
         println!("Provider configurado como mock. GCP Autenticador ignorado.");
         None

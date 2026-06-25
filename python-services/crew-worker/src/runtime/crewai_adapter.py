@@ -54,6 +54,7 @@ class CrewAiRuntimeAdapter:
         self.agent_id = agent_id
 
         # Detect Vertex AI environment variables
+        worker_mode = os.environ.get("CREW_WORKER_MODE", "real").lower()
         api_key = os.environ.get("VERTEX_AI_API_KEY")
         project_id = os.environ.get("GCP_PROJECT_ID")
         region = os.environ.get("GCP_LOCATION", "us-central1")
@@ -64,7 +65,17 @@ class CrewAiRuntimeAdapter:
             api_key and "placeholder" not in api_key.lower() and len(api_key) > 20
         )
 
-        if has_api_key or has_creds:
+        if worker_mode == "mock":
+            print(
+                "[CrewAiRuntimeAdapter] CREW_WORKER_MODE=mock: using MockLLM (explicit dev mode)."
+            )
+            self.llm = MockLLM(model="mock-model")
+        elif has_api_key or has_creds:
+            if not project_id:
+                raise RuntimeError(
+                    "[CrewAiRuntimeAdapter] GCP_PROJECT_ID não está definido. "
+                    "Configure em .env ou defina CREW_WORKER_MODE=mock para dev local."
+                )
             model_id = os.environ.get("GCP_CHAT_MODEL_ID", "gemini-1.5-flash")
             if not model_id.startswith("vertex_ai/"):
                 model_id = f"vertex_ai/{model_id}"
@@ -78,10 +89,12 @@ class CrewAiRuntimeAdapter:
             os.environ["VERTEX_LOCATION"] = region
             self.llm = LLM(model=model_id, temperature=0.2)
         else:
-            print(
-                "[CrewAiRuntimeAdapter] Vertex credentials or API Key missing/placeholder. Using MockLLM."
+            raise RuntimeError(
+                "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas e CREW_WORKER_MODE != mock. "
+                "Configure GOOGLE_APPLICATION_CREDENTIALS (via ADC_PATH no .env) ou "
+                "defina CREW_WORKER_MODE=mock para desenvolvimento local. "
+                "Consulte .env.example para instruções."
             )
-            self.llm = MockLLM(model="mock-model")
 
         # Load agent config from DB or use hardcoded legacy fallback
         self._agent_role = _HARDCODED_ROLE
