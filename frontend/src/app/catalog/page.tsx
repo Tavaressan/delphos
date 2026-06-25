@@ -59,8 +59,8 @@ export default function CatalogPage() {
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-background p-4 md:p-6 flex flex-col min-h-0 font-body">
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Catálogo de Agentes Homologados</h2>
-              <p className="text-slate-400 text-xs mt-1">Gestão de permissões de deploy de pacotes de conformidade de agentes cognitivos.</p>
+              <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Catálogo de Agentes</h2>
+              <p className="text-slate-400 text-xs mt-1">Gestão de pacotes de governança de agentes</p>
             </div>
 
             <div className="w-full md:w-72 flex items-center bg-surface border border-border-color rounded focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all duration-200">

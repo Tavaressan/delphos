@@ -25,7 +25,7 @@ export const ChatCanvas: React.FC = () => {
       {
         role: 'ASSISTANT',
         content: output,
-        citation: 'Contexto RAG - Resposta do Backend'
+        citation: 'Resposta do agente'
       }
     ]);
   });
@@ -77,8 +77,8 @@ export const ChatCanvas: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <Terminal className="w-5 h-5 text-primary" />
             <div>
-              <h3 className="text-sm font-bold text-text-primary heading-font uppercase">Console de Interação RAG</h3>
-              <p className="text-[11px] text-text-secondary">Comunicação e busca vetorial em tempo real via Spring Boot & pgvector.</p>
+              <h3 className="text-sm font-bold text-text-primary heading-font uppercase">Console de Interação Agêntica</h3>
+              <span className="text-[10px] text-text-secondary font-mono">Selecione o agente e envie seu prompt técnico</span>
             </div>
           </div>
           
@@ -129,7 +129,7 @@ export const ChatCanvas: React.FC = () => {
                     ? 'bg-secondary dark:bg-slate-800 text-text-secondary'
                     : 'bg-primary text-white'
                 }`}>
-                  {msg.role === 'USER' ? 'US' : msg.role === 'SYSTEM' ? 'SY' : 'AV'}
+                  {msg.role === 'USER' ? 'US' : msg.role === 'SYSTEM' ? 'SY' : 'AG'}
                 </div>
 
                 {/* Content Bubble */}
@@ -246,7 +246,7 @@ export const ChatCanvas: React.FC = () => {
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-text-secondary text-center py-12 gap-2">
                 <Activity className="w-8 h-8 text-text-secondary opacity-60" />
-                <span className="text-xs">Aguardando envio de prompt para iniciar o monitoramento.</span>
+                <span className="text-xs">Envie uma mensagem para começar.</span>
               </div>
             )}
           </div>

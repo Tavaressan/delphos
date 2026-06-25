@@ -6,16 +6,5 @@
   "started-at": "2026-06-19T07:20:00Z",
   "current-stage": "requirements",
   "stages-completed": [],
-  "paused-features": [
-    {
-      "feature-dir": "_reversa_forward/016-bdd-stepdefs-impl",
-      "feature-id": "016",
-      "short-name": "bdd-stepdefs-impl",
-      "started-at": "2026-06-19T05:30:00Z",
-      "current-stage": "requirements",
-      "stages-completed": [],
-      "paused-at": "2026-06-19T06:00:00Z",
-      "paused-from-stage": "coding-em-progresso"
-    }
-  ]
+  "paused-features": []
 }

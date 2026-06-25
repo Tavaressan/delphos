@@ -15,7 +15,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   value,
   onChange,
   onSubmit,
-  placeholder = 'Escreva sua pergunta técnica aqui...',
+  placeholder = 'Escreva seu prompt...',
   disabled = false,
 }) => {
   return (
