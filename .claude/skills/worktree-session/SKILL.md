@@ -75,12 +75,12 @@ A partir das respostas, derive:
 - **Nome da branch:** `<tipo>/<NNN>-<descricao-em-kebab-case>`
   - Se issue informada: `feat/42-autenticacao-oauth-google`
   - Se sem issue: `feat/autenticacao-oauth-google`
-- **Nome do diretório do worktree:** `../<branch-sem-prefixo-tipo>` (ex: `../autenticacao-oauth-google`)
+- **Nome do diretório do worktree:** `.claude/worktrees/<descricao-em-kebab-case>` (ex: `.claude/worktrees/autenticacao-oauth-google`)
 
 Confirme com o usuário:
 > Vou criar:
 > - Branch: `feat/42-autenticacao-oauth-google`
-> - Worktree: `../autenticacao-oauth-google`
+> - Worktree: `.claude/worktrees/autenticacao-oauth-google`
 > 
 > Confirma? (s/n)
 
