@@ -33,6 +33,20 @@ public class Agent {
     @Column(name = "zip_path")
     private String zipPath;
 
+    @Column(nullable = false)
+    private String status = "IN_REVIEW";
+
+    @Size(max = 50)
+    @Column
+    private String version;
+
+    @Size(max = 100)
+    @Column
+    private String tag;
+
+    @Column
+    private String description;
+
     @Column(name = "created_at", updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -77,6 +91,38 @@ public class Agent {
 
     public void setZipPath(String zipPath) {
         this.zipPath = zipPath;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getVersion() {
+        return version;
+    }
+
+    public void setVersion(String version) {
+        this.version = version;
+    }
+
+    public String getTag() {
+        return tag;
+    }
+
+    public void setTag(String tag) {
+        this.tag = tag;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public Instant getCreatedAt() {

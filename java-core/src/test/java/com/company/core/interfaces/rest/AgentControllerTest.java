@@ -1,6 +1,7 @@
 package com.company.core.interfaces.rest;
 
 import com.company.core.application.AgentService;
+import com.company.core.application.AuditService;
 import com.company.core.domain.entities.Agent;
 import com.company.core.domain.repositories.AgentRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,12 +14,15 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,11 +34,14 @@ class AgentControllerTest {
     @Mock
     private AgentRepository agentRepository;
 
+    @Mock
+    private AuditService auditService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setup() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new AgentController(agentService, agentRepository)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new AgentController(agentService, agentRepository, auditService)).build();
     }
 
     @Test
@@ -89,5 +96,69 @@ class AgentControllerTest {
                         .param("name", "Agente X"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Tenant inválido"));
+    }
+
+    @Test
+    void updateAgent_withValidId_returnsUpdatedAgent() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent agent = new Agent();
+        agent.setId(id);
+        agent.setName("Agente Antigo");
+        agent.setTenantId(UUID.randomUUID());
+        agent.setStatus("IN_REVIEW");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(agent));
+        when(agentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(put("/api/admin/agents/" + id)
+                        .contentType("application/json")
+                        .content("{\"name\":\"Agente Atualizado\",\"description\":\"Nova descricao\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Agente Atualizado"));
+    }
+
+    @Test
+    void updateAgent_withUnknownId_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(agentRepository.findById(id)).thenReturn(Optional.empty());
+
+        mockMvc.perform(put("/api/admin/agents/" + id)
+                        .contentType("application/json")
+                        .content("{\"name\":\"X\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void publishAgent_setsStatusToPublished() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent agent = new Agent();
+        agent.setId(id);
+        agent.setName("Agente Teste");
+        agent.setTenantId(UUID.randomUUID());
+        agent.setStatus("IN_REVIEW");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(agent));
+        when(agentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(patch("/api/admin/agents/" + id + "/publish"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PUBLISHED"));
+    }
+
+    @Test
+    void deactivateAgent_setsStatusToInactive() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent agent = new Agent();
+        agent.setId(id);
+        agent.setName("Agente Publicado");
+        agent.setTenantId(UUID.randomUUID());
+        agent.setStatus("PUBLISHED");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(agent));
+        when(agentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(patch("/api/admin/agents/" + id + "/deactivate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("INACTIVE"));
     }
 }
