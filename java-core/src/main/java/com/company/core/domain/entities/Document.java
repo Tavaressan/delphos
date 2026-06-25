@@ -1,5 +1,6 @@
 package com.company.core.domain.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -20,6 +21,7 @@ public class Document {
     @Column(nullable = false)
     private String name;
 
+    @JsonIgnore
     @NotBlank
     @Size(max = 512)
     @Column(name = "file_path", nullable = false)
