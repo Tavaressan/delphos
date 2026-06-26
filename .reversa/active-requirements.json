@@ -1,9 +1,9 @@
 {
   "schema-version": 1,
-  "feature-dir": "_reversa_forward/017-crewai-parametrizado-agent-id",
-  "feature-id": "017",
-  "short-name": "crewai-parametrizado-agent-id",
-  "started-at": "2026-06-19T07:20:00Z",
+  "feature-dir": "_reversa_forward/018-prompt-injection-protection",
+  "feature-id": "018",
+  "short-name": "prompt-injection-protection",
+  "started-at": "2026-06-25T20:40:00Z",
   "current-stage": "requirements",
   "stages-completed": [],
   "paused-features": []
