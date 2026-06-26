@@ -30,6 +30,14 @@ impl GcpAuthenticator {
             )
         })
     }
+
+    /// Testa conectividade real com o GCP obtendo um token uma vez.
+    /// Deve ser chamado no startup para falhar cedo em vez de na primeira requisição.
+    pub async fn verify_connectivity(&self) -> Result<(), String> {
+        self.get_token(&["https://www.googleapis.com/auth/cloud-platform"])
+            .await
+            .map(|_| ())
+    }
 }
 
 #[cfg(test)]

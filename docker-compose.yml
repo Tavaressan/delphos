@@ -18,6 +18,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
@@ -29,6 +30,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   minio:
     image: minio/minio:latest
@@ -44,6 +46,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
   core:
     build:
@@ -70,6 +73,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 90s
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
@@ -86,7 +90,8 @@ services:
       test: [ "CMD", "rabbitmq-diagnostics", "check_running" ]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 40s
 
   #  structurizr:
   #    image: structurizr/structurizr
@@ -120,12 +125,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   ingestion-worker:
     build:
       context: ./rust-services
       dockerfile: ingestion-worker/Dockerfile
     container_name: ingestion_worker
+    restart: on-failure
     env_file:
       - .env
     # Chunking configurável via .env — omitir para usar defaults (1000/200)
@@ -146,6 +153,7 @@ services:
       context: ./rust-services
       dockerfile: rag-worker/Dockerfile
     container_name: rag_worker
+    restart: on-failure
     env_file:
       - .env
     environment:
@@ -167,6 +175,7 @@ services:
       context: ./rust-services
       dockerfile: workflow-worker/Dockerfile
     container_name: workflow_worker
+    restart: on-failure
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/rag_db
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
@@ -186,6 +195,7 @@ services:
       context: ./python-services/crew-worker
       dockerfile: Dockerfile
     container_name: crew_worker
+    restart: on-failure
     env_file:
       - .env
     environment:
@@ -221,6 +231,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 120s
 
   caddy:
     build:
