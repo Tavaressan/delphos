@@ -47,3 +47,11 @@ repos:
         entry: sh -c "test ! -f java-core/gradle/wrapper/gradle-wrapper.properties || test -f java-core/gradle/wrapper/gradle-wrapper.jar"
         language: system
         pass_filenames: false
+
+      - id: flyway-migration-check
+        name: Flyway Migration Checks
+        # Roda apenas quando há arquivos V*.sql no staging (path, naming, duplicata, lacuna)
+        entry: bash scripts/check-migrations.sh
+        language: system
+        pass_filenames: false
+        files: 'V[0-9]+.*\.sql$'
