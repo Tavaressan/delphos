@@ -80,6 +80,10 @@ jobs:
           cd java-core
           ./gradlew test
 
+      - name: Verify migrations in JAR
+        run: |
+          jar tf java-core/build/libs/*.jar | grep "db/migration/V" || (echo "❌ Flyway migrations not found in JAR" && exit 1)
+
   java-integration:
     name: Java Core Integration Tests (BDD)
     runs-on: ubuntu-latest

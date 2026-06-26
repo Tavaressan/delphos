@@ -80,6 +80,9 @@ npm run test:e2e
 - Use conventional commits: feat/fix/chore/refactor/test
 - Run ./gradlew build before creating any PR
 
+## Desambiguação de Issues do GitHub
+Quando houver possibilidade de confusão entre uma funcionalidade numerada (e.g. '016-bdd') e um número de issue do GitHub (e.g. #16), confirme explicitamente a qual delas o usuário se refere antes de prosseguir.
+
 ## Fluxo de sessão com worktree
 
 Este projeto tem um skill dedicado para gerenciar sessões de desenvolvimento com isolamento via Git worktree. **Lembre o usuário deste fluxo ao iniciar qualquer sessão nova**, especialmente quando ele mencionar que vai desenvolver uma feature, fix ou refatoração.
@@ -88,7 +91,7 @@ Este projeto tem um skill dedicado para gerenciar sessões de desenvolvimento co
 
 **O que o skill faz:**
 1. Pergunta se o trabalho será no root ou em worktree isolado
-2. Lista worktrees existentes ou cria um novo (branch descritiva + worktree separado)
+2. Lista worktrees existentes ou cria um novo dentro da raiz do projeto, em `.claude/worktrees/` (branch descritiva + worktree separado)
 3. Conduz o desenvolvimento com commits incrementais no worktree
 4. Abre PR como draft, monitora CI, resolve falhas automaticamente
 5. Ao fazer merge, sincroniza o root com master e oferece limpeza do worktree
@@ -117,3 +120,11 @@ Quando o usuário digitar `/reversa` ou a palavra `reversa` sozinha em uma mensa
 
 Nunca apague, modifique ou sobrescreva arquivos pré-existentes do projeto legado.
 O Reversa escreve **apenas** em `.reversa/` e `_reversa_sdd/`.
+
+---
+
+## Migrações de Banco de Dados
+Após adicionar ou editar uma migração do Flyway (por exemplo, V7), sempre verifique se a migração foi incluída no JAR gerado e se é realmente executada (confirme se o esquema/tabela existe) antes de declarar o serviço como saudável. Limpe o cache de build caso a migração esteja ausente.
+
+## Verificação no Sandbox
+Se os comandos `docker compose build`, `up` ou `exec`, ou chamadas de rede externas, forem bloqueados pelo sandbox, pare de tentar após **uma única tentativa**, informe claramente a limitação e forneça ao usuário uma lista de comandos prontos para executar manualmente, incluindo o output esperado de cada um. Não repita tentativas bloqueadas esperando resultado diferente.
