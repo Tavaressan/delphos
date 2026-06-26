@@ -8,6 +8,7 @@ pub enum WorkerError {
     Embedding(String),
     VertexAI(String),
     Serialization(String),
+    Security(String),
 }
 
 impl std::error::Error for WorkerError {}
@@ -21,6 +22,7 @@ impl fmt::Display for WorkerError {
             WorkerError::Embedding(msg) => write!(f, "Embedding Error: {}", msg),
             WorkerError::VertexAI(msg) => write!(f, "Vertex AI Error: {}", msg),
             WorkerError::Serialization(msg) => write!(f, "Serialization Error: {}", msg),
+            WorkerError::Security(msg) => write!(f, "Security policy violation: {}", msg),
         }
     }
 }

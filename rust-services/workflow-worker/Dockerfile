@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:slim as builder
+FROM rust:slim-bookworm as builder
 WORKDIR /app
 COPY . .
 RUN --mount=type=cache,id=cargo-registry,target=/usr/local/cargo/registry,sharing=locked \

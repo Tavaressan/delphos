@@ -1,6 +1,9 @@
 mod config;
 mod error;
 mod rabbitmq;
+mod security;
+#[cfg(test)]
+mod security_tests;
 mod tests;
 
 use crate::config::Config;
@@ -41,10 +44,23 @@ async fn main() {
     let authenticator = match shared::gcp::GcpAuthenticator::new().await {
         Ok(auth) => {
             println!("GcpAuthenticator initialized successfully.");
+            match auth.verify_connectivity().await {
+                Ok(()) => println!("GCP connectivity confirmed (token obtained successfully)."),
+                Err(e) => eprintln!(
+                    "WARNING: GCP credentials loaded but token fetch failed: {}. \
+                     Vertex AI (generateContent) calls will fail at runtime. \
+                     Verify ADC_PATH credentials are valid and have Vertex AI access.",
+                    e
+                ),
+            }
             Some(auth)
         }
         Err(e) => {
-            println!("Warning: GCP Authenticator could not be initialized: {}. Vertex AI calls will fail if credentials are required.", e);
+            eprintln!(
+                "WARNING: GCP Authenticator could not be initialized: {}. \
+                 Vertex AI calls will fail. pgvector retrieval will still work.",
+                e
+            );
             None
         }
     };
