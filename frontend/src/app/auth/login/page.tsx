@@ -36,12 +36,31 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 font-body p-4">
-      <div className="w-full max-w-md bg-white border border-slate-200 rounded shadow-lg overflow-hidden">
+      <motion.div
+        className="w-full max-w-md bg-white border border-slate-200 rounded shadow-lg overflow-hidden"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+      >
         
         {/* Header */}
         <div className="bg-primary p-6 text-center text-white flex flex-col items-center gap-3">
-          <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra" className="h-10 object-contain brightness-0 invert" />
-          <span className="text-xs uppercase font-mono font-bold tracking-widest text-accent">Login Unificado</span>
+          <motion.img
+            src="/assets/images/LogoMarca_Alfabra.png"
+            alt="Alfabra"
+            className="h-14 object-contain brightness-0 invert"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1, duration: 0.35 }}
+          />
+          <motion.span
+            className="text-xs uppercase font-mono font-bold tracking-widest text-accent"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.25, duration: 0.3 }}
+          >
+            Login Unificado
+          </motion.span>
         </div>
         
         {/* Form Body */}
@@ -148,7 +167,7 @@ export default function LoginPage() {
             </div>
           )}
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ export const Button: React.FC<ButtonProps> = ({ children, variant = 'primary', c
 
   return (
     <button
-      className={`px-4 py-2 rounded text-xs font-semibold font-mono tracking-wider transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed select-none ${getVariantClass()} ${className}`}
+      className={`px-4 py-2 rounded text-xs font-semibold font-mono tracking-wider transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed select-none ${getVariantClass()} ${className}`}
       {...props}
     >
       {children}
