@@ -112,6 +112,19 @@ Este projeto tem um skill dedicado para gerenciar sessões de desenvolvimento co
 
 O skill está em `.claude/skills/worktree-session/SKILL.md`.
 
+## Skills de Automação
+
+| Skill | Ativação | Propósito |
+|-------|----------|-----------|
+| `backlog-ideator` | `/backlog [tema]` | Ideação guiada → issues GitHub com label `ai-generated` |
+| `worktree-create` | `/worktree-create <type> <slug> [issue#]` | Cria worktree headless sem prompts interativos |
+| `worktree-ship` | `/worktree-ship [issue#]` | Push → PR draft → CI → merge → sync root |
+| `fix-loop-agent` | `/fix-loop <descrição>` | Loop autônomo de fix até CI verde (max 5 iterações) |
+| `guardian` | `/guardian` | Audit JSON + Flyway + worktrees; auto-fix com aprovação |
+| `issue-coordinator` | `/coordinator [label] [--dry-run]` | Despacho paralelo de issues para sub-agentes |
+
+Referência compartilhada de testes: `.claude/skills/shared/references/module-test-map.md`
+
 ---
 
 # Reversa
