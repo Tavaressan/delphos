@@ -40,7 +40,11 @@ def seed():
         "d3b07384-d113-4ec2-a5d6-c8a7b6cf9110",  # User tenant
     ]
 
-    user_id = "9c422fe5-7f8f-4193-852e-333de4640515"  # Existing admin user ID
+    cur.execute("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
+    row = cur.fetchone()
+    if not row:
+        raise Exception("Usuário 'admin' não encontrado no banco. Execute a stack completa antes do seed.")
+    user_id = str(row[0])
 
     for tenant in tenants:
         print(f"Seeding for tenant {tenant}...")
