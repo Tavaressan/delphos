@@ -97,9 +97,7 @@ def publish_agent(base_url: str, agent_id: str) -> None:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument(
-        "--tenant-id", default="00000000-0000-0000-0000-000000000000"
-    )
+    parser.add_argument("--tenant-id", default="00000000-0000-0000-0000-000000000000")
     args = parser.parse_args()
 
     created = {}

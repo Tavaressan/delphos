@@ -6,18 +6,30 @@ A mesma lógica é implementada como tool no crewai_adapter.py.
 
 MATERIAL_TABLE = {
     "residencial": {"base": "granito", "min_thickness_mm": 20, "min_mpa": 40},
-    "comercial":   {"base": "granito ou porcelanato técnico", "min_thickness_mm": 25, "min_mpa": 60},
-    "hospitalar":  {"base": "resina epóxi antiderrapante", "min_thickness_mm": 15, "min_mpa": 50},
-    "carga":       {"base": "chapa de aço xadrez", "min_thickness_mm": 8, "min_mpa": 250},
+    "comercial": {
+        "base": "granito ou porcelanato técnico",
+        "min_thickness_mm": 25,
+        "min_mpa": 60,
+    },
+    "hospitalar": {
+        "base": "resina epóxi antiderrapante",
+        "min_thickness_mm": 15,
+        "min_mpa": 50,
+    },
+    "carga": {"base": "chapa de aço xadrez", "min_thickness_mm": 8, "min_mpa": 250},
 }
 
 SAFETY_FACTOR = 1.5  # fator de segurança sobre carga nominal
 
 
-def calculate(floor_type: str, load_kg: int, cabin_width_mm: int, cabin_depth_mm: int) -> dict:
+def calculate(
+    floor_type: str, load_kg: int, cabin_width_mm: int, cabin_depth_mm: int
+) -> dict:
     floor_type = floor_type.lower().strip()
     if floor_type not in MATERIAL_TABLE:
-        raise ValueError(f"Tipo de piso inválido: {floor_type!r}. Opções: {list(MATERIAL_TABLE)}")
+        raise ValueError(
+            f"Tipo de piso inválido: {floor_type!r}. Opções: {list(MATERIAL_TABLE)}"
+        )
 
     area_m2 = (cabin_width_mm / 1000) * (cabin_depth_mm / 1000)
     if area_m2 <= 0:
@@ -49,5 +61,6 @@ def calculate(floor_type: str, load_kg: int, cabin_width_mm: int, cabin_depth_mm
 
 if __name__ == "__main__":
     import json
+
     result = calculate("comercial", 1000, 1400, 2100)
     print(json.dumps(result, ensure_ascii=False, indent=2))
