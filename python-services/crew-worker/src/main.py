@@ -37,6 +37,7 @@ def process_job(ch, method, properties, body):
         tenant_id = job_data.get("tenant_id", "default-tenant")
         prompt = job_data.get("prompt_final", "Default prompt")
         agent_id = job_data.get("agent_id")
+        manifest_config = job_data.get("manifest_config")
 
         if not execution_id:
             print("Missing execution_id in job payload, acknowledging and dropping")
@@ -45,7 +46,12 @@ def process_job(ch, method, properties, body):
 
         # Instantiate and execute via the CrewAI Adapter
         adapter = CrewAiRuntimeAdapter(
-            ch, execution_id, tenant_id, prompt, agent_id=agent_id
+            ch,
+            execution_id,
+            tenant_id,
+            prompt,
+            agent_id=agent_id,
+            manifest_config=manifest_config,
         )
         adapter.execute()
 
@@ -77,6 +83,20 @@ def main():
                 exchange="agent.execution.exchange",
                 exchange_type="direct",
                 durable=True,
+            )
+            channel.queue_declare(queue="agent.retrieval.delegated.jobs", durable=True)
+            channel.queue_declare(
+                queue="agent.retrieval.delegated.events", durable=True
+            )
+            channel.queue_bind(
+                queue="agent.retrieval.delegated.jobs",
+                exchange="agent.execution.exchange",
+                routing_key="agent.retrieval.delegated.requested",
+            )
+            channel.queue_bind(
+                queue="agent.retrieval.delegated.events",
+                exchange="agent.execution.exchange",
+                routing_key="agent.retrieval.delegated.finished",
             )
 
             # Pre-fetch limit

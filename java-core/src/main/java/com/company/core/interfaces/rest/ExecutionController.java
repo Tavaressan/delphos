@@ -121,6 +121,9 @@ public class ExecutionController {
             payload.put("agent_id", actualAgentId.toString());
             payload.put("tenant_id", tenantId.toString());
             payload.put("prompt_final", prompt);
+            if (agent != null && agent.getManifestConfig() != null) {
+                payload.put("manifest_config", agent.getManifestConfig());
+            }
 
             // 5. Publish to RabbitMQ
             try {
