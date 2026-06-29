@@ -77,14 +77,23 @@ public class AgentExecutionEventListener {
                     executionRepository.save(execution);
 
                     Map<String, Object> retPayload = (Map<String, Object>) event.get("payload");
-                    RetrievalEvent retrievalEvent = new RetrievalEvent();
-                    retrievalEvent.setAgentExecution(execution);
-                    retrievalEvent.setDocumentId(UUID.fromString((String) retPayload.get("documentId")));
-                    retrievalEvent.setChunkId(UUID.fromString((String) retPayload.get("chunkId")));
-                    retrievalEvent.setSimilarityScore(((Number) retPayload.get("similarityScore")).doubleValue());
-                    retrievalEvent.setRetrievedContent((String) retPayload.get("retrievedContent"));
-                    retrievalEventRepository.save(retrievalEvent);
-                    log.info("Recorded RetrievalEvent for execution {}", executionId);
+
+                    // allSources contém cada documento único usado no RAG; se ausente, cria entrada única com os campos top-level
+                    java.util.List<Map<String, Object>> allSources = (java.util.List<Map<String, Object>>) retPayload.get("allSources");
+                    if (allSources == null || allSources.isEmpty()) {
+                        allSources = java.util.List.of(retPayload);
+                    }
+                    for (Map<String, Object> src : allSources) {
+                        RetrievalEvent retrievalEvent = new RetrievalEvent();
+                        retrievalEvent.setAgentExecution(execution);
+                        retrievalEvent.setDocumentId(UUID.fromString((String) src.get("documentId")));
+                        retrievalEvent.setChunkId(UUID.fromString((String) src.get("chunkId")));
+                        retrievalEvent.setSimilarityScore(((Number) src.get("similarityScore")).doubleValue());
+                        retrievalEvent.setDocumentName((String) src.get("documentName"));
+                        retrievalEvent.setRetrievedContent((String) retPayload.get("retrievedContent"));
+                        retrievalEventRepository.save(retrievalEvent);
+                    }
+                    log.info("Recorded {} RetrievalEvent(s) for execution {}", allSources.size(), executionId);
                     break;
 
                 case "ToolCallStarted":
