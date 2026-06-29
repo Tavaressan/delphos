@@ -108,12 +108,17 @@ jobs:
         run: |
           cd java-core
           chmod +x gradlew
-          ./gradlew compileJava compileTestJava
+          ./gradlew compileJava compileTestJava bootJar
 
       - name: Test with Gradle
         run: |
           cd java-core
           ./gradlew test
+
+      - name: Verify migrations in JAR
+        run: |
+          cd java-core
+          jar tf build/libs/*.jar | grep "db/migration/V" || (echo "❌ Flyway migrations not found in JAR" && exit 1)
 
   java-integration:
     name: Java Core Integration Tests (BDD)

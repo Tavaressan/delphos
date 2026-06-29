@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../../providers/AuthProvider';
 import { Terminal, Cpu, Database, ChevronLeft, ChevronRight, X, Settings, User } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { ConversationList } from '../../features/chat/ConversationList';
 
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
@@ -73,8 +74,10 @@ export const Sidebar: React.FC = () => {
     </div>
   );
 
+  const isHome = pathname === '/';
+
   const sidebarContent = (
-    <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col flex-shrink-0 justify-between select-none transition-all duration-300 h-full`}>
+    <aside className={`${collapsed ? 'w-16' : 'w-64'} bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col flex-shrink-0 select-none transition-all duration-300 h-full`}>
       <div className="py-6 flex flex-col gap-1.5 font-body">
 
         {/* Toggle & Title Area */}
@@ -113,7 +116,14 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      <div className="p-4 bg-slate-200 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-1 font-mono text-center">
+      {/* Conversation history — only on home page, only expanded, only logged in */}
+      {isLogged && !collapsed && isHome && (
+        <div className="flex-1 min-h-0 border-t border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
+          <ConversationList />
+        </div>
+      )}
+
+      <div className="p-4 bg-slate-200 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-1 font-mono text-center flex-shrink-0">
         {!collapsed ? (
           <div className="text-[9px] text-slate-400 dark:text-slate-600">ALFABRA SYSTEM V2.4.3</div>
         ) : (

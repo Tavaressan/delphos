@@ -1,5 +1,6 @@
 import '../styles/globals.css';
 import { AuthProvider } from '../providers/AuthProvider';
+import { ConversationProvider } from '../providers/ConversationProvider';
 import { Inter } from 'next/font/google';
 
 const inter = Inter({
@@ -30,7 +31,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className={`h-full bg-slate-50 text-slate-800 font-body ${inter.className}`}>
         <AuthProvider>
-          {children}
+          <ConversationProvider>
+            {children}
+          </ConversationProvider>
         </AuthProvider>
       </body>
     </html>

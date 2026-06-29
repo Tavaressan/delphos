@@ -74,11 +74,31 @@ npm run test:e2e
 - Embeddings: Vertex AI / Gemini (sem fallback atual — dívida técnica)
 - Migrações de banco: Flyway (em `java-core/src/main/resources/db/migration/`)
 
+## Sessão tmux (recomendado)
+
+Para sobreviver a sleep/lock do macOS, rode o Claude Code CLI dentro de uma sessão tmux. O script abaixo cria automaticamente uma janela de shell e uma janela `claude` para o root + uma janela por worktree ativo:
+
+```bash
+./scripts/tmux-session.sh          # cria ou reanexe a sessão
+./scripts/tmux-session.sh --kill   # recria do zero (fecha a sessão atual)
+```
+
+**Fluxo diário:**
+1. `./scripts/tmux-session.sh` — abre tudo
+2. `Ctrl+B <número>` — navega entre janelas (0 = shell, 1 = claude-root, 2+ = worktrees)
+3. `Ctrl+B D` — **desanexa antes de bloquear a tela** (sessão continua em background)
+4. Ao voltar: `./scripts/tmux-session.sh` — reanexe onde parou
+
+Se um novo worktree for criado durante a sessão, rode `--kill` para regenerar as janelas.
+
 ## Git
 - Never commit directly to main or master
 - Always work on a feature branch
 - Use conventional commits: feat/fix/chore/refactor/test
 - Run ./gradlew build before creating any PR
+
+## Desambiguação de Issues do GitHub
+Quando houver possibilidade de confusão entre uma funcionalidade numerada (e.g. '016-bdd') e um número de issue do GitHub (e.g. #16), confirme explicitamente a qual delas o usuário se refere antes de prosseguir.
 
 ## Fluxo de sessão com worktree
 
@@ -88,7 +108,7 @@ Este projeto tem um skill dedicado para gerenciar sessões de desenvolvimento co
 
 **O que o skill faz:**
 1. Pergunta se o trabalho será no root ou em worktree isolado
-2. Lista worktrees existentes ou cria um novo (branch descritiva + worktree separado)
+2. Lista worktrees existentes ou cria um novo dentro da raiz do projeto, em `.claude/worktrees/` (branch descritiva + worktree separado)
 3. Conduz o desenvolvimento com commits incrementais no worktree
 4. Abre PR como draft, monitora CI, resolve falhas automaticamente
 5. Ao fazer merge, sincroniza o root com master e oferece limpeza do worktree
@@ -117,3 +137,11 @@ Quando o usuário digitar `/reversa` ou a palavra `reversa` sozinha em uma mensa
 
 Nunca apague, modifique ou sobrescreva arquivos pré-existentes do projeto legado.
 O Reversa escreve **apenas** em `.reversa/` e `_reversa_sdd/`.
+
+---
+
+## Migrações de Banco de Dados
+Após adicionar ou editar uma migração do Flyway (por exemplo, V7), sempre verifique se a migração foi incluída no JAR gerado e se é realmente executada (confirme se o esquema/tabela existe) antes de declarar o serviço como saudável. Limpe o cache de build caso a migração esteja ausente.
+
+## Verificação no Sandbox
+Se os comandos `docker compose build`, `up` ou `exec`, ou chamadas de rede externas, forem bloqueados pelo sandbox, pare de tentar após **uma única tentativa**, informe claramente a limitação e forneça ao usuário uma lista de comandos prontos para executar manualmente, incluindo o output esperado de cada um. Não repita tentativas bloqueadas esperando resultado diferente.
