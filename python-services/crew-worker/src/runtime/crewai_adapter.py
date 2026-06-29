@@ -335,7 +335,7 @@ class CrewAiRuntimeAdapter:
                 "errorLog": None,
             }
             self.publish_event("ToolCallFinished", tool_finish_payload)
-            return response_payload
+            return response_text
 
         # 4. Inicializar CrewAI Agent com role/goal/backstory dinâmicos
         print(
