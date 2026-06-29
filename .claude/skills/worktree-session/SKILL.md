@@ -336,7 +336,28 @@ git status
 git log origin/master..HEAD --oneline
 ```
 
-Apresente o resumo dos commits que serão enviados. Confirme com o usuário antes de prosseguir.
+Apresente o resumo dos commits que serão enviados.
+
+**Testes do módulo afetado:** identifique quais módulos foram modificados nos commits e rode o subset correspondente:
+
+| Módulo alterado | Comando |
+|-----------------|---------|
+| `java-core/` | `cd java-core && ./gradlew test` |
+| `rust-services/<crate>/` | `cd rust-services && cargo test -p <crate>` |
+| `python-services/` | `cd python-services && python -m pytest` |
+| `frontend/` | `cd frontend && npm test -- --watchAll=false` |
+
+Se algum teste falhar, corrija antes de prosseguir. Não faça push com testes quebrados.
+
+**Se houver migrations novas ou alteradas nos commits:**
+> Confirme antes de prosseguir com o push:
+> 1. Build passa: `cd java-core && ./gradlew build`
+> 2. Migration está no JAR: `jar tf java-core/build/libs/*.jar | grep db/migration`
+> 3. Se o banco estiver disponível: `SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 5;`
+>
+> Se o build ou a verificação falhar, corrija antes de fazer push.
+
+Confirme com o usuário antes de prosseguir.
 
 ### 4.2 — Push da branch
 
