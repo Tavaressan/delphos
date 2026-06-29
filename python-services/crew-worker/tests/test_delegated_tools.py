@@ -53,10 +53,13 @@ def test_delegated_search_success(mock_channel):
 
     # Assert
     assert "Texto relevante sobre elevadores Alfabra" in result
-    mock_channel.basic_publish.assert_called_once()
-    publish_args = mock_channel.basic_publish.call_args
-    assert publish_args.kwargs["routing_key"] == "agent.retrieval.delegated.requested"
-    payload = json.loads(publish_args.kwargs["body"])
+    retrieval_calls = [
+        c
+        for c in mock_channel.basic_publish.call_args_list
+        if c.kwargs.get("routing_key") == "agent.retrieval.delegated.requested"
+    ]
+    assert len(retrieval_calls) == 1
+    payload = json.loads(retrieval_calls[0].kwargs["body"])
     assert payload["query"] == "velocidade elevador"
     assert payload["execution_id"] == "exec-001"
 
@@ -106,7 +109,12 @@ def test_delegated_search_retry_and_success_on_third_try(mock_channel):
     # Assert
     assert "Resposta na terceira tentativa." in result
     assert attempt_counter == 3
-    assert mock_channel.basic_publish.call_count == 3
+    retrieval_calls = [
+        c
+        for c in mock_channel.basic_publish.call_args_list
+        if c.kwargs.get("routing_key") == "agent.retrieval.delegated.requested"
+    ]
+    assert len(retrieval_calls) == 3
 
 
 def test_delegated_search_all_fails_triggers_fallback(mock_channel):
@@ -125,4 +133,9 @@ def test_delegated_search_all_fails_triggers_fallback(mock_channel):
     # Assert
     # Deve retornar a mensagem suave de fallback silencioso
     assert "Ocorreu uma instabilidade na busca de conhecimentos" in result
-    assert mock_channel.basic_publish.call_count == 3
+    retrieval_calls = [
+        c
+        for c in mock_channel.basic_publish.call_args_list
+        if c.kwargs.get("routing_key") == "agent.retrieval.delegated.requested"
+    ]
+    assert len(retrieval_calls) == 3
