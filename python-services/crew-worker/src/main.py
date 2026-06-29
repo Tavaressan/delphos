@@ -46,7 +46,12 @@ def process_job(ch, method, properties, body):
 
         # Instantiate and execute via the CrewAI Adapter
         adapter = CrewAiRuntimeAdapter(
-            ch, execution_id, tenant_id, prompt, agent_id=agent_id, manifest_config=manifest_config
+            ch,
+            execution_id,
+            tenant_id,
+            prompt,
+            agent_id=agent_id,
+            manifest_config=manifest_config,
         )
         adapter.execute()
 
@@ -80,7 +85,9 @@ def main():
                 durable=True,
             )
             channel.queue_declare(queue="agent.retrieval.delegated.jobs", durable=True)
-            channel.queue_declare(queue="agent.retrieval.delegated.events", durable=True)
+            channel.queue_declare(
+                queue="agent.retrieval.delegated.events", durable=True
+            )
             channel.queue_bind(
                 queue="agent.retrieval.delegated.jobs",
                 exchange="agent.execution.exchange",

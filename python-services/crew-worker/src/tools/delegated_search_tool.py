@@ -4,13 +4,14 @@ import uuid
 from crewai.tools import BaseTool
 from pydantic import Field
 
+
 class DelegatedSearchTool(BaseTool):
     name: str = "search_knowledge_base"
     description: str = (
         "Busca especificações técnicas, manuais, limites operacionais e "
         "informações de conformidade sobre elevadores e escadas rolantes na base de dados de RAG."
     )
-    
+
     channel: any = Field(None, exclude=True)
     execution_id: str = Field(None)
     tenant_id: str = Field(None)
@@ -43,19 +44,25 @@ class DelegatedSearchTool(BaseTool):
                     "tenant_id": self.tenant_id,
                     "query": query,
                     "limit": 5,
-                    "delegation_depth": 1
+                    "delegation_depth": 1,
                 }
-                
-                print(f"[DelegatedSearchTool] Publishing retrieval request for execution {self.execution_id} (Attempt {attempt})...")
+
+                print(
+                    f"[DelegatedSearchTool] Publishing retrieval request for execution {self.execution_id} (Attempt {attempt})..."
+                )
                 self.channel.basic_publish(
                     exchange="agent.execution.exchange",
                     routing_key="agent.retrieval.delegated.requested",
-                    properties=self.channel._connection.default_channel.connection.default_channel.BasicProperties(
-                        correlation_id=self.execution_id,
-                        reply_to="agent.retrieval.delegated.events",
-                        content_type="application/json"
-                    ) if hasattr(self.channel, "_connection") else None,
-                    body=json.dumps(request_payload)
+                    properties=(
+                        self.channel._connection.default_channel.connection.default_channel.BasicProperties(
+                            correlation_id=self.execution_id,
+                            reply_to="agent.retrieval.delegated.events",
+                            content_type="application/json",
+                        )
+                        if hasattr(self.channel, "_connection")
+                        else None
+                    ),
+                    body=json.dumps(request_payload),
                 )
 
                 # 2. Aguardar a resposta na fila de eventos
@@ -67,25 +74,34 @@ class DelegatedSearchTool(BaseTool):
                     nonlocal attempt_response
                     try:
                         payload = json.loads(body.decode())
-                        corr_id = getattr(properties, "correlation_id", None) or payload.get("execution_id")
+                        corr_id = getattr(
+                            properties, "correlation_id", None
+                        ) or payload.get("execution_id")
                         if corr_id == self.execution_id:
                             attempt_response = payload
                             ch.basic_ack(delivery_tag=method.delivery_tag)
                         else:
                             # Re-file para outros workers processarem
-                            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                            ch.basic_nack(
+                                delivery_tag=method.delivery_tag, requeue=True
+                            )
                     except Exception as ex:
                         print(f"[DelegatedSearchTool] Error in response callback: {ex}")
 
                 consumer_tag = self.channel.basic_consume(
                     queue="agent.retrieval.delegated.events",
                     on_message_callback=on_response,
-                    auto_ack=False
+                    auto_ack=False,
                 )
 
                 try:
-                    while attempt_response is None and (time.time() - start_time) < timeout:
-                        if hasattr(self.channel, "_connection") and hasattr(self.channel._connection, "process_data_events"):
+                    while (
+                        attempt_response is None
+                        and (time.time() - start_time) < timeout
+                    ):
+                        if hasattr(self.channel, "_connection") and hasattr(
+                            self.channel._connection, "process_data_events"
+                        ):
                             self.channel._connection.process_data_events(time_limit=0.1)
                         else:
                             # Fallback para execução de mock de teste
@@ -102,7 +118,7 @@ class DelegatedSearchTool(BaseTool):
 
             except Exception as e:
                 print(f"[DelegatedSearchTool] Attempt {attempt} error: {e}")
-            
+
             if attempt < max_retries:
                 time.sleep(backoff)
                 backoff *= 2
@@ -111,7 +127,9 @@ class DelegatedSearchTool(BaseTool):
         if response_data is None or response_data.get("status") == "FAILED":
             response_payload = "Ocorreu uma instabilidade na busca de conhecimentos. Continuando a resposta de forma geral..."
             status_code = "FAILED"
-            error_log = response_data.get("error_message") if response_data else "Timeout"
+            error_log = (
+                response_data.get("error_message") if response_data else "Timeout"
+            )
         else:
             results = response_data.get("results", [])
             if not results:

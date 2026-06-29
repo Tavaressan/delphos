@@ -369,7 +369,10 @@ impl RabbitMQManager {
             let body = String::from_utf8_lossy(&delivery.data);
             println!("Received delegated RAG job: {}", body);
 
-            match self.process_delegated_job(&body, &db_pool, &authenticator).await {
+            match self
+                .process_delegated_job(&body, &db_pool, &authenticator)
+                .await
+            {
                 Ok(_) => {
                     delivery.ack(BasicAckOptions::default()).await?;
                 }
@@ -394,20 +397,24 @@ impl RabbitMQManager {
         db_pool: &PgPool,
         authenticator: &Option<GcpAuthenticator>,
     ) -> Result<(), WorkerError> {
-        let job: RetrievalJob = serde_json::from_str(body)
-            .map_err(|e| WorkerError::Serialization(format!("Invalid Delegated RAG Job format: {}", e)))?;
+        let job: RetrievalJob = serde_json::from_str(body).map_err(|e| {
+            WorkerError::Serialization(format!("Invalid Delegated RAG Job format: {}", e))
+        })?;
 
         match self.execute_rag(&job, db_pool, authenticator).await {
             Ok((_response_text, chunks)) => {
-                let results = chunks.into_iter().map(|c| {
-                    let chunk_id_str = c.id.as_str().unwrap_or("");
-                    let chunk_id = uuid::Uuid::parse_str(chunk_id_str).unwrap_or_default();
-                    DelegatedChunkData {
-                        chunk_id,
-                        text: c.content,
-                        score: c.score,
-                    }
-                }).collect();
+                let results = chunks
+                    .into_iter()
+                    .map(|c| {
+                        let chunk_id_str = c.id.as_str().unwrap_or("");
+                        let chunk_id = uuid::Uuid::parse_str(chunk_id_str).unwrap_or_default();
+                        DelegatedChunkData {
+                            chunk_id,
+                            text: c.content,
+                            score: c.score,
+                        }
+                    })
+                    .collect();
 
                 let event = DelegatedResponseEvent {
                     execution_id: job.execution_id,

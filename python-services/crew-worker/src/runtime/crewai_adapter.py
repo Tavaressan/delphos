@@ -317,15 +317,20 @@ class CrewAiRuntimeAdapter:
                 print(f"[CrewAiRuntimeAdapter] Error parsing manifest_config: {ex}")
 
         if allow_delegation:
-            print("[CrewAiRuntimeAdapter] Multi-Agent Delegation enabled. Instantiating DelegatedSearchTool...")
+            print(
+                "[CrewAiRuntimeAdapter] Multi-Agent Delegation enabled. Instantiating DelegatedSearchTool..."
+            )
             from tools.delegated_search_tool import DelegatedSearchTool
+
             search_tool = DelegatedSearchTool(
                 channel=self.channel,
                 execution_id=self.execution_id,
-                tenant_id=self.tenant_id
+                tenant_id=self.tenant_id,
             )
         else:
-            print("[CrewAiRuntimeAdapter] Multi-Agent Delegation disabled. Using local search tool.")
+            print(
+                "[CrewAiRuntimeAdapter] Multi-Agent Delegation disabled. Using local search tool."
+            )
             search_tool = search_knowledge_base
 
         print(
