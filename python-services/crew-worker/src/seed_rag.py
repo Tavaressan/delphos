@@ -43,7 +43,9 @@ def seed():
     cur.execute("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
     row = cur.fetchone()
     if not row:
-        raise Exception("Usuário 'admin' não encontrado no banco. Execute a stack completa antes do seed.")
+        raise Exception(
+            "Usuário 'admin' não encontrado no banco. Execute a stack completa antes do seed."
+        )
     user_id = str(row[0])
 
     for tenant in tenants:

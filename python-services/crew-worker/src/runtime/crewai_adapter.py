@@ -198,7 +198,9 @@ class CrewAiRuntimeAdapter:
             cur = conn.cursor()
 
             embedding_str = "[" + ",".join(map(str, embedding)) + "]"
-            effective_agent_id = agent_id_override if agent_id_override is not None else self.agent_id
+            effective_agent_id = (
+                agent_id_override if agent_id_override is not None else self.agent_id
+            )
 
             cur.execute(
                 """
@@ -350,16 +352,36 @@ class CrewAiRuntimeAdapter:
             )
 
             _MATERIAL_TABLE = {
-                "residencial": {"base": "granito", "min_thickness_mm": 20, "min_mpa": 40},
-                "comercial":   {"base": "granito ou porcelanato técnico", "min_thickness_mm": 25, "min_mpa": 60},
-                "hospitalar":  {"base": "resina epóxi antiderrapante", "min_thickness_mm": 15, "min_mpa": 50},
-                "carga":       {"base": "chapa de aço xadrez", "min_thickness_mm": 8, "min_mpa": 250},
+                "residencial": {
+                    "base": "granito",
+                    "min_thickness_mm": 20,
+                    "min_mpa": 40,
+                },
+                "comercial": {
+                    "base": "granito ou porcelanato técnico",
+                    "min_thickness_mm": 25,
+                    "min_mpa": 60,
+                },
+                "hospitalar": {
+                    "base": "resina epóxi antiderrapante",
+                    "min_thickness_mm": 15,
+                    "min_mpa": 50,
+                },
+                "carga": {
+                    "base": "chapa de aço xadrez",
+                    "min_thickness_mm": 8,
+                    "min_mpa": 250,
+                },
             }
             _SAFETY_FACTOR = 1.5
 
             ft = floor_type.lower().strip()
             if ft not in _MATERIAL_TABLE:
-                result = json.dumps({"error": f"Tipo de piso inválido: {floor_type!r}. Opções: {list(_MATERIAL_TABLE)}"})
+                result = json.dumps(
+                    {
+                        "error": f"Tipo de piso inválido: {floor_type!r}. Opções: {list(_MATERIAL_TABLE)}"
+                    }
+                )
             else:
                 area_m2 = (cabin_width_mm / 1000) * (cabin_depth_mm / 1000)
                 spec = _MATERIAL_TABLE[ft]
@@ -427,7 +449,13 @@ class CrewAiRuntimeAdapter:
                 result = f"Erro ao buscar agente '{agent_name}': {str(e)}"
                 self.publish_event(
                     "ToolCallFinished",
-                    {"toolCallId": tool_call_id, "status": "FAILED", "outputResponse": result, "executionTimeMs": 0, "errorLog": str(e)},
+                    {
+                        "toolCallId": tool_call_id,
+                        "status": "FAILED",
+                        "outputResponse": result,
+                        "executionTimeMs": 0,
+                        "errorLog": str(e),
+                    },
                 )
                 return result
 
@@ -435,7 +463,13 @@ class CrewAiRuntimeAdapter:
                 result = f"Agente '{agent_name}' não encontrado para este tenant."
                 self.publish_event(
                     "ToolCallFinished",
-                    {"toolCallId": tool_call_id, "status": "FAILED", "outputResponse": result, "executionTimeMs": 0, "errorLog": None},
+                    {
+                        "toolCallId": tool_call_id,
+                        "status": "FAILED",
+                        "outputResponse": result,
+                        "executionTimeMs": 0,
+                        "errorLog": None,
+                    },
                 )
                 return result
 
@@ -464,7 +498,10 @@ class CrewAiRuntimeAdapter:
                 agent=target_agent,
             )
             target_crew = Crew(
-                agents=[target_agent], tasks=[target_task], process=Process.sequential, verbose=False
+                agents=[target_agent],
+                tasks=[target_task],
+                process=Process.sequential,
+                verbose=False,
             )
             result = str(target_crew.kickoff())
 
