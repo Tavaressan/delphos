@@ -47,7 +47,7 @@ def test_valid_agent_id_sets_dynamic_fields(channel):
         "---\nrole: HVAC Specialist\ngoal: Meu goal\nbackstory: Minha história\n---\n"
     )
     adapter, _ = _make_adapter(
-        channel, agent_id="abc-123", db_row=("HVAC Specialist", instructions)
+        channel, agent_id="abc-123", db_row=("HVAC Specialist", instructions, None)
     )
     assert adapter._agent_role == "HVAC Specialist"
     assert adapter._agent_goal == "Meu goal"
