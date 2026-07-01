@@ -15,6 +15,8 @@
     "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "noUncheckedSideEffectImports": false,
+    "ignoreDeprecations": "6.0",
     "jsx": "preserve",
     "plugins": [
       {
