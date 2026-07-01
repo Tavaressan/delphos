@@ -1,0 +1,12 @@
+{"ts":"2026-06-25T20:50:00Z","action":"T001","status":"done","files":["python-services/crew-worker/src/main.py"]}
+{"ts":"2026-06-25T20:52:00Z","action":"T002","status":"done","files":["rust-services/rag-worker/src/rabbitmq.rs"]}
+{"ts":"2026-06-25T20:53:00Z","action":"T003","status":"done","files":["java-core/src/main/java/com/company/core/application/AgentService.java","java-core/src/main/java/com/company/core/domain/entities/Agent.java","java-core/src/main/resources/db/migration/V9__add_agent_manifest_config.sql","java-core/src/main/java/com/company/core/interfaces/rest/ExecutionController.java"]}
+{"ts":"2026-06-25T20:54:00Z","action":"T004","status":"done","files":["java-core/src/test/java/com/company/core/application/AgentServiceTest.java"]}
+{"ts":"2026-06-25T20:55:00Z","action":"T005","status":"done","files":["python-services/crew-worker/tests/test_delegated_tools.py"]}
+{"ts":"2026-06-25T20:56:00Z","action":"T006","status":"done","files":["python-services/crew-worker/src/tools/delegated_search_tool.py"]}
+{"ts":"2026-06-25T20:57:00Z","action":"T007","status":"done","files":["python-services/crew-worker/src/tools/delegated_search_tool.py"]}
+{"ts":"2026-06-25T20:58:00Z","action":"T008","status":"done","files":["rust-services/rag-worker/src/rabbitmq.rs"]}
+{"ts":"2026-06-25T20:59:00Z","action":"T009","status":"done","files":["python-services/crew-worker/src/runtime/crewai_adapter.py","python-services/crew-worker/src/main.py"]}
+{"ts":"2026-06-25T21:00:00Z","action":"T010","status":"done","files":["python-services/crew-worker/src/tools/delegated_search_tool.py"]}
+{"ts":"2026-06-25T21:01:00Z","action":"T011","status":"done","files":["python-services/crew-worker/src/tools/delegated_search_tool.py"]}
+{"ts":"2026-06-25T21:02:00Z","action":"T012","status":"done","files":["_reversa_forward/018-multi-agent-orchestration/regression-watch.md"]}

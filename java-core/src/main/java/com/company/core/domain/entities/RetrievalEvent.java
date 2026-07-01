@@ -31,6 +31,9 @@ public class RetrievalEvent {
     @Column(name = "similarity_score", nullable = false)
     private Double similarityScore;
 
+    @Column(name = "document_name")
+    private String documentName;
+
     @NotBlank
     @Column(name = "retrieved_content", columnDefinition = "text", nullable = false)
     private String retrievedContent;
@@ -76,6 +79,14 @@ public class RetrievalEvent {
 
     public void setSimilarityScore(Double similarityScore) {
         this.similarityScore = similarityScore;
+    }
+
+    public String getDocumentName() {
+        return documentName;
+    }
+
+    public void setDocumentName(String documentName) {
+        this.documentName = documentName;
     }
 
     public String getRetrievedContent() {

@@ -15,6 +15,12 @@ export interface SubmitExecutionResponse {
   tenantId: string;
 }
 
+export interface GetExecutionSource {
+  documentId: string | null;
+  documentName: string | null;
+  similarityScore: number;
+}
+
 export interface GetExecutionResponse {
   executionId: string;
   status: ExecutionStatus;
@@ -24,4 +30,5 @@ export interface GetExecutionResponse {
   tokensConsumed: number | null;
   startedAt: string | null;
   finishedAt: string | null;
+  sources?: GetExecutionSource[];
 }

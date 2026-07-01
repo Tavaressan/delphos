@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useExecution } from '../../hooks/useExecution';
 import { ChatInput } from '../../components/forms/ChatInput';
 import { Message } from '../../domain/entities';
-import { Terminal, Activity, FileText, CheckCircle2, ChevronLeft, ChevronRight, MessageSquarePlus } from 'lucide-react';
+import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
@@ -12,7 +12,8 @@ import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 
 export const ChatCanvas: React.FC = () => {
-  const { tenantId } = useAuth();
+  const { tenantId, user } = useAuth();
+  const isAdmin = user?.role === 'ROLE_ADMIN';
   const { activeConversationId, setActiveConversationId, createConversation, refreshConversations } = useConversations();
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
@@ -22,13 +23,13 @@ export const ChatCanvas: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
-  const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output) => {
+  const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output, sources) => {
     setChatHistory(prev => [
       ...prev,
       {
         role: 'ASSISTANT',
         content: output,
-        citation: 'Resposta do agente'
+        sources: isAdmin ? sources : undefined,
       }
     ]);
     refreshConversations();
@@ -190,11 +191,19 @@ export const ChatCanvas: React.FC = () => {
                   }`}>
                     {msg.content}
 
-                    {/* Citations if assistant */}
-                    {msg.role === 'ASSISTANT' && msg.citation && (
-                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex items-center gap-1.5 text-[10px] text-accent font-semibold">
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Citação: {msg.citation}</span>
+                    {/* Fontes RAG — visível somente para admin */}
+                    {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1">
+                        <span className="text-[10px] text-accent font-bold uppercase tracking-wider flex items-center gap-1">
+                          <FileText className="w-3 h-3" />
+                          Fontes RAG
+                        </span>
+                        {msg.sources.map((src, i) => (
+                          <div key={i} className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                            <span className="truncate max-w-[75%]">{src.documentName ?? src.documentId ?? '—'}</span>
+                            <span className="text-accent ml-2">{(src.similarityScore * 100).toFixed(1)}%</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -241,33 +250,45 @@ export const ChatCanvas: React.FC = () => {
         </div>
       </div>
 
-      {/* Execution Timeline (Right Panel) */}
-      <div className={`transition-all duration-300 ${isTimelineCollapsed ? 'w-12 p-3' : 'w-full md:w-80 p-5'} bg-surface border border-border-color rounded-lg shadow-sm flex flex-col gap-4 min-h-0 overflow-hidden`}>
-        <div className={`flex items-center justify-between border-b border-border-color pb-2 ${isTimelineCollapsed ? 'flex-col gap-3 pb-3' : ''}`}>
+      {/* Execution Timeline — desktop: right panel; mobile: bottom collapsible strip */}
+      <div className={`
+        transition-all duration-300 flex-shrink-0 bg-surface border border-border-color rounded-lg shadow-sm flex flex-col overflow-hidden
+        ${isTimelineCollapsed
+          ? 'p-3 h-12 md:h-auto md:w-12'
+          : 'p-5 h-52 md:h-auto w-full md:w-80'}
+      `}>
+        {/* Panel header */}
+        <div className="flex items-center justify-between border-b border-border-color pb-2 flex-shrink-0">
           {!isTimelineCollapsed && (
             <span className="text-xs font-bold text-text-secondary uppercase tracking-wider heading-font">Progresso de Execução</span>
           )}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
-              className="text-text-secondary hover:text-text-primary p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
-              aria-label={isTimelineCollapsed ? "Expandir Linha do Tempo" : "Recolher Linha do Tempo"}
-            >
-              {isTimelineCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
+          <div className={`flex items-center gap-2 ${isTimelineCollapsed ? 'w-full justify-center' : 'ml-auto'}`}>
             {!isTimelineCollapsed && (
               <Activity className={`w-4 h-4 text-accent ${isLoading ? 'animate-pulse' : ''}`} />
             )}
+            <button
+              onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+              className="text-text-secondary hover:text-text-primary p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
+              aria-label={isTimelineCollapsed ? 'Expandir Linha do Tempo' : 'Recolher Linha do Tempo'}
+            >
+              {/* Mobile: chevron vertical; desktop: chevron horizontal */}
+              <span className="md:hidden">
+                {isTimelineCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </span>
+              <span className="hidden md:block">
+                {isTimelineCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </span>
+            </button>
           </div>
         </div>
 
-        {!isTimelineCollapsed ? (
-          <div className="overflow-y-auto flex-1 flex flex-col gap-4 pr-1">
+        {!isTimelineCollapsed && (
+          <div className="overflow-y-auto flex-1 flex flex-col gap-4 pr-1 mt-4">
             {timeline.length > 0 ? (
               timeline.map((event) => (
                 <div key={event.id} className="flex gap-3 text-xs">
                   <div className="flex flex-col items-center">
-                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white transition-colors duration-300 ${
+                    <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white transition-colors duration-300 ${
                       event.status === 'success' ? 'bg-success' :
                       event.status === 'warning' ? 'bg-warning' :
                       event.status === 'danger' ? 'bg-danger' :
@@ -279,30 +300,23 @@ export const ChatCanvas: React.FC = () => {
                         event.id
                       )}
                     </div>
-                    <div className="w-[1.5px] h-full bg-border-color mt-1" />
+                    <div className="w-[1.5px] flex-1 bg-border-color mt-1" />
                   </div>
                   <div className="flex flex-col flex-1 pb-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-text-primary">{event.name}</span>
-                      <span className="text-[9px] font-mono text-text-secondary">{event.time}</span>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="font-bold text-text-primary truncate">{event.name}</span>
+                      <span className="text-[9px] font-mono text-text-secondary flex-shrink-0">{event.time}</span>
                     </div>
                     <p className="text-text-secondary mt-0.5 text-[11px] leading-relaxed">{event.details}</p>
                   </div>
                 </div>
               ))
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-text-secondary text-center py-12 gap-2">
+              <div className="flex flex-col items-center justify-center h-full text-text-secondary text-center py-8 gap-2">
                 <Activity className="w-8 h-8 text-text-secondary opacity-60" />
                 <span className="text-xs">Envie uma mensagem para começar.</span>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-start pt-4 gap-6 text-text-secondary">
-            <Activity className={`w-5 h-5 text-accent ${isLoading ? 'animate-pulse' : ''}`} />
-            <div className="writing-mode-vertical text-[10px] font-bold uppercase tracking-widest select-none transform rotate-90 whitespace-nowrap mt-8">
-              Progresso
-            </div>
           </div>
         )}
       </div>
