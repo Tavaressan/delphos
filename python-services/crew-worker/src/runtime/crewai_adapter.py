@@ -8,6 +8,7 @@ import psycopg2
 from typing import Any, List, Mapping, Optional
 from crewai import Agent, Task, Crew, Process, BaseLLM, LLM
 from crewai.tools import tool
+import yaml
 
 from runtime.instruction_parser import parse as parse_instructions
 
@@ -46,12 +47,14 @@ class CrewAiRuntimeAdapter:
         tenant_id: str,
         prompt: str,
         agent_id: str = None,
+        manifest_config: str = None,
     ):
         self.channel = channel
         self.execution_id = execution_id
         self.tenant_id = tenant_id
         self.prompt = prompt
         self.agent_id = agent_id
+        self.manifest_config = manifest_config
 
         # Detect Vertex AI environment variables
         worker_mode = os.environ.get("CREW_WORKER_MODE", "real").lower()
@@ -178,13 +181,13 @@ class CrewAiRuntimeAdapter:
                 print(
                     f"[CrewAiRuntimeAdapter] Embedding service error: {resp.status_code} - {resp.text}"
                 )
-                return "Erro ao obter embeddings do embedding-service."
+                return "Erro ao obter embeddings do embedding-service.", []
             embedding = resp.json()["data"][0]["embedding"]
         except Exception as e:
             print(
                 f"[CrewAiRuntimeAdapter] Failed to contact embedding-service: {str(e)}"
             )
-            return "Falha ao se comunicar com o serviço de embeddings."
+            return "Falha ao se comunicar com o serviço de embeddings.", []
 
         # 2. Busca vetorial por similaridade (cosseno) no Postgres filtrada por agent_id
         db_url = os.environ.get(
@@ -204,7 +207,8 @@ class CrewAiRuntimeAdapter:
 
             cur.execute(
                 """
-                SELECT dc.content, 1 - (dc.embedding <=> %s::vector) as similarity
+                SELECT dc.id, dc.content, d.id, d.name,
+                       1 - (dc.embedding <=> %s::vector) as similarity
                 FROM document_chunks dc
                 JOIN documents d ON dc.document_id = d.id
                 WHERE dc.tenant_id = %s
@@ -220,19 +224,34 @@ class CrewAiRuntimeAdapter:
 
             if not rows:
                 print("[CrewAiRuntimeAdapter] No document chunks found in database.")
-                return "Nenhum documento relevante encontrado na base de conhecimento para o tenant."
+                return (
+                    "Nenhum documento relevante encontrado na base de conhecimento para o tenant.",
+                    [],
+                )
 
             results = []
+            sources = []
+            seen_doc_ids = set()
             for i, row in enumerate(rows):
-                content, similarity = row
+                chunk_id, content, doc_id, doc_name, similarity = row
                 results.append(
                     f"Trecho {i+1} (Similaridade: {similarity:.4f}):\n{content}\n"
                 )
+                if str(doc_id) not in seen_doc_ids:
+                    seen_doc_ids.add(str(doc_id))
+                    sources.append(
+                        {
+                            "chunkId": str(chunk_id),
+                            "documentId": str(doc_id),
+                            "documentName": doc_name,
+                            "similarityScore": round(float(similarity), 4),
+                        }
+                    )
 
-            return "\n---\n".join(results)
+            return "\n---\n".join(results), sources
         except Exception as e:
             print(f"[CrewAiRuntimeAdapter] Database similarity search failed: {str(e)}")
-            return f"Erro ao acessar a base de dados vetorial: {str(e)}"
+            return f"Erro ao acessar a base de dados vetorial: {str(e)}", []
 
     def execute(self) -> str:
         # 1. Validar e sanitizar input do usuário contra Prompt Injection
@@ -254,15 +273,16 @@ class CrewAiRuntimeAdapter:
         # 2. Executar RAG Retrieval Real
         self.publish_event("RetrievalStarted", {})
 
-        retrieved_text = self._search_db(self.prompt)
+        retrieved_text, retrieval_sources = self._search_db(self.prompt)
 
-        doc_id = str(uuid.uuid4())
-        chunk_id = str(uuid.uuid4())
+        top_source = retrieval_sources[0] if retrieval_sources else {}
         retrieval_payload = {
-            "documentId": doc_id,
-            "chunkId": chunk_id,
-            "similarityScore": 0.950 if "Trecho" in retrieved_text else 0.0,
+            "documentId": top_source.get("documentId", str(uuid.uuid4())),
+            "chunkId": top_source.get("chunkId", str(uuid.uuid4())),
+            "documentName": top_source.get("documentName"),
+            "similarityScore": top_source.get("similarityScore", 0.0),
             "retrievedContent": retrieved_text,
+            "allSources": retrieval_sources,
         }
         self.publish_event("RetrievalCompleted", retrieval_payload)
         time.sleep(1)
@@ -319,17 +339,44 @@ class CrewAiRuntimeAdapter:
                 )
                 return f"Busca bloqueada por política de segurança: {str(e)}"
 
-            response_payload = self._search_db(query)
+            response_text, _ = self._search_db(query)
 
             tool_finish_payload = {
                 "toolCallId": tool_call_id,
                 "status": "COMPLETED",
-                "outputResponse": response_payload,
+                "outputResponse": response_text,
                 "executionTimeMs": 1000,
                 "errorLog": None,
             }
             self.publish_event("ToolCallFinished", tool_finish_payload)
-            return response_payload
+            return response_text
+
+        # 4. Inicializar CrewAI Agent com ferramentas dinâmicas
+        allow_delegation = False
+        if self.manifest_config:
+            try:
+                manifest = yaml.safe_load(self.manifest_config)
+                settings = manifest.get("agent_settings", {})
+                allow_delegation = settings.get("allow_delegation", False)
+            except Exception as ex:
+                print(f"[CrewAiRuntimeAdapter] Error parsing manifest_config: {ex}")
+
+        if allow_delegation:
+            print(
+                "[CrewAiRuntimeAdapter] Multi-Agent Delegation enabled. Instantiating DelegatedSearchTool..."
+            )
+            from tools.delegated_search_tool import DelegatedSearchTool
+
+            search_tool = DelegatedSearchTool(
+                channel=self.channel,
+                execution_id=self.execution_id,
+                tenant_id=self.tenant_id,
+            )
+        else:
+            print(
+                "[CrewAiRuntimeAdapter] Multi-Agent Delegation disabled. Using local search tool."
+            )
+            search_tool = search_knowledge_base
 
         @tool("calculate_floor_specs")
         def calculate_floor_specs(
@@ -523,7 +570,7 @@ class CrewAiRuntimeAdapter:
             f"agent_id={self.agent_id} | role={self._agent_role!r} | "
             f"backstory={self._agent_backstory[:80]!r}..."
         )
-        tools = [calculate_sandbox_quota, search_knowledge_base]
+        tools = [calculate_sandbox_quota, search_tool]
         if self._agent_tag == "piso":
             tools.append(calculate_floor_specs)
         elif self._agent_tag == "orquestrador":

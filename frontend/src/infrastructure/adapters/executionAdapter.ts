@@ -5,8 +5,8 @@ export const executionAdapter = {
   toEntity(dto: GetExecutionResponse): AgentExecution {
     return {
       id: dto.executionId,
-      conversationId: '', // To be filled/handled if needed, backend GET doesn't return conversationId directly in getExecution
-      agentId: '', // Default placeholder
+      conversationId: '',
+      agentId: '',
       status: dto.status,
       prompt: dto.prompt,
       output: dto.output,
@@ -14,6 +14,7 @@ export const executionAdapter = {
       tokensConsumed: dto.tokensConsumed,
       startedAt: dto.startedAt,
       finishedAt: dto.finishedAt,
+      sources: dto.sources,
     };
   },
 

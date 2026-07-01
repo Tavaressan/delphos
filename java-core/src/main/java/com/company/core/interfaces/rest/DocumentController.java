@@ -86,7 +86,7 @@ public class DocumentController {
                 minioClient.putObject(PutObjectArgs.builder()
                         .bucket(minioBucket)
                         .object(objectPath)
-                        .stream(is, file.getSize(), -1)
+                        .stream(is, file.getSize(), -1L)
                         .contentType(getContentType(ext))
                         .build());
             }

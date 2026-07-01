@@ -7,6 +7,13 @@ export interface User {
   firstName?: string;
   lastName?: string;
   status: 'ACTIVE' | 'INACTIVE';
+  role?: 'ROLE_USER' | 'ROLE_ADMIN';
+}
+
+export interface RetrievalSource {
+  documentId: string | null;
+  documentName: string | null;
+  similarityScore: number;
 }
 
 export interface Agent {
@@ -44,6 +51,7 @@ export interface Message {
   content: string;
   createdAt?: string;
   citation?: string;
+  sources?: RetrievalSource[];
 }
 
 export interface AgentExecution {
@@ -57,6 +65,7 @@ export interface AgentExecution {
   tokensConsumed: number | null;
   startedAt: string | null; // ISO 8601 string
   finishedAt: string | null; // ISO 8601 string
+  sources?: RetrievalSource[];
 }
 
 export interface Role {

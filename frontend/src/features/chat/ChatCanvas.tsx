@@ -12,7 +12,8 @@ import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 
 export const ChatCanvas: React.FC = () => {
-  const { tenantId } = useAuth();
+  const { tenantId, user } = useAuth();
+  const isAdmin = user?.role === 'ROLE_ADMIN';
   const { activeConversationId, setActiveConversationId, createConversation, refreshConversations } = useConversations();
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
@@ -22,13 +23,13 @@ export const ChatCanvas: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
-  const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output) => {
+  const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output, sources) => {
     setChatHistory(prev => [
       ...prev,
       {
         role: 'ASSISTANT',
         content: output,
-        citation: 'Resposta do agente'
+        sources: isAdmin ? sources : undefined,
       }
     ]);
     refreshConversations();
@@ -190,11 +191,19 @@ export const ChatCanvas: React.FC = () => {
                   }`}>
                     {msg.content}
 
-                    {/* Citations if assistant */}
-                    {msg.role === 'ASSISTANT' && msg.citation && (
-                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex items-center gap-1.5 text-[10px] text-accent font-semibold">
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Citação: {msg.citation}</span>
+                    {/* Fontes RAG — visível somente para admin */}
+                    {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1">
+                        <span className="text-[10px] text-accent font-bold uppercase tracking-wider flex items-center gap-1">
+                          <FileText className="w-3 h-3" />
+                          Fontes RAG
+                        </span>
+                        {msg.sources.map((src, i) => (
+                          <div key={i} className="flex items-center justify-between text-[10px] text-text-secondary font-mono">
+                            <span className="truncate max-w-[75%]">{src.documentName ?? src.documentId ?? '—'}</span>
+                            <span className="text-accent ml-2">{(src.similarityScore * 100).toFixed(1)}%</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>

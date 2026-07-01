@@ -53,6 +53,9 @@ public class Agent {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
+    @Column(name = "manifest_config")
+    private String manifestConfig;
+
     public UUID getId() {
         return id;
     }
@@ -139,5 +142,13 @@ public class Agent {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getManifestConfig() {
+        return manifestConfig;
+    }
+
+    public void setManifestConfig(String manifestConfig) {
+        this.manifestConfig = manifestConfig;
     }
 }

@@ -38,7 +38,7 @@ public class AgentService {
     private final AuditService auditService;
 
     @Value("${minio.bucket:agents-data}")
-    private String minioBucket;
+    private String minioBucket = "agents-data";
 
     public AgentService(AgentRepository agentRepository,
                         DocumentRepository documentRepository,
@@ -67,6 +67,7 @@ public class AgentService {
         long totalUncompressedSize = 0;
         boolean hasRootMd = false;
         String systemInstructions = "";
+        String manifestConfig = null;
 
         // First pass: validation
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
@@ -90,6 +91,15 @@ public class AgentService {
                             }
                             systemInstructions = bos.toString("UTF-8");
                         }
+                    } else if ((entryName.equalsIgnoreCase("manifest.yaml") || entryName.equalsIgnoreCase("manifest.yml"))
+                            && !entryName.contains("/") && !entryName.contains("\\")) {
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        byte[] buffer = new byte[1024];
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            bos.write(buffer, 0, len);
+                        }
+                        manifestConfig = bos.toString("UTF-8");
                     }
                 }
                 zis.closeEntry();
@@ -109,6 +119,9 @@ public class AgentService {
         agent.setName(name);
         agent.setTenantId(tenantId);
         agent.setSystemInstructions(systemInstructions);
+        if (manifestConfig != null) {
+            agent.setManifestConfig(manifestConfig);
+        }
         agent = agentRepository.save(agent);
         auditService.logAction("CREATE_AGENT", "Agent: " + name, "{\"agentId\":\"" + agent.getId() + "\"}");
 
@@ -118,7 +131,7 @@ public class AgentService {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(minioBucket)
                     .object(zipPath)
-                    .stream(is, zipBytes.length, -1)
+                    .stream(is, (long) zipBytes.length, -1L)
                     .contentType("application/zip")
                     .build());
         }
@@ -149,7 +162,7 @@ public class AgentService {
                             minioClient.putObject(PutObjectArgs.builder()
                                     .bucket(minioBucket)
                                     .object(objectPath)
-                                    .stream(fileIs, fileData.length, -1)
+                                    .stream(fileIs, (long) fileData.length, -1L)
                                     .contentType(getContentType(ext))
                                     .build());
                         }

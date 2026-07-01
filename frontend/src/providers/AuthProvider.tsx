@@ -29,12 +29,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       // Seed default user for PoC so the user starts logged in
       const defaultUser: User = {
-        id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
+        id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
         username: 'admin',
         email: 'admin@company.com',
         firstName: 'Vitor',
         lastName: 'Tavares',
         status: 'ACTIVE',
+        role: 'ROLE_ADMIN',
       };
       setUser(defaultUser);
       setIsLogged(true);
@@ -57,6 +58,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       firstName: username.charAt(0).toUpperCase() + username.slice(1),
       lastName: role === 'ROLE_ADMIN' ? 'Admin' : 'User',
       status: 'ACTIVE',
+      role,
     };
     setUser(newUser);
     setIsLogged(true);
