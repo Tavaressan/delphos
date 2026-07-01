@@ -32,6 +32,7 @@ public class ExecutionController {
     private final AgentRepository agentRepository;
     private final MessageRepository messageRepository;
     private final com.company.core.application.AuditService auditService;
+    private final com.company.core.domain.repositories.RetrievalEventRepository retrievalEventRepository;
 
     public ExecutionController(UserRepository userRepository,
                                ConversationRepository conversationRepository,
@@ -40,7 +41,8 @@ public class ExecutionController {
                                ObjectMapper objectMapper,
                                AgentRepository agentRepository,
                                MessageRepository messageRepository,
-                               com.company.core.application.AuditService auditService) {
+                               com.company.core.application.AuditService auditService,
+                               com.company.core.domain.repositories.RetrievalEventRepository retrievalEventRepository) {
         this.userRepository = userRepository;
         this.conversationRepository = conversationRepository;
         this.executionRepository = executionRepository;
@@ -49,6 +51,7 @@ public class ExecutionController {
         this.agentRepository = agentRepository;
         this.messageRepository = messageRepository;
         this.auditService = auditService;
+        this.retrievalEventRepository = retrievalEventRepository;
     }
 
     @PostMapping
@@ -172,6 +175,17 @@ public class ExecutionController {
             return ResponseEntity.notFound().build();
         }
 
+        java.util.List<Map<String, Object>> sources = retrievalEventRepository.findByAgentExecutionId(id)
+                .stream()
+                .map(re -> {
+                    Map<String, Object> s = new HashMap<>();
+                    s.put("documentId", re.getDocumentId() != null ? re.getDocumentId().toString() : null);
+                    s.put("documentName", re.getDocumentName());
+                    s.put("similarityScore", re.getSimilarityScore());
+                    return s;
+                })
+                .collect(java.util.stream.Collectors.toList());
+
         Map<String, Object> response = new HashMap<>();
         response.put("executionId", execution.getId().toString());
         response.put("status", execution.getStatus());
@@ -181,6 +195,7 @@ public class ExecutionController {
         response.put("tokensConsumed", execution.getTokensConsumed());
         response.put("startedAt", execution.getStartedAt());
         response.put("finishedAt", execution.getFinishedAt());
+        response.put("sources", sources);
 
         return ResponseEntity.ok(response);
     }

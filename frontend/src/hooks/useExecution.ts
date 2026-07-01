@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { AgentExecution } from '../domain/entities';
+import { AgentExecution, RetrievalSource } from '../domain/entities';
 import { SubmitExecutionUseCase, GetExecutionStatusUseCase } from '../domain/use-cases/execution';
 import { executionRepository } from '../infrastructure/repositories/ExecutionRepository';
 import { useAuth } from '../providers/AuthProvider';
@@ -17,7 +17,7 @@ export interface TimelineEvent {
 const submitUseCase = new SubmitExecutionUseCase(executionRepository);
 const getStatusUseCase = new GetExecutionStatusUseCase(executionRepository);
 
-export const useExecution = (onSuccess?: (output: string) => void) => {
+export const useExecution = (onSuccess?: (output: string, sources?: RetrievalSource[]) => void) => {
   const { tenantId } = useAuth();
   const [activeExecution, setActiveExecution] = useState<AgentExecution | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -137,7 +137,7 @@ export const useExecution = (onSuccess?: (output: string) => void) => {
             stopPolling();
             setIsLoading(false);
             if (onSuccess && status.output) {
-              onSuccess(status.output);
+              onSuccess(status.output, status.sources);
             }
           } else if (status.status === 'FAILED') {
             stopPolling();
