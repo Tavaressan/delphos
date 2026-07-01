@@ -215,7 +215,10 @@ class CrewAiRuntimeAdapter:
 
             if not rows:
                 print("[CrewAiRuntimeAdapter] No document chunks found in database.")
-                return "Nenhum documento relevante encontrado na base de conhecimento para o tenant.", []
+                return (
+                    "Nenhum documento relevante encontrado na base de conhecimento para o tenant.",
+                    [],
+                )
 
             results = []
             sources = []
@@ -227,12 +230,14 @@ class CrewAiRuntimeAdapter:
                 )
                 if str(doc_id) not in seen_doc_ids:
                     seen_doc_ids.add(str(doc_id))
-                    sources.append({
-                        "chunkId": str(chunk_id),
-                        "documentId": str(doc_id),
-                        "documentName": doc_name,
-                        "similarityScore": round(float(similarity), 4),
-                    })
+                    sources.append(
+                        {
+                            "chunkId": str(chunk_id),
+                            "documentId": str(doc_id),
+                            "documentName": doc_name,
+                            "similarityScore": round(float(similarity), 4),
+                        }
+                    )
 
             return "\n---\n".join(results), sources
         except Exception as e:
@@ -325,7 +330,7 @@ class CrewAiRuntimeAdapter:
                 )
                 return f"Busca bloqueada por política de segurança: {str(e)}"
 
-            response_payload = self._search_db(query)
+            response_text, _ = self._search_db(query)
 
             tool_finish_payload = {
                 "toolCallId": tool_call_id,
