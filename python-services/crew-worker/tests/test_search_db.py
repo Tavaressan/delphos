@@ -16,7 +16,11 @@ def _make_adapter_for_search(agent_id="agent-a"):
 
         mock_conn = MagicMock()
         mock_cur = MagicMock()
-        mock_cur.fetchone.return_value = ("Agente A", "---\nrole: Agente A\n---\n")
+        mock_cur.fetchone.return_value = (
+            "Agente A",
+            "---\nrole: Agente A\n---\n",
+            None,
+        )
         mock_conn.cursor.return_value = mock_cur
         mock_pg.connect.return_value = mock_conn
 

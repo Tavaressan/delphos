@@ -59,7 +59,7 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-16 bg-surface border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
+    <header className="h-20 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
       <div className="flex items-center gap-3">
         {/* Hamburger — mobile only */}
         <button
@@ -69,7 +69,7 @@ export const Header: React.FC = () => {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-14 object-contain dark:brightness-0 dark:invert transition-all duration-200" />
+        <img src="/assets/images/LogoMarca_Alfabra.png" alt="Alfabra Logo" className="h-[68px] object-contain dark:brightness-0 dark:invert transition-all duration-200" />
         <span className="hidden sm:block h-5 w-[1px] bg-border-color" />
         <h1 className="hidden sm:block text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
           Agent Operating Platform

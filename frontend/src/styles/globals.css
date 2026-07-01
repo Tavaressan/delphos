@@ -70,19 +70,19 @@
 
 /* Buttons */
 .btn-primary {
-  @apply bg-primary hover:bg-primary-dark text-white font-bold py-2.5 px-4 rounded border border-primary transition-all duration-200 shadow-sm flex items-center justify-center gap-2;
+  @apply bg-primary hover:bg-primary-dark active:scale-95 text-white font-bold py-2.5 px-4 rounded border border-primary transition-all duration-200 shadow-sm flex items-center justify-center gap-2;
 }
 
 .btn-secondary {
-  @apply bg-secondary hover:bg-secondary-light text-text-primary font-semibold py-2.5 px-4 rounded border border-border-color transition-all duration-200 shadow-sm flex items-center justify-center gap-2;
+  @apply bg-secondary hover:bg-secondary-light active:scale-95 text-text-primary font-semibold py-2.5 px-4 rounded border border-border-color transition-all duration-200 shadow-sm flex items-center justify-center gap-2;
 }
 
 .btn-ghost {
-  @apply bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-text-secondary font-semibold py-2.5 px-4 rounded transition-all duration-200 flex items-center justify-center gap-2;
+  @apply bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-95 text-text-secondary font-semibold py-2.5 px-4 rounded transition-all duration-200 flex items-center justify-center gap-2;
 }
 
 .btn-danger {
-  @apply bg-danger hover:bg-danger-dark text-white font-bold py-2.5 px-4 rounded border border-danger transition-all duration-200 shadow-sm flex items-center justify-center gap-2;
+  @apply bg-danger hover:bg-danger-dark active:scale-95 text-white font-bold py-2.5 px-4 rounded border border-danger transition-all duration-200 shadow-sm flex items-center justify-center gap-2;
 }
 
 /* Cards */
