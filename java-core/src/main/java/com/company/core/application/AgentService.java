@@ -131,7 +131,7 @@ public class AgentService {
             minioClient.putObject(PutObjectArgs.builder()
                     .bucket(minioBucket)
                     .object(zipPath)
-                    .stream(is, zipBytes.length, -1)
+                    .stream(is, (long) zipBytes.length, -1L)
                     .contentType("application/zip")
                     .build());
         }
@@ -162,7 +162,7 @@ public class AgentService {
                             minioClient.putObject(PutObjectArgs.builder()
                                     .bucket(minioBucket)
                                     .object(objectPath)
-                                    .stream(fileIs, fileData.length, -1)
+                                    .stream(fileIs, (long) fileData.length, -1L)
                                     .contentType(getContentType(ext))
                                     .build());
                         }
