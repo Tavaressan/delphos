@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { AgentExecution, RetrievalSource } from '../domain/entities';
-import { SubmitExecutionUseCase, GetExecutionStatusUseCase } from '../domain/use-cases/execution';
+import { SubmitExecutionUseCase, GetExecutionStatusUseCase, MarkExecutionTimeoutUseCase } from '../domain/use-cases/execution';
 import { executionRepository } from '../infrastructure/repositories/ExecutionRepository';
 import { useAuth } from '../providers/AuthProvider';
 
@@ -16,6 +16,7 @@ export interface TimelineEvent {
 
 const submitUseCase = new SubmitExecutionUseCase(executionRepository);
 const getStatusUseCase = new GetExecutionStatusUseCase(executionRepository);
+const markTimeoutUseCase = new MarkExecutionTimeoutUseCase(executionRepository);
 
 export const useExecution = (onSuccess?: (output: string, sources?: RetrievalSource[]) => void) => {
   const { tenantId } = useAuth();
@@ -124,6 +125,9 @@ export const useExecution = (onSuccess?: (output: string, sources?: RetrievalSou
           setIsLoading(false);
           setError('Tempo limite de execução excedido (Timeout de 2 minutos).');
           setTimeline(prev => getTimelineForStatus('FAILED', prev, 'Timeout de execução excedido.'));
+          markTimeoutUseCase.execute(execution.id).catch(timeoutErr => {
+            console.error('Erro ao registrar timeout de execução no backend:', timeoutErr);
+          });
           return;
         }
 

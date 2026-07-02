@@ -6,6 +6,14 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+
+/// Número máximo de tentativas de chamada à Vertex AI antes de desistir,
+/// configurável via EMBEDDING_MAX_RETRIES (padrão 3).
+const DEFAULT_MAX_RETRIES: u32 = 3;
+
+/// Delay base do backoff exponencial em milissegundos: base_ms * 2^tentativa.
+const BASE_BACKOFF_MS: u64 = 200;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -169,34 +177,17 @@ async fn handle_embeddings(
     };
 
     let client = reqwest::Client::new();
-    let req_builder = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", token.as_str()));
+    let max_retries: u32 = std::env::var("EMBEDDING_MAX_RETRIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_MAX_RETRIES);
 
-    let res = match req_builder.json(&vertex_req).send().await {
+    let res = match call_vertex_with_retry(&client, &url, &token, &vertex_req, max_retries).await {
         Ok(r) => r,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to send request to Vertex AI: {}", e),
-            )
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
         }
     };
-
-    let status = res.status();
-    if !status.is_success() {
-        let body = res
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Vertex AI returned error {}: {}", status, body),
-        )
-            .into_response();
-    }
 
     let vertex_res: VertexResponse = match res.json().await {
         Ok(vr) => vr,
@@ -231,6 +222,65 @@ async fn handle_embeddings(
     };
 
     (StatusCode::OK, Json(response)).into_response()
+}
+
+/// Indica se um status HTTP de resposta da Vertex AI justifica uma nova
+/// tentativa: erros transitórios (429 rate limit e 5xx de servidor).
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+/// Calcula o delay do backoff exponencial para uma tentativa (0-indexada):
+/// base_ms * 2^tentativa.
+fn compute_backoff_delay(attempt: u32, base_ms: u64) -> Duration {
+    Duration::from_millis(base_ms.saturating_mul(2u64.saturating_pow(attempt)))
+}
+
+/// Chama a API de predict da Vertex AI com retry e backoff exponencial para
+/// falhas transitórias (erro de rede ou status 429/5xx), até `max_retries`
+/// tentativas adicionais além da primeira.
+async fn call_vertex_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    token: &gcp_auth::Token,
+    body: &VertexRequest,
+    max_retries: u32,
+) -> Result<reqwest::Response, String> {
+    let mut attempt = 0;
+    loop {
+        let result = client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", token.as_str()))
+            .json(body)
+            .send()
+            .await;
+
+        match result {
+            Ok(res) if res.status().is_success() => return Ok(res),
+            Ok(res) => {
+                let status = res.status();
+                if attempt >= max_retries || !is_retryable_status(status) {
+                    let body_text = res
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    return Err(format!(
+                        "Vertex AI returned error {}: {}",
+                        status, body_text
+                    ));
+                }
+            }
+            Err(e) => {
+                if attempt >= max_retries {
+                    return Err(format!("Failed to send request to Vertex AI: {}", e));
+                }
+            }
+        }
+
+        tokio::time::sleep(compute_backoff_delay(attempt, BASE_BACKOFF_MS)).await;
+        attempt += 1;
+    }
 }
 
 fn generate_mock_embedding(text: &str, dimension: usize) -> Vec<f32> {
@@ -314,6 +364,33 @@ mod tests {
     use tower::ServiceExt;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_is_retryable_status_for_transient_errors() {
+        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(is_retryable_status(
+            reqwest::StatusCode::SERVICE_UNAVAILABLE
+        ));
+    }
+
+    #[test]
+    fn test_is_retryable_status_for_non_transient_errors() {
+        assert!(!is_retryable_status(reqwest::StatusCode::BAD_REQUEST));
+        assert!(!is_retryable_status(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND));
+        assert!(!is_retryable_status(reqwest::StatusCode::OK));
+    }
+
+    #[test]
+    fn test_compute_backoff_delay_grows_exponentially() {
+        assert_eq!(compute_backoff_delay(0, 200), Duration::from_millis(200));
+        assert_eq!(compute_backoff_delay(1, 200), Duration::from_millis(400));
+        assert_eq!(compute_backoff_delay(2, 200), Duration::from_millis(800));
+        assert_eq!(compute_backoff_delay(3, 200), Duration::from_millis(1600));
+    }
 
     #[tokio::test]
     async fn test_healthz() {
