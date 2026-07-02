@@ -4,6 +4,7 @@ import { SubmitExecutionRequest } from '../dto';
 export interface IExecutionRepository {
   submitExecution(request: SubmitExecutionRequest): Promise<AgentExecution>;
   getExecution(id: string): Promise<AgentExecution>;
+  markExecutionTimeout(id: string): Promise<void>;
 }
 
 export interface IDocumentRepository {

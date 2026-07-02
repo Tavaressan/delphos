@@ -14,6 +14,10 @@ export class ExecutionRepository implements IExecutionRepository {
     const response = await apiClient.get<GetExecutionResponse>(`/api/executions/${id}`);
     return executionAdapter.toEntity(response);
   }
+
+  async markExecutionTimeout(id: string): Promise<void> {
+    await apiClient.patch(`/api/executions/${id}/timeout`);
+  }
 }
 
 export const executionRepository = new ExecutionRepository();

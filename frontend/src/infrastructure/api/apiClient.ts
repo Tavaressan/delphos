@@ -79,7 +79,10 @@ export const apiClient = {
     
   put: <T>(path: string, body: any, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
-    
+
+  patch: <T>(path: string, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'PATCH' }),
+
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'DELETE' }),
 };

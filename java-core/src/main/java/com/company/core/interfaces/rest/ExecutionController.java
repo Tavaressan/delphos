@@ -199,4 +199,27 @@ public class ExecutionController {
 
         return ResponseEntity.ok(response);
     }
+
+    @PatchMapping("/{id}/timeout")
+    public ResponseEntity<Map<String, Object>> markTimeout(@PathVariable UUID id) {
+        AgentExecution execution = executionRepository.findById(id).orElse(null);
+        if (execution == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Execução já finalizada (por exemplo, a resposta chegou depois que o frontend desistiu):
+        // não sobrescrever um resultado real com TIMEOUT.
+        if (!java.util.Set.of("COMPLETED", "FAILED", "TIMEOUT").contains(execution.getStatus())) {
+            execution.setStatus("TIMEOUT");
+            execution.setFinishedAt(Instant.now());
+            execution.setErrorMessage("Tempo limite de execução excedido (timeout do frontend).");
+            execution = executionRepository.save(execution);
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("executionId", execution.getId().toString());
+        response.put("status", execution.getStatus());
+
+        return ResponseEntity.ok(response);
+    }
 }
