@@ -87,7 +87,7 @@ public class AgentController {
 
         agent.setUpdatedAt(Instant.now());
         agent = agentRepository.save(agent);
-        auditService.logAction("UPDATE_AGENT", "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}");
+        auditService.logAction("UPDATE_AGENT", "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}", agent.getTenantId());
 
         return ResponseEntity.ok(toResponse(agent));
     }
@@ -110,7 +110,7 @@ public class AgentController {
         agent.setStatus(newStatus);
         agent.setUpdatedAt(Instant.now());
         agent = agentRepository.save(agent);
-        auditService.logAction(auditAction, "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}");
+        auditService.logAction(auditAction, "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}", agent.getTenantId());
         return ResponseEntity.ok(toResponse(agent));
     }
 

@@ -10,10 +10,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 public class AuditService {
 
     private static final Logger log = LoggerFactory.getLogger(AuditService.class);
+
+    private static final UUID UNKNOWN_TENANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000000");
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
@@ -24,13 +28,14 @@ public class AuditService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void logAction(String action, String target, String detailsJson) {
-        log.info("Audit Log: action={}, target={}, details={}", action, target, detailsJson);
+    public void logAction(String action, String target, String detailsJson, UUID tenantId) {
+        log.info("Audit Log: action={}, target={}, tenantId={}, details={}", action, target, tenantId, detailsJson);
         try {
             User adminUser = userRepository.findByUsername("admin").orElse(null);
 
             AuditLog auditLog = new AuditLog();
             auditLog.setUser(adminUser);
+            auditLog.setTenantId(tenantId != null ? tenantId : UNKNOWN_TENANT_ID);
             auditLog.setAction(action);
             auditLog.setTarget(target);
             auditLog.setIpAddress("127.0.0.1");

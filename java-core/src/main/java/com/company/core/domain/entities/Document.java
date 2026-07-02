@@ -52,6 +52,9 @@ public class Document {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    @Column(name = "legacy_unknown_tenant", nullable = false)
+    private boolean legacyUnknownTenant = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agent_id")
     private Agent agent;
@@ -141,6 +144,14 @@ public class Document {
 
     public void setTenantId(UUID tenantId) {
         this.tenantId = tenantId;
+    }
+
+    public boolean isLegacyUnknownTenant() {
+        return legacyUnknownTenant;
+    }
+
+    public void setLegacyUnknownTenant(boolean legacyUnknownTenant) {
+        this.legacyUnknownTenant = legacyUnknownTenant;
     }
 
     public Instant getCreatedAt() {
