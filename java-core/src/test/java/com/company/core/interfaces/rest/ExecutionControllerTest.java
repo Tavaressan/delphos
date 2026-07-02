@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -100,5 +102,20 @@ class ExecutionControllerTest {
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
 
         verify(executionRepository, never()).save(any());
+    }
+
+    @Test
+    void listExecutions_withTenantId_returnsExecutionsForTenant() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        AgentExecution execution = new AgentExecution();
+        execution.setId(UUID.randomUUID());
+        execution.setTenantId(tenantId);
+        execution.setStatus("COMPLETED");
+
+        when(executionRepository.findByTenantId(tenantId)).thenReturn(List.of(execution));
+
+        mockMvc.perform(get("/api/executions?tenantId=" + tenantId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
     }
 }
