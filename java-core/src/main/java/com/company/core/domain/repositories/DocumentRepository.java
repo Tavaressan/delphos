@@ -9,4 +9,5 @@ import java.util.UUID;
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, UUID> {
     List<Document> findByTenantId(UUID tenantId);
+    long countByLegacyUnknownTenantTrue();
 }

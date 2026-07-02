@@ -66,3 +66,8 @@ test_models.py
 
 # Impede que arquivos de worktrees do Claude Code sejam rastreados
 .claude/worktrees/
+
+# Arquivo de status de scratch usado por sub-agentes do coordinator (Vetor) —
+# nunca deve ser versionado, sob risco de sobrescrever o status de outros
+# workers ao fazer merge/rebase de master
+AGENT_STATUS.md

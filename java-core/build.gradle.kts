@@ -35,7 +35,7 @@ dependencies {
     testImplementation("io.cucumber:cucumber-java:7.34.3")
     testImplementation("io.cucumber:cucumber-spring:7.34.3")
     testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.3")
-    testImplementation("org.junit.platform:junit-platform-suite:6.1.0")
+    testImplementation("org.junit.platform:junit-platform-suite:6.1.1")
 }
 
 tasks.named<Test>("test") {
