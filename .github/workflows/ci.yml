@@ -25,28 +25,102 @@ jobs:
     name: Detect changed paths
     runs-on: ubuntu-latest
     outputs:
-      rust: ${{ steps.filter.outputs.rust }}
-      java: ${{ steps.filter.outputs.java }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      python: ${{ steps.filter.outputs.python }}
+      rust: ${{ steps.normalize.outputs.rust }}
+      java: ${{ steps.normalize.outputs.java }}
+      frontend: ${{ steps.normalize.outputs.frontend }}
+      python: ${{ steps.normalize.outputs.python }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Necessário para o dorny/paths-filter conseguir calcular o
+          # merge-base contra `base` em eventos push (long-lived branches).
+          fetch-depth: 0
+
+      # Filtro dedicado para o próprio workflow: mudanças em ci.yml não
+      # devem ser listadas dentro de cada filtro de módulo (o que os
+      # tornava auto-referentes), e sim combinadas via `||` no step de
+      # normalização abaixo. Ver issue #77.
       - uses: dorny/paths-filter@v3
         id: filter
+        # Nunca deixe uma falha de cálculo de diff no paths-filter
+        # derrubar o job silenciosamente (issue #87) — o step de
+        # normalização abaixo trata esse caso como fail-safe (roda tudo).
+        continue-on-error: true
         with:
+          # Base explícita para eventos push: quando `base` é o mesmo
+          # branch que disparou o push, o paths-filter compara contra o
+          # commit mais recente do mesmo branch antes do push (padrão
+          # "long-lived branch" documentado pela action). Ignorado em
+          # eventos pull_request (usa o branch base do PR automaticamente).
+          base: ${{ github.ref_name }}
           filters: |
+            ci_workflow:
+              - '.github/workflows/ci.yml'
             rust:
               - 'rust-services/**'
-              - '.github/workflows/ci.yml'
             java:
               - 'java-core/**'
-              - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
-              - '.github/workflows/ci.yml'
             python:
               - 'python-services/**'
-              - '.github/workflows/ci.yml'
+
+      - name: Normalize filter outputs (fail-safe)
+        id: normalize
+        if: always()
+        env:
+          OUTCOME: ${{ steps.filter.outcome }}
+          CI_WORKFLOW: ${{ steps.filter.outputs.ci_workflow }}
+          F_RUST: ${{ steps.filter.outputs.rust }}
+          F_JAVA: ${{ steps.filter.outputs.java }}
+          F_FRONTEND: ${{ steps.filter.outputs.frontend }}
+          F_PYTHON: ${{ steps.filter.outputs.python }}
+        run: |
+          set -euo pipefail
+          # Fail-safe: se o paths-filter falhou ou não conseguiu calcular o
+          # diff, NUNCA pule checks silenciosamente — rode todos os
+          # módulos por padrão (issue #87).
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::warning::dorny/paths-filter falhou (outcome=$OUTCOME) - failing safe: rodando TODOS os módulos"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "java=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Mudança no próprio workflow: roda todos os módulos para
+          # validar o novo pipeline de ponta a ponta.
+          if [ "$CI_WORKFLOW" = "true" ]; then
+            echo "::notice::ci.yml alterado - rodando todos os módulos"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "java=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "rust=$F_RUST" >> "$GITHUB_OUTPUT"
+          echo "java=$F_JAVA" >> "$GITHUB_OUTPUT"
+          echo "frontend=$F_FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "python=$F_PYTHON" >> "$GITHUB_OUTPUT"
+
+      - name: Sanity check filter outputs
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "Outcome do paths-filter: ${{ steps.filter.outcome }}"
+          echo "rust=${{ steps.normalize.outputs.rust }}"
+          echo "java=${{ steps.normalize.outputs.java }}"
+          echo "frontend=${{ steps.normalize.outputs.frontend }}"
+          echo "python=${{ steps.normalize.outputs.python }}"
+          if [ -z "${{ steps.normalize.outputs.rust }}" ] || \
+             [ -z "${{ steps.normalize.outputs.java }}" ] || \
+             [ -z "${{ steps.normalize.outputs.frontend }}" ] || \
+             [ -z "${{ steps.normalize.outputs.python }}" ]; then
+            echo "::error::Um ou mais outputs do filtro de paths estão vazios - normalize step com bug"
+            exit 1
+          fi
 
   rust-check:
     name: Rust Check, Lint, Format & Test
@@ -228,3 +302,98 @@ jobs:
       - name: Run Tests (PyTest)
         run: |
           pytest python-services --ignore=python-services/crew-worker/.venv || [ $? -eq 5 ]
+
+  # Jobs de build de imagem Docker (issue #86). Rodam em paralelo aos
+  # builds/testes nativos acima (needs: changes, nunca needs: <job nativo>)
+  # e são escopados pelo mesmo path-filter corrigido em #77/#87 — não
+  # substituem os builds nativos, apenas validam que a imagem também builda.
+  docker-build-rust:
+    name: Docker Build (Rust services)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    strategy:
+      matrix:
+        service:
+          - embedding-service
+          - ingestion-worker
+          - rag-worker
+          - workflow-worker
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.service }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rust-services
+          file: ./rust-services/${{ matrix.service }}/Dockerfile
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  docker-build-java:
+    name: Docker Build (Java core)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.java == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build java-core image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./java-core/Dockerfile
+          push: false
+          cache-from: type=gha,scope=java-core
+          cache-to: type=gha,mode=max,scope=java-core
+
+  docker-build-frontend:
+    name: Docker Build (Frontend)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./frontend/Dockerfile
+          push: false
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  docker-build-python:
+    name: Docker Build (Crew worker)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build crew-worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./python-services/crew-worker
+          file: ./python-services/crew-worker/Dockerfile
+          push: false
+          cache-from: type=gha,scope=crew-worker
+          cache-to: type=gha,mode=max,scope=crew-worker
