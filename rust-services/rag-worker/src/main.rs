@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod rabbitmq;
+mod retrieval;
 mod security;
 #[cfg(test)]
 mod security_tests;
