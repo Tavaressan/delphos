@@ -105,7 +105,7 @@ public class DocumentController {
             doc.setAgent(agent);
             doc.setCreatedBy(creator);
             doc = documentRepository.save(doc);
-            auditService.logAction("UPLOAD_DOCUMENT", "Document: " + name, "{\"documentId\":\"" + doc.getId() + "\",\"agentId\":" + (agent != null ? "\"" + agent.getId() + "\"" : "null") + "}");
+            auditService.logAction("UPLOAD_DOCUMENT", "Document: " + name, "{\"documentId\":\"" + doc.getId() + "\",\"agentId\":" + (agent != null ? "\"" + agent.getId() + "\"" : "null") + "}", tenantId);
 
             // Publish job to RabbitMQ
             Map<String, Object> jobPayload = new HashMap<>();

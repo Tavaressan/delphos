@@ -149,7 +149,7 @@ public class ExecutionController {
             // 6. Transition to QUEUED status
             execution.setStatus("QUEUED");
             execution = executionRepository.save(execution);
-            auditService.logAction("SUBMIT_RAG_CHAT", "Execution: " + execution.getId(), "{\"agentId\":\"" + actualAgentId + "\",\"conversationId\":\"" + conversation.getId() + "\"}");
+            auditService.logAction("SUBMIT_RAG_CHAT", "Execution: " + execution.getId(), "{\"agentId\":\"" + actualAgentId + "\",\"conversationId\":\"" + conversation.getId() + "\"}", tenantId);
 
             // 7. Return JSON response
             Map<String, Object> response = new HashMap<>();
