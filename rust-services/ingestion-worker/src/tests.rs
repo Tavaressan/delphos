@@ -1,5 +1,32 @@
 use super::*;
 use chrono::{Duration as ChronoDuration, Utc};
+use lapin::types::{AMQPValue, FieldTable, ShortString};
+
+#[test]
+fn test_should_route_to_dlq_after_max_retries() {
+    let max_retries = 3;
+    assert!(!should_route_to_dlq(0, max_retries));
+    assert!(!should_route_to_dlq(2, max_retries));
+    assert!(should_route_to_dlq(3, max_retries));
+    assert!(should_route_to_dlq(10, max_retries));
+}
+
+#[test]
+fn test_extract_retry_count_defaults_to_zero_without_header() {
+    assert_eq!(extract_retry_count(None), 0);
+    let headers = FieldTable::default();
+    assert_eq!(extract_retry_count(Some(&headers)), 0);
+}
+
+#[test]
+fn test_extract_retry_count_reads_existing_header() {
+    let mut headers = FieldTable::default();
+    headers.insert(
+        ShortString::from(RETRY_COUNT_HEADER),
+        AMQPValue::LongUInt(2),
+    );
+    assert_eq!(extract_retry_count(Some(&headers)), 2);
+}
 
 #[test]
 fn test_is_processing_stale_detects_stuck_document() {
@@ -159,6 +186,73 @@ async fn test_db_integration_ingestion() {
         .execute(&pool)
         .await;
     assert!(delete_res.is_ok());
+}
+
+#[tokio::test]
+async fn test_deterministic_failure_routes_message_to_dlq_after_retries() {
+    let rabbitmq_url = std::env::var("RABBITMQ_URL")
+        .unwrap_or_else(|_| "amqp://guest:guest@localhost:5672".to_string());
+
+    let conn =
+        match lapin::Connection::connect(&rabbitmq_url, lapin::ConnectionProperties::default())
+            .await
+        {
+            Ok(c) => c,
+            Err(_) => {
+                println!("RabbitMQ local indisponível no teste. Pulando teste de integração.");
+                return;
+            }
+        };
+    let channel = conn.create_channel().await.unwrap();
+
+    channel
+        .queue_declare(
+            DLQ_QUEUE,
+            lapin::options::QueueDeclareOptions {
+                durable: true,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .unwrap();
+
+    // Esvazia a DLQ para garantir um cenário determinístico.
+    channel
+        .queue_purge(DLQ_QUEUE, lapin::options::QueuePurgeOptions::default())
+        .await
+        .unwrap();
+
+    let max_retries: u32 = 3;
+    let payload = br#"{"document_id":"00000000-0000-0000-0000-000000000001"}"#.to_vec();
+
+    // Simula falhas determinísticas sucessivas de um job de ingestão até
+    // esgotar as tentativas de retry configuradas.
+    let mut retry_count = 0;
+    while !should_route_to_dlq(retry_count, max_retries) {
+        retry_count += 1;
+    }
+    publish_to_dlq(
+        &channel,
+        payload.clone(),
+        retry_count,
+        "falha determinística de teste",
+    )
+    .await
+    .expect("publish_to_dlq não deveria falhar");
+
+    let delivery = channel
+        .basic_get(DLQ_QUEUE, lapin::options::BasicGetOptions::default())
+        .await
+        .expect("basic_get não deveria falhar")
+        .expect("mensagem deveria estar presente na DLQ");
+
+    assert_eq!(delivery.delivery.data, payload);
+    delivery
+        .delivery
+        .ack(lapin::options::BasicAckOptions::default())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

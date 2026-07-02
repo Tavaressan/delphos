@@ -1,10 +1,22 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures_lite::stream::StreamExt;
-use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
+use lapin::{
+    options::*,
+    types::{AMQPValue, FieldTable, ShortString},
+    BasicProperties, Connection, ConnectionProperties,
+};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use tokio::time::{sleep, Duration};
+
+/// Header AMQP usado para rastrear quantas vezes um job de ingestão já foi
+/// reprocessado antes de ser roteado para a DLQ.
+const RETRY_COUNT_HEADER: &str = "x-retry-count";
+
+/// Fila dedicada de Dead Letter Queue (DLQ) do RabbitMQ para jobs de ingestão
+/// que esgotaram as tentativas de retry.
+const DLQ_QUEUE: &str = "document.ingestion.jobs.dlq";
 
 #[derive(serde::Deserialize, Debug)]
 struct IngestionJob {
@@ -105,6 +117,24 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to bind queue")?;
 
+    // Declarar fila DLQ dedicada para jobs que esgotarem as tentativas de retry.
+    channel
+        .queue_declare(
+            DLQ_QUEUE,
+            QueueDeclareOptions {
+                durable: true,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .context("Failed to declare DLQ queue")?;
+
+    let max_retries: u32 = env::var("INGESTION_MAX_RETRIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+
     // QoS
     channel
         .basic_qos(1, BasicQosOptions::default())
@@ -147,14 +177,10 @@ async fn main() -> Result<()> {
             }
             Err(e) => {
                 let parsed_job = serde_json::from_str::<IngestionJob>(&body).ok();
-                println!(
-                    "Error processing ingestion job: document_id={:?} tenant_id={:?} error={:#}. Inserting into DLQ and NACKing.",
-                    parsed_job.as_ref().map(|j| j.document_id),
-                    parsed_job.as_ref().map(|j| j.tenant_id),
-                    e
-                );
+                let retry_count = extract_retry_count(delivery.properties.headers().as_ref());
+
                 if let Some(ref job) = parsed_job {
-                    let dlq_result = sqlx::query(
+                    let audit_result = sqlx::query(
                         "INSERT INTO failed_jobs (document_id, tenant_id, queue, payload, error_message) \
                          VALUES ($1, $2, $3, $4::jsonb, $5)",
                     )
@@ -165,10 +191,56 @@ async fn main() -> Result<()> {
                     .bind(format!("{:#}", e))
                     .execute(&db_pool)
                     .await;
-                    if let Err(dlq_err) = dlq_result {
-                        println!("WARN: Failed to insert job into DLQ: {}", dlq_err);
+                    if let Err(audit_err) = audit_result {
+                        println!(
+                            "WARN: Failed to insert job into failed_jobs audit table: {}",
+                            audit_err
+                        );
                     }
                 }
+
+                if should_route_to_dlq(retry_count, max_retries) {
+                    println!(
+                        "Error processing ingestion job: document_id={:?} tenant_id={:?} error={:#}. Retries esgotados ({}/{}). Roteando para DLQ '{}'.",
+                        parsed_job.as_ref().map(|j| j.document_id),
+                        parsed_job.as_ref().map(|j| j.tenant_id),
+                        e,
+                        retry_count,
+                        max_retries,
+                        DLQ_QUEUE
+                    );
+                    publish_to_dlq(
+                        &channel,
+                        delivery.data.clone(),
+                        retry_count,
+                        &format!("{:#}", e),
+                    )
+                    .await
+                    .unwrap_or_else(|dlq_err| {
+                        println!("WARN: Failed to publish job to DLQ: {}", dlq_err);
+                    });
+                } else {
+                    let next_retry_count = retry_count + 1;
+                    println!(
+                        "Error processing ingestion job: document_id={:?} tenant_id={:?} error={:#}. Reagendando retry {}/{}.",
+                        parsed_job.as_ref().map(|j| j.document_id),
+                        parsed_job.as_ref().map(|j| j.tenant_id),
+                        e,
+                        next_retry_count,
+                        max_retries
+                    );
+                    republish_with_retry(
+                        &channel,
+                        exchange,
+                        delivery.data.clone(),
+                        next_retry_count,
+                    )
+                    .await
+                    .unwrap_or_else(|republish_err| {
+                        println!("WARN: Failed to republish job for retry: {}", republish_err);
+                    });
+                }
+
                 delivery
                     .nack(BasicNackOptions {
                         multiple: false,
@@ -252,6 +324,87 @@ async fn reap_stale_processing_documents(
         );
     }
     Ok(affected)
+}
+
+/// Retorna true quando o número de tentativas já esgotou o limite configurado,
+/// indicando que o job deve ser roteado para a DLQ em vez de reagendado.
+fn should_route_to_dlq(retry_count: u32, max_retries: u32) -> bool {
+    retry_count >= max_retries
+}
+
+/// Extrai o header `x-retry-count` das propriedades AMQP da mensagem, retornando
+/// 0 caso não exista (primeira tentativa).
+fn extract_retry_count(headers: Option<&FieldTable>) -> u32 {
+    match headers.and_then(|h| h.inner().get(&ShortString::from(RETRY_COUNT_HEADER))) {
+        Some(AMQPValue::LongUInt(v)) => *v,
+        Some(AMQPValue::ShortUInt(v)) => *v as u32,
+        Some(AMQPValue::LongLongInt(v)) => (*v).max(0) as u32,
+        _ => 0,
+    }
+}
+
+/// Publica o job na fila DLQ dedicada, preservando o retry_count e o erro final
+/// como headers para auditoria/observabilidade.
+async fn publish_to_dlq(
+    channel: &lapin::Channel,
+    payload: Vec<u8>,
+    retry_count: u32,
+    error_message: &str,
+) -> Result<()> {
+    let mut headers = FieldTable::default();
+    headers.insert(
+        ShortString::from(RETRY_COUNT_HEADER),
+        AMQPValue::LongUInt(retry_count),
+    );
+    headers.insert(
+        ShortString::from("x-last-error"),
+        AMQPValue::LongString(error_message.into()),
+    );
+
+    channel
+        .basic_publish(
+            "",
+            DLQ_QUEUE,
+            BasicPublishOptions::default(),
+            &payload,
+            BasicProperties::default().with_headers(headers),
+        )
+        .await
+        .context("Failed to publish message to DLQ")?
+        .await
+        .context("Failed to confirm DLQ publish")?;
+
+    Ok(())
+}
+
+/// Republica o job na fila original com o retry_count incrementado, para uma
+/// nova tentativa de processamento.
+async fn republish_with_retry(
+    channel: &lapin::Channel,
+    exchange: &str,
+    payload: Vec<u8>,
+    next_retry_count: u32,
+) -> Result<()> {
+    let mut headers = FieldTable::default();
+    headers.insert(
+        ShortString::from(RETRY_COUNT_HEADER),
+        AMQPValue::LongUInt(next_retry_count),
+    );
+
+    channel
+        .basic_publish(
+            exchange,
+            "document.ingestion.jobs",
+            BasicPublishOptions::default(),
+            &payload,
+            BasicProperties::default().with_headers(headers),
+        )
+        .await
+        .context("Failed to republish message for retry")?
+        .await
+        .context("Failed to confirm retry publish")?;
+
+    Ok(())
 }
 
 async fn process_delivery(pool: &sqlx::PgPool, body: &str) -> Result<()> {
