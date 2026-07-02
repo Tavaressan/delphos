@@ -66,9 +66,16 @@ public class DocumentController {
                 return ResponseEntity.badRequest().body(Map.of("error", "Arquivo vazio."));
             }
 
-            UUID tenantId = (tenantIdStr != null && !tenantIdStr.isEmpty()) 
-                    ? UUID.fromString(tenantIdStr) 
-                    : UUID.fromString("00000000-0000-0000-0000-000000000000");
+            if (tenantIdStr == null || tenantIdStr.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "tenantId é obrigatório para o upload de documentos."));
+            }
+
+            UUID tenantId;
+            try {
+                tenantId = UUID.fromString(tenantIdStr);
+            } catch (IllegalArgumentException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "tenantId inválido."));
+            }
 
             Agent agent = null;
             if (agentIdStr != null && !agentIdStr.isEmpty()) {
@@ -136,10 +143,18 @@ public class DocumentController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Document>> listDocuments(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
-        UUID tenantId = (tenantIdStr != null && !tenantIdStr.isEmpty()) 
-                ? UUID.fromString(tenantIdStr) 
-                : UUID.fromString("00000000-0000-0000-0000-000000000000");
+    public ResponseEntity<?> listDocuments(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+        if (tenantIdStr == null || tenantIdStr.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "tenantId é obrigatório para listar documentos."));
+        }
+
+        UUID tenantId;
+        try {
+            tenantId = UUID.fromString(tenantIdStr);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "tenantId inválido."));
+        }
+
         List<Document> docs = documentRepository.findByTenantId(tenantId);
         return ResponseEntity.ok(docs);
     }
