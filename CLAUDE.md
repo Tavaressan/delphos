@@ -143,5 +143,21 @@ O Reversa escreve **apenas** em `.reversa/` e `_reversa_sdd/`.
 ## Migrações de Banco de Dados
 Após adicionar ou editar uma migração do Flyway (por exemplo, V7), sempre verifique se a migração foi incluída no JAR gerado e se é realmente executada (confirme se o esquema/tabela existe) antes de declarar o serviço como saudável. Limpe o cache de build caso a migração esteja ausente.
 
+## CI — Validação retroativa pendente (issue #87)
+O bug do path-filter auto-referente (issue #77) esteve presente desde a introdução do
+path-filtering, o que significa que PRs mergeados nesse período podem ter pulado checks
+obrigatórios silenciosamente. As correções de #77/#87 evitam que isso volte a acontecer, mas
+**não re-executam retroativamente** os testes dos PRs já mergeados (#55, #73, #74, #75, #76).
+Essa verificação manual — rodar as suites completas de cada módulo alterado nesses PRs contra o
+estado atual do `master` — ainda precisa ser feita por um humano; não faz parte do escopo
+automatizado deste fix.
+
+## CI — Gate de imagens Docker
+Além dos builds/testes nativos (Rust/Java/Frontend/Python), o workflow `.github/workflows/ci.yml`
+possui jobs `docker-build-*` que executam `docker build` (via `docker/build-push-action`, sem push)
+para cada serviço com Dockerfile, em paralelo aos jobs nativos e escopados pelo mesmo path-filter do
+job `changes`. Esses jobs também fazem parte do gate de CI obrigatório — um PR só deve ser mesclado
+se tanto o build nativo quanto o build da imagem Docker do módulo alterado passarem.
+
 ## Verificação no Sandbox
 Se os comandos `docker compose build`, `up` ou `exec`, ou chamadas de rede externas, forem bloqueados pelo sandbox, pare de tentar após **uma única tentativa**, informe claramente a limitação e forneça ao usuário uma lista de comandos prontos para executar manualmente, incluindo o output esperado de cada um. Não repita tentativas bloqueadas esperando resultado diferente.
