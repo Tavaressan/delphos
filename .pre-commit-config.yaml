@@ -21,12 +21,14 @@ repos:
         entry: npm run lint -w frontend
         language: system
         pass_filenames: false
+        files: '^frontend/'
 
       - id: frontend-types
         name: Frontend Type Check
         entry: npx -w frontend tsc --noEmit
         language: system
         pass_filenames: false
+        files: '^frontend/'
 
       - id: gitleaks
         name: Gitleaks
