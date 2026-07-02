@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures_lite::stream::StreamExt;
 use lapin::{options::*, types::FieldTable, Connection, ConnectionProperties};
 use sqlx::postgres::PgPoolOptions;
@@ -28,6 +29,13 @@ async fn main() -> Result<()> {
         .await
         .context("Failed to connect to database")?;
     println!("Database connected successfully.");
+
+    // Spawnar o reaper de heartbeat: detecta documentos travados em PROCESSING
+    // (worker morto no meio do processamento, sem heartbeat) e marca como FAILED.
+    let reaper_pool = db_pool.clone();
+    tokio::spawn(async move {
+        stale_processing_reaper_loop(reaper_pool).await;
+    });
 
     // Conectar ao RabbitMQ
     let rabbitmq_url =
@@ -175,6 +183,75 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Timeout de heartbeat (minutos) configurável via env HEARTBEAT_TIMEOUT_MINUTES.
+/// Documentos em PROCESSING sem atualização de `updated_at` por mais que este
+/// intervalo são considerados travados (worker morto no meio do processamento).
+fn heartbeat_timeout() -> ChronoDuration {
+    let minutes: i64 = env::var("HEARTBEAT_TIMEOUT_MINUTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    ChronoDuration::minutes(minutes)
+}
+
+/// Retorna true se `updated_at` estiver mais antigo que `timeout` em relação a `now`.
+/// Usada como referência de comportamento testável para a query SQL equivalente
+/// em `reap_stale_processing_documents`.
+#[allow(dead_code)]
+fn is_processing_stale(
+    updated_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+    timeout: ChronoDuration,
+) -> bool {
+    now - updated_at > timeout
+}
+
+/// Loop periódico que varre documentos em PROCESSING travados (sem heartbeat)
+/// e os marca como FAILED com um `processing_error` explicativo.
+async fn stale_processing_reaper_loop(pool: sqlx::PgPool) {
+    let interval_secs: u64 = env::var("HEARTBEAT_REAPER_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+
+    loop {
+        if let Err(e) = reap_stale_processing_documents(&pool, heartbeat_timeout()).await {
+            println!("WARN: Falha ao executar reaper de heartbeat: {:#}", e);
+        }
+        sleep(Duration::from_secs(interval_secs)).await;
+    }
+}
+
+/// Marca como FAILED todo documento em PROCESSING cujo `updated_at` esteja mais
+/// antigo que `timeout` — indica que o worker travou/crashou no meio do processamento.
+async fn reap_stale_processing_documents(
+    pool: &sqlx::PgPool,
+    timeout: ChronoDuration,
+) -> Result<u64> {
+    let timeout_seconds = timeout.num_seconds();
+    let result = sqlx::query(
+        "UPDATE documents \
+         SET status = 'FAILED', \
+             processing_error = 'Heartbeat timeout: worker travou ou foi interrompido durante o processamento.', \
+             updated_at = NOW() \
+         WHERE status = 'PROCESSING' \
+           AND updated_at < NOW() - ($1 || ' seconds')::interval",
+    )
+    .bind(timeout_seconds.to_string())
+    .execute(pool)
+    .await
+    .context("Failed to reap stale PROCESSING documents")?;
+
+    let affected = result.rows_affected();
+    if affected > 0 {
+        println!(
+            "Heartbeat reaper: {} documento(s) travado(s) em PROCESSING marcado(s) como FAILED.",
+            affected
+        );
+    }
+    Ok(affected)
 }
 
 async fn process_delivery(pool: &sqlx::PgPool, body: &str) -> Result<()> {
