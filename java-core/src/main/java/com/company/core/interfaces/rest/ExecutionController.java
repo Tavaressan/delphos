@@ -112,6 +112,7 @@ public class ExecutionController {
             
             UUID actualAgentId = (agent != null) ? agent.getId() : UUID.randomUUID();
             execution.setAgentId(actualAgentId);
+            execution.setTenantId(tenantId);
             execution.setStatus("REQUESTED");
             execution.setPromptFinal(prompt);
             execution.setStartedAt(Instant.now());
@@ -148,7 +149,7 @@ public class ExecutionController {
             // 6. Transition to QUEUED status
             execution.setStatus("QUEUED");
             execution = executionRepository.save(execution);
-            auditService.logAction("SUBMIT_RAG_CHAT", "Execution: " + execution.getId(), "{\"agentId\":\"" + actualAgentId + "\",\"conversationId\":\"" + conversation.getId() + "\"}");
+            auditService.logAction("SUBMIT_RAG_CHAT", "Execution: " + execution.getId(), "{\"agentId\":\"" + actualAgentId + "\",\"conversationId\":\"" + conversation.getId() + "\"}", tenantId);
 
             // 7. Return JSON response
             Map<String, Object> response = new HashMap<>();
@@ -196,6 +197,29 @@ public class ExecutionController {
         response.put("startedAt", execution.getStartedAt());
         response.put("finishedAt", execution.getFinishedAt());
         response.put("sources", sources);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PatchMapping("/{id}/timeout")
+    public ResponseEntity<Map<String, Object>> markTimeout(@PathVariable UUID id) {
+        AgentExecution execution = executionRepository.findById(id).orElse(null);
+        if (execution == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Execução já finalizada (por exemplo, a resposta chegou depois que o frontend desistiu):
+        // não sobrescrever um resultado real com TIMEOUT.
+        if (!java.util.Set.of("COMPLETED", "FAILED", "TIMEOUT").contains(execution.getStatus())) {
+            execution.setStatus("TIMEOUT");
+            execution.setFinishedAt(Instant.now());
+            execution.setErrorMessage("Tempo limite de execução excedido (timeout do frontend).");
+            execution = executionRepository.save(execution);
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("executionId", execution.getId().toString());
+        response.put("status", execution.getStatus());
 
         return ResponseEntity.ok(response);
     }

@@ -17,3 +17,11 @@ export class GetExecutionStatusUseCase {
     return this.executionRepository.getExecution(id);
   }
 }
+
+export class MarkExecutionTimeoutUseCase {
+  constructor(private executionRepository: IExecutionRepository) {}
+
+  async execute(id: string): Promise<void> {
+    return this.executionRepository.markExecutionTimeout(id);
+  }
+}

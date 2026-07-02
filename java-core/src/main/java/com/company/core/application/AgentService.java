@@ -123,7 +123,7 @@ public class AgentService {
             agent.setManifestConfig(manifestConfig);
         }
         agent = agentRepository.save(agent);
-        auditService.logAction("CREATE_AGENT", "Agent: " + name, "{\"agentId\":\"" + agent.getId() + "\"}");
+        auditService.logAction("CREATE_AGENT", "Agent: " + name, "{\"agentId\":\"" + agent.getId() + "\"}", tenantId);
 
         // 3. Upload original ZIP to MinIO
         String zipPath = "agents-data/agent-" + agent.getId() + "/agent.zip";

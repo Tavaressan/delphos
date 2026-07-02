@@ -20,6 +20,9 @@ public class AuditLog {
     @JoinColumn(name = "user_id")
     private User user;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
     @NotBlank
     @Size(max = 100)
     @Column(nullable = false)
@@ -58,6 +61,14 @@ public class AuditLog {
 
     public void setUser(User user) {
         this.user = user;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public String getAction() {

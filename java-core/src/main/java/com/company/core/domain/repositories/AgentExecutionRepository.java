@@ -10,4 +10,5 @@ import java.util.UUID;
 public interface AgentExecutionRepository extends JpaRepository<AgentExecution, UUID> {
     List<AgentExecution> findByConversationId(UUID conversationId);
     List<AgentExecution> findByStatus(String status);
+    List<AgentExecution> findByTenantId(UUID tenantId);
 }

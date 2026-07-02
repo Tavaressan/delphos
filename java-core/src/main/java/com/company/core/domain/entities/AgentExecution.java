@@ -23,6 +23,10 @@ public class AgentExecution {
     @Column(name = "agent_id", nullable = false)
     private UUID agentId;
 
+    @NotNull
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @NotBlank
     @Size(max = 50)
     @Column(nullable = false)
@@ -72,6 +76,14 @@ public class AgentExecution {
 
     public void setAgentId(UUID agentId) {
         this.agentId = agentId;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public String getStatus() {

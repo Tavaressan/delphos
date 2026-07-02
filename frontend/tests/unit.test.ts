@@ -2,7 +2,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { executionAdapter } from '../src/infrastructure/adapters/executionAdapter';
 import { GetExecutionResponse, SubmitExecutionResponse } from '../src/domain/dto';
-import { SubmitExecutionUseCase, GetExecutionStatusUseCase } from '../src/domain/use-cases/execution';
+import { SubmitExecutionUseCase, GetExecutionStatusUseCase, MarkExecutionTimeoutUseCase } from '../src/domain/use-cases/execution';
 import { IExecutionRepository } from '../src/domain/repositories';
 import { AgentExecution } from '../src/domain/entities';
 
@@ -57,6 +57,12 @@ describe('Execution Adapter Tests', () => {
 describe('Execution Use Cases Tests', () => {
   // Mock Repository Implementation
   class MockExecutionRepository implements IExecutionRepository {
+    timeoutCalls: string[] = [];
+
+    async markExecutionTimeout(id: string): Promise<void> {
+      this.timeoutCalls.push(id);
+    }
+
     async submitExecution(request: any): Promise<AgentExecution> {
       return {
         id: 'execution-123',
@@ -106,6 +112,13 @@ describe('Execution Use Cases Tests', () => {
     assert.strictEqual(result.id, 'execution-456');
     assert.strictEqual(result.status, 'COMPLETED');
     assert.strictEqual(result.output, '30 dias');
+  });
+
+  test('MarkExecutionTimeoutUseCase should delegate to repository', async () => {
+    const useCase = new MarkExecutionTimeoutUseCase(mockRepo);
+    await useCase.execute('execution-789');
+
+    assert.deepStrictEqual(mockRepo.timeoutCalls, ['execution-789']);
   });
 });
 

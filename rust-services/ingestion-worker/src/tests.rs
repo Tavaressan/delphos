@@ -1,4 +1,55 @@
 use super::*;
+use chrono::{Duration as ChronoDuration, Utc};
+use lapin::types::{AMQPValue, FieldTable, ShortString};
+
+#[test]
+fn test_should_route_to_dlq_after_max_retries() {
+    let max_retries = 3;
+    assert!(!should_route_to_dlq(0, max_retries));
+    assert!(!should_route_to_dlq(2, max_retries));
+    assert!(should_route_to_dlq(3, max_retries));
+    assert!(should_route_to_dlq(10, max_retries));
+}
+
+#[test]
+fn test_extract_retry_count_defaults_to_zero_without_header() {
+    assert_eq!(extract_retry_count(None), 0);
+    let headers = FieldTable::default();
+    assert_eq!(extract_retry_count(Some(&headers)), 0);
+}
+
+#[test]
+fn test_extract_retry_count_reads_existing_header() {
+    let mut headers = FieldTable::default();
+    headers.insert(
+        ShortString::from(RETRY_COUNT_HEADER),
+        AMQPValue::LongUInt(2),
+    );
+    assert_eq!(extract_retry_count(Some(&headers)), 2);
+}
+
+#[test]
+fn test_is_processing_stale_detects_stuck_document() {
+    // Documento parado em PROCESSING há mais tempo que o timeout configurado -> stale
+    let heartbeat_timeout = ChronoDuration::minutes(10);
+    let updated_at = Utc::now() - ChronoDuration::minutes(15);
+    assert!(is_processing_stale(
+        updated_at,
+        Utc::now(),
+        heartbeat_timeout
+    ));
+}
+
+#[test]
+fn test_is_processing_stale_recent_update_not_stale() {
+    let heartbeat_timeout = ChronoDuration::minutes(10);
+    let updated_at = Utc::now() - ChronoDuration::minutes(2);
+    assert!(!is_processing_stale(
+        updated_at,
+        Utc::now(),
+        heartbeat_timeout
+    ));
+}
 
 #[test]
 fn test_chunk_text() {
@@ -129,6 +180,138 @@ async fn test_db_integration_ingestion() {
         chunks_count.0 > 0,
         "Nenhum chunk foi inserido no banco para o documento de teste."
     );
+
+    let delete_res = sqlx::query("DELETE FROM documents WHERE id = $1")
+        .bind(test_doc_id)
+        .execute(&pool)
+        .await;
+    assert!(delete_res.is_ok());
+}
+
+#[tokio::test]
+async fn test_deterministic_failure_routes_message_to_dlq_after_retries() {
+    let rabbitmq_url = std::env::var("RABBITMQ_URL")
+        .unwrap_or_else(|_| "amqp://guest:guest@localhost:5672".to_string());
+
+    let conn =
+        match lapin::Connection::connect(&rabbitmq_url, lapin::ConnectionProperties::default())
+            .await
+        {
+            Ok(c) => c,
+            Err(_) => {
+                println!("RabbitMQ local indisponível no teste. Pulando teste de integração.");
+                return;
+            }
+        };
+    let channel = conn.create_channel().await.unwrap();
+
+    channel
+        .queue_declare(
+            DLQ_QUEUE,
+            lapin::options::QueueDeclareOptions {
+                durable: true,
+                ..Default::default()
+            },
+            FieldTable::default(),
+        )
+        .await
+        .unwrap();
+
+    // Esvazia a DLQ para garantir um cenário determinístico.
+    channel
+        .queue_purge(DLQ_QUEUE, lapin::options::QueuePurgeOptions::default())
+        .await
+        .unwrap();
+
+    let max_retries: u32 = 3;
+    let payload = br#"{"document_id":"00000000-0000-0000-0000-000000000001"}"#.to_vec();
+
+    // Simula falhas determinísticas sucessivas de um job de ingestão até
+    // esgotar as tentativas de retry configuradas.
+    let mut retry_count = 0;
+    while !should_route_to_dlq(retry_count, max_retries) {
+        retry_count += 1;
+    }
+    publish_to_dlq(
+        &channel,
+        payload.clone(),
+        retry_count,
+        "falha determinística de teste",
+    )
+    .await
+    .expect("publish_to_dlq não deveria falhar");
+
+    let delivery = channel
+        .basic_get(DLQ_QUEUE, lapin::options::BasicGetOptions::default())
+        .await
+        .expect("basic_get não deveria falhar")
+        .expect("mensagem deveria estar presente na DLQ");
+
+    assert_eq!(delivery.delivery.data, payload);
+    delivery
+        .delivery
+        .ack(lapin::options::BasicAckOptions::default())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn test_reap_stale_processing_documents_marks_failed() {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/rag_db".to_string());
+
+    let pool = match sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_millis(1500))
+        .connect(&database_url)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => {
+            println!("Banco de dados local indisponível no teste. Pulando teste de integração.");
+            return;
+        }
+    };
+
+    let test_doc_id = uuid::Uuid::new_v4();
+    let test_tenant_id = uuid::Uuid::new_v4();
+
+    // Simula um worker que travou no meio do processamento: documento em PROCESSING
+    // com updated_at bem antigo (sem heartbeat recente).
+    let insert_res = sqlx::query(
+        "INSERT INTO documents (id, name, file_path, file_size, file_type, tenant_id, status, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, 'PROCESSING', NOW() - INTERVAL '30 minutes')",
+    )
+    .bind(test_doc_id)
+    .bind("documento_travado.pdf")
+    .bind("documento_travado.pdf")
+    .bind(500_i64)
+    .bind("pdf")
+    .bind(test_tenant_id)
+    .execute(&pool)
+    .await;
+
+    assert!(
+        insert_res.is_ok(),
+        "Falha ao inserir documento travado de teste: {:?}",
+        insert_res.err()
+    );
+
+    let affected = reap_stale_processing_documents(&pool, chrono::Duration::minutes(10))
+        .await
+        .expect("reaper não deveria falhar");
+    assert!(affected >= 1);
+
+    let row: (String, Option<String>) =
+        sqlx::query_as("SELECT status, processing_error FROM documents WHERE id = $1")
+            .bind(test_doc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(row.0, "FAILED");
+    assert!(row.1.is_some());
+    assert!(row.1.unwrap().to_lowercase().contains("heartbeat"));
 
     let delete_res = sqlx::query("DELETE FROM documents WHERE id = $1")
         .bind(test_doc_id)
