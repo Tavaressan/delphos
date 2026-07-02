@@ -124,3 +124,99 @@ impl WorkflowEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_node(node_type: &str) -> DbNode {
+        DbNode {
+            id: Uuid::new_v4(),
+            workflow_id: Uuid::new_v4(),
+            version: 1,
+            node_type: node_type.to_string(),
+            config: None,
+        }
+    }
+
+    fn make_edge(from: Uuid, to: Uuid) -> DbEdge {
+        DbEdge {
+            id: Uuid::new_v4(),
+            workflow_id: Uuid::new_v4(),
+            version: 1,
+            from_node_id: from,
+            to_node_id: to,
+            condition: None,
+        }
+    }
+
+    #[test]
+    fn test_sort_nodes_linear_dag() {
+        let node_1 = make_node("RAG");
+        let node_2 = make_node("TOOL");
+        let edges = vec![make_edge(node_1.id, node_2.id)];
+
+        // Nodes provided out of order on purpose to verify the sort corrects it.
+        let engine = WorkflowEngine::new(vec![node_2.clone(), node_1.clone()], edges);
+        let sorted = engine.sort_nodes().unwrap();
+
+        assert_eq!(sorted.len(), 2);
+        assert_eq!(sorted[0].id, node_1.id);
+        assert_eq!(sorted[1].id, node_2.id);
+    }
+
+    #[test]
+    fn test_sort_nodes_diamond_dag_respects_dependencies() {
+        let node_a = make_node("RAG");
+        let node_b = make_node("TOOL");
+        let node_c = make_node("TOOL");
+        let node_d = make_node("RAG");
+        let edges = vec![
+            make_edge(node_a.id, node_b.id),
+            make_edge(node_a.id, node_c.id),
+            make_edge(node_b.id, node_d.id),
+            make_edge(node_c.id, node_d.id),
+        ];
+
+        let engine = WorkflowEngine::new(
+            vec![
+                node_d.clone(),
+                node_c.clone(),
+                node_b.clone(),
+                node_a.clone(),
+            ],
+            edges,
+        );
+        let sorted = engine.sort_nodes().unwrap();
+
+        let pos = |id: Uuid| sorted.iter().position(|n| n.id == id).unwrap();
+        assert_eq!(sorted.len(), 4);
+        assert!(pos(node_a.id) < pos(node_b.id));
+        assert!(pos(node_a.id) < pos(node_c.id));
+        assert!(pos(node_b.id) < pos(node_d.id));
+        assert!(pos(node_c.id) < pos(node_d.id));
+    }
+
+    #[test]
+    fn test_sort_nodes_detects_cycle() {
+        let node_1 = make_node("RAG");
+        let node_2 = make_node("TOOL");
+        let edges = vec![
+            make_edge(node_1.id, node_2.id),
+            make_edge(node_2.id, node_1.id),
+        ];
+
+        let engine = WorkflowEngine::new(vec![node_1, node_2], edges);
+        let result = engine.sort_nodes();
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Ciclo detectado"));
+    }
+
+    #[test]
+    fn test_sort_nodes_empty_dag_returns_empty() {
+        let engine = WorkflowEngine::new(vec![], vec![]);
+        let sorted = engine.sort_nodes().unwrap();
+        assert!(sorted.is_empty());
+    }
+}

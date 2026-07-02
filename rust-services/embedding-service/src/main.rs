@@ -477,6 +477,23 @@ mod tests {
         assert_eq!(json["data"][0]["embedding"].as_array().unwrap().len(), 768);
     }
 
+    #[test]
+    fn test_generate_mock_embedding_is_deterministic_and_normalized() {
+        let text1 = "Qualidade e conformidade";
+        let text2 = "Outro texto de teste";
+
+        let emb1_a = generate_mock_embedding(text1, 768);
+        let emb1_b = generate_mock_embedding(text1, 768);
+        let emb2 = generate_mock_embedding(text2, 768);
+
+        assert_eq!(emb1_a, emb1_b);
+        assert_ne!(emb1_a, emb2);
+        assert_eq!(emb1_a.len(), 768);
+
+        let sum_sq: f32 = emb1_a.iter().map(|v| v * v).sum();
+        assert!((sum_sq - 1.0).abs() < 0.001, "Magnitude: {}", sum_sq);
+    }
+
     #[tokio::test]
     async fn test_embeddings_real_provider_no_credentials() {
         let _guard = ENV_MUTEX.lock().unwrap();

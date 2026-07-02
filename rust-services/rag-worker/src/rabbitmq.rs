@@ -612,32 +612,18 @@ impl RabbitMQManager {
         );
         let start_db = std::time::Instant::now();
         let rows = if let Some(aid) = agent_id {
-            sqlx::query(
-                "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
-                 FROM document_chunks dc \
-                 JOIN documents d ON dc.document_id = d.id \
-                 WHERE dc.tenant_id = $2 AND (d.agent_id = $3 OR d.agent_id IS NULL) \
-                 ORDER BY similarity DESC \
-                 LIMIT 5",
-            )
-            .bind(&embedding)
-            .bind(job.tenant_id)
-            .bind(aid)
-            .fetch_all(db_pool)
-            .await
+            sqlx::query(crate::retrieval::vector_search_query(true))
+                .bind(&embedding)
+                .bind(job.tenant_id)
+                .bind(aid)
+                .fetch_all(db_pool)
+                .await
         } else {
-            sqlx::query(
-                "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
-                 FROM document_chunks dc \
-                 JOIN documents d ON dc.document_id = d.id \
-                 WHERE dc.tenant_id = $2 AND d.agent_id IS NULL \
-                 ORDER BY similarity DESC \
-                 LIMIT 5",
-            )
-            .bind(&embedding)
-            .bind(job.tenant_id)
-            .fetch_all(db_pool)
-            .await
+            sqlx::query(crate::retrieval::vector_search_query(false))
+                .bind(&embedding)
+                .bind(job.tenant_id)
+                .fetch_all(db_pool)
+                .await
         }
         .map_err(|e| WorkerError::Database(format!("SQL execution error: {}", e)))?;
 
@@ -654,7 +640,7 @@ impl RabbitMQManager {
             let similarity: f64 = row.try_get("similarity")?;
 
             // Escaping XML tags in the retrieved chunk content to prevent indirect XML tag inject
-            let sanitized_content = content.replace('<', "&lt;").replace('>', "&gt;");
+            let sanitized_content = crate::retrieval::escape_chunk_content(&content);
 
             chunks.push(ChunkData {
                 id: serde_json::json!(id),
@@ -664,15 +650,9 @@ impl RabbitMQManager {
         }
 
         // 3. Construir prompt do sistema
-        let mut context_str = String::new();
-        for (i, chunk) in chunks.iter().enumerate() {
-            context_str.push_str(&format!(
-                "Documento {} (Similaridade: {:.4}):\n{}\n\n",
-                i + 1,
-                chunk.score,
-                chunk.content
-            ));
-        }
+        let context_str = crate::retrieval::build_context_str(
+            chunks.iter().map(|c| (c.score, c.content.as_str())),
+        );
 
         let mut system_instruction = "Você é um assistente virtual especialista no contexto de negócios e transportes verticais da Alfabra. \
                                       Use as informações do Contexto abaixo para responder de forma precisa, objetiva e em português à pergunta do usuário. \
