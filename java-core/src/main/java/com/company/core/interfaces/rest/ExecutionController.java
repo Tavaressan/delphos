@@ -112,6 +112,7 @@ public class ExecutionController {
             
             UUID actualAgentId = (agent != null) ? agent.getId() : UUID.randomUUID();
             execution.setAgentId(actualAgentId);
+            execution.setTenantId(tenantId);
             execution.setStatus("REQUESTED");
             execution.setPromptFinal(prompt);
             execution.setStartedAt(Instant.now());
