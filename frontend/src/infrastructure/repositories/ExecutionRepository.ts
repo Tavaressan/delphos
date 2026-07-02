@@ -1,6 +1,6 @@
 import { IExecutionRepository } from '../../domain/repositories';
 import { AgentExecution } from '../../domain/entities';
-import { SubmitExecutionRequest, SubmitExecutionResponse, GetExecutionResponse } from '../../domain/dto';
+import { SubmitExecutionRequest, SubmitExecutionResponse, GetExecutionResponse, ListExecutionItemResponse } from '../../domain/dto';
 import { apiClient } from '../api/apiClient';
 import { executionAdapter } from '../adapters/executionAdapter';
 
@@ -17,6 +17,10 @@ export class ExecutionRepository implements IExecutionRepository {
 
   async markExecutionTimeout(id: string): Promise<void> {
     await apiClient.patch(`/api/executions/${id}/timeout`);
+  }
+
+  async listExecutions(tenantId: string): Promise<ListExecutionItemResponse[]> {
+    return apiClient.get<ListExecutionItemResponse[]>(`/api/executions?tenantId=${tenantId}`);
   }
 }
 

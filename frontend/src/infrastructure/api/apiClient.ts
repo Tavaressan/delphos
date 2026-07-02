@@ -19,7 +19,7 @@ interface RequestOptions extends RequestInit {
   timeout?: number;
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T>(path: string, options: RequestOptions = {}, isMultipart = false): Promise<T> {
   const { timeout = DEFAULT_TIMEOUT, headers, ...rest } = options;
   const url = `${BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 
@@ -29,7 +29,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const config: RequestInit = {
     ...rest,
     signal: controller.signal,
-    headers: {
+    // Multipart requests devem deixar o browser definir o Content-Type
+    // (inclusive o boundary), então não sobrescrevemos com application/json.
+    headers: isMultipart ? { ...headers } : {
       'Content-Type': 'application/json',
       ...headers,
     },
@@ -80,9 +82,12 @@ export const apiClient = {
   put: <T>(path: string, body: any, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'PUT', body: JSON.stringify(body) }),
 
-  patch: <T>(path: string, options?: RequestOptions) =>
-    request<T>(path, { ...options, method: 'PATCH' }),
+  patch: <T>(path: string, body?: any, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined }),
 
   delete: <T>(path: string, options?: RequestOptions) =>
     request<T>(path, { ...options, method: 'DELETE' }),
+
+  postForm: <T>(path: string, formData: FormData, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'POST', body: formData }, true),
 };
