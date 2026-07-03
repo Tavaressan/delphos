@@ -3,9 +3,10 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Header, Sidebar, Footer } from '../../components/layout';
 import { AgentUploadManager } from '../../features/admin/components/AgentUploadManager';
-import { Search, Pencil, Check, X, PowerOff, Trash2 } from 'lucide-react';
+import { Search, Pencil, Check, X, PowerOff, Power, Trash2 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
+import { canReactivate } from '../../features/catalog/agentStatus';
 import { validateAgentZipFileName } from '../../features/admin/agentUploadValidation';
 
 interface Agent {
@@ -365,6 +366,16 @@ export default function CatalogPage() {
                                     className="bg-primary hover:bg-primary-dark text-white text-[10px] font-bold py-1 px-2.5 rounded transition-colors disabled:opacity-50"
                                   >
                                     Aprovar
+                                  </button>
+                                )}
+
+                                {canReactivate(agent.status) && (
+                                  <button
+                                    onClick={() => handlePublish(agent.id)}
+                                    disabled={isActing}
+                                    className="flex items-center gap-1 bg-success/10 hover:bg-success/20 text-success text-[10px] font-bold py-1 px-2 rounded border border-success/20 transition-colors disabled:opacity-50"
+                                  >
+                                    <Power className="w-3 h-3" /> Reativar
                                   </button>
                                 )}
 
