@@ -10,6 +10,14 @@ export interface User {
   role?: 'ROLE_USER' | 'ROLE_ADMIN';
 }
 
+export interface UserSession {
+  id: string; // UUID
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string | null;
+  lastActiveAt: string | null;
+}
+
 export interface UserProfile {
   id: string; // UUID
   username: string;

@@ -66,3 +66,16 @@ export interface UpdateProfileRequest {
 export interface UploadAvatarResponse {
   avatarUrl: string;
 }
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface UserSessionResponse {
+  id: string;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string | null;
+  lastActiveAt: string | null;
+}

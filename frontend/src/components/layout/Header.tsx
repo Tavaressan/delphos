@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../providers/AuthProvider';
 import { ChevronDown, ShieldCheck, LogOut, Activity, Sun, Moon, Menu } from 'lucide-react';
 import { apiClient } from '../../infrastructure/api/apiClient';
+import { useTheme } from '../../hooks/useTheme';
 import Link from 'next/link';
 
 export const Header: React.FC = () => {
@@ -12,7 +13,7 @@ export const Header: React.FC = () => {
   const openMobileSidebar = () => window.dispatchEvent(new Event('mobile-sidebar-open'));
   const [tenant, setTenant] = useState<string>('Alfabra Elevadores - Matriz');
   const [isBackendOnline, setIsBackendOnline] = useState<boolean | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -29,24 +30,6 @@ export const Header: React.FC = () => {
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    const initialTheme = savedTheme === 'dark' || (!savedTheme && systemTheme === 'dark') ? 'dark' : 'light';
-    setTheme(initialTheme);
-  }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
 
   const getInitials = (name?: string) => {
     if (!name) return 'VT';

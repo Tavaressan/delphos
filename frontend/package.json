@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node tests/layout.test.js && node --import tsx --test tests/smoke.test.js tests/unit.test.ts tests/agent-chat-upload.test.ts tests/user-adapter.test.ts"
+    "test": "node tests/layout.test.js && node --import tsx --test tests/smoke.test.js tests/unit.test.ts tests/agent-chat-upload.test.ts tests/user-adapter.test.ts tests/user-session-adapter.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

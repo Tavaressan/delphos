@@ -1,7 +1,14 @@
-import { UserProfile } from '../../domain/entities';
-import { GetMeResponse, UpdateProfileRequest, UploadAvatarResponse } from '../../domain/dto';
+import { UserProfile, UserSession } from '../../domain/entities';
+import {
+  GetMeResponse,
+  UpdateProfileRequest,
+  UploadAvatarResponse,
+  ChangePasswordRequest,
+  UserSessionResponse,
+} from '../../domain/dto';
 import { apiClient } from '../api/apiClient';
 import { userAdapter } from '../adapters/userAdapter';
+import { userSessionAdapter } from '../adapters/userSessionAdapter';
 
 export class UserRepository {
   async getMe(userId: string): Promise<UserProfile> {
@@ -25,6 +32,25 @@ export class UserRepository {
       headers: { 'X-User-Id': userId },
     });
     return response.avatarUrl;
+  }
+
+  async changePassword(userId: string, patch: ChangePasswordRequest): Promise<void> {
+    await apiClient.patch('/api/users/me/password', patch, {
+      headers: { 'X-User-Id': userId },
+    });
+  }
+
+  async listSessions(userId: string): Promise<UserSession[]> {
+    const response = await apiClient.get<UserSessionResponse[]>('/api/users/me/sessions', {
+      headers: { 'X-User-Id': userId },
+    });
+    return response.map(userSessionAdapter.toEntity);
+  }
+
+  async revokeOtherSessions(userId: string): Promise<void> {
+    await apiClient.delete('/api/users/me/sessions', {
+      headers: { 'X-User-Id': userId },
+    });
   }
 }
 
