@@ -101,6 +101,29 @@ public class AgentController {
         return ResponseEntity.ok(toResponse(agent));
     }
 
+    @PutMapping("/admin/agents/{id}/package")
+    public ResponseEntity<?> updateAgentPackage(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        Agent agent = agentRepository.findById(id).orElse(null);
+        if (agent == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        try {
+            agent = agentService.updateAgentPackage(agent, file);
+            return ResponseEntity.ok(toResponse(agent));
+        } catch (IllegalArgumentException e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
+        } catch (Exception e) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Erro interno ao processar o pacote do agente: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(error);
+        }
+    }
+
     @PatchMapping("/admin/agents/{id}/publish")
     public ResponseEntity<?> publishAgent(@PathVariable UUID id) {
         return changeStatus(id, "PUBLISHED", "PUBLISH_AGENT");

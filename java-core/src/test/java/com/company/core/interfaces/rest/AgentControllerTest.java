@@ -216,6 +216,49 @@ class AgentControllerTest {
     }
 
     @Test
+    void updateAgentPackage_withValidId_returnsUpdatedAgent() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent existing = new Agent();
+        existing.setId(id);
+        existing.setName("Agente Existente");
+        existing.setTenantId(UUID.randomUUID());
+        existing.setStatus("PUBLISHED");
+
+        Agent updated = new Agent();
+        updated.setId(id);
+        updated.setName("Agente Existente");
+        updated.setTenantId(existing.getTenantId());
+        updated.setStatus("PUBLISHED");
+        updated.setSystemInstructions("novas instrucoes");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(agentService.updateAgentPackage(any(), any())).thenReturn(updated);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", "zip-content".getBytes());
+
+        mockMvc.perform(multipart("/api/admin/agents/" + id + "/package")
+                        .file(file)
+                        .with(req -> { req.setMethod("PUT"); return req; }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.systemInstructions").value("novas instrucoes"));
+    }
+
+    @Test
+    void updateAgentPackage_withUnknownId_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(agentRepository.findById(id)).thenReturn(Optional.empty());
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", "zip-content".getBytes());
+
+        mockMvc.perform(multipart("/api/admin/agents/" + id + "/package")
+                        .file(file)
+                        .with(req -> { req.setMethod("PUT"); return req; }))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void deleteAgent_withRunningExecutions_returns409() throws Exception {
         UUID id = UUID.randomUUID();
         Agent agent = new Agent();
