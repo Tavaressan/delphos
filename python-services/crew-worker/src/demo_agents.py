@@ -89,7 +89,9 @@ def submit_execution(base_url: str, prompt: str, tenant_id: str, agent_id: str) 
     return execution_id
 
 
-def poll_execution(base_url: str, execution_id: str, timeout_s: float, interval_s: float = 2.0) -> dict:
+def poll_execution(
+    base_url: str, execution_id: str, timeout_s: float, interval_s: float = 2.0
+) -> dict:
     """Faz polling em GET /api/executions/{id} até status terminal ou timeout."""
     deadline = time.monotonic() + timeout_s
     last_payload = {}
@@ -115,7 +117,9 @@ def poll_execution(base_url: str, execution_id: str, timeout_s: float, interval_
     )
 
 
-def ask_agent(base_url: str, tenant_id: str, agent_id: str, question: str, timeout_s: float) -> str:
+def ask_agent(
+    base_url: str, tenant_id: str, agent_id: str, question: str, timeout_s: float
+) -> str:
     execution_id = submit_execution(base_url, question, tenant_id, agent_id)
     result = poll_execution(base_url, execution_id, timeout_s=timeout_s)
     return result.get("output") or "(sem conteúdo na resposta)"
@@ -142,18 +146,26 @@ def run_demo(base_url: str, tenant_id: str, timeout_s: float) -> list:
         print(f"Pergunta: {question}")
 
         if not agent_id:
-            answer = "[ERRO] não foi possível resolver o ID do agente; pulando pergunta."
+            answer = (
+                "[ERRO] não foi possível resolver o ID do agente; pulando pergunta."
+            )
             print(answer)
-            results.append({"tag": tag, "name": name, "question": question, "answer": answer})
+            results.append(
+                {"tag": tag, "name": name, "question": question, "answer": answer}
+            )
             continue
 
         try:
             answer = ask_agent(base_url, tenant_id, agent_id, question, timeout_s)
-        except Exception as e:  # noqa: BLE001 - queremos seguir para os próximos agentes
+        except (
+            Exception
+        ) as e:  # noqa: BLE001 - queremos seguir para os próximos agentes
             answer = f"[ERRO ao consultar o agente: {e}]"
 
         print(f"Resposta: {answer}")
-        results.append({"tag": tag, "name": name, "question": question, "answer": answer})
+        results.append(
+            {"tag": tag, "name": name, "question": question, "answer": answer}
+        )
 
     print("\n" + "=" * 70)
     print("Demo concluída.")
@@ -166,7 +178,9 @@ def main():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--base-url", default="http://localhost:8080", help="URL base do java-core.")
+    parser.add_argument(
+        "--base-url", default="http://localhost:8080", help="URL base do java-core."
+    )
     parser.add_argument(
         "--tenant-id",
         default="00000000-0000-0000-0000-000000000000",
@@ -183,7 +197,10 @@ def main():
     try:
         run_demo(args.base_url, args.tenant_id, args.timeout)
     except requests.exceptions.ConnectionError as e:
-        print(f"\nERRO: não foi possível conectar em {args.base_url}. A stack está no ar? ({e})", file=sys.stderr)
+        print(
+            f"\nERRO: não foi possível conectar em {args.base_url}. A stack está no ar? ({e})",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 

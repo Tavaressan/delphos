@@ -132,7 +132,9 @@ def ensure_agents(base_url: str, tenant_id: str) -> dict:
     try:
         existing_agents = list_agents(base_url, tenant_id)
     except requests.HTTPError as e:
-        print(f"  AVISO: não foi possível listar agentes existentes ({e}). Prosseguindo como se não houvesse nenhum.")
+        print(
+            f"  AVISO: não foi possível listar agentes existentes ({e}). Prosseguindo como se não houvesse nenhum."
+        )
         existing_agents = []
 
     created = {}
@@ -144,7 +146,9 @@ def ensure_agents(base_url: str, tenant_id: str) -> dict:
         if match is not None:
             agent_id = match["id"]
             status = match.get("status")
-            print(f"\n[seed] Agente já existe: {name} (tag={tag}, id={agent_id}, status={status})")
+            print(
+                f"\n[seed] Agente já existe: {name} (tag={tag}, id={agent_id}, status={status})"
+            )
             if status != "PUBLISHED":
                 publish_agent(base_url, agent_id)
                 print("  Publicado agora (estava despublicado).")

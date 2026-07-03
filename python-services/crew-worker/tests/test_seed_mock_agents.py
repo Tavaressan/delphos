@@ -30,7 +30,9 @@ def test_find_existing_agent_falls_back_to_name_when_tag_missing():
 
 
 def test_find_existing_agent_returns_none_when_no_match():
-    agents = [{"id": "a1", "tag": "catalogo", "name": "Agente Catálogo Elevadores Alfabra"}]
+    agents = [
+        {"id": "a1", "tag": "catalogo", "name": "Agente Catálogo Elevadores Alfabra"}
+    ]
 
     match = seed.find_existing_agent(agents, "piso", "Agente de Piso")
 
@@ -39,7 +41,12 @@ def test_find_existing_agent_returns_none_when_no_match():
 
 def test_ensure_agents_reuses_existing_published_agent_without_recreating():
     existing = [
-        {"id": "existing-id", "tag": "compliance", "status": "PUBLISHED", "name": "Agente de Compliance de Elevadores"}
+        {
+            "id": "existing-id",
+            "tag": "compliance",
+            "status": "PUBLISHED",
+            "name": "Agente de Compliance de Elevadores",
+        }
     ]
 
     with patch("seed_mock_agents.list_agents", return_value=existing), patch(
@@ -67,7 +74,12 @@ def test_ensure_agents_reuses_existing_published_agent_without_recreating():
 
 def test_ensure_agents_publishes_existing_unpublished_agent():
     existing = [
-        {"id": "existing-id", "tag": "piso", "status": "DRAFT", "name": "Agente de Piso"}
+        {
+            "id": "existing-id",
+            "tag": "piso",
+            "status": "DRAFT",
+            "name": "Agente de Piso",
+        }
     ]
 
     with patch("seed_mock_agents.list_agents", return_value=existing), patch(
@@ -114,9 +126,14 @@ def test_ensure_agents_creates_agent_when_none_exists():
 
     assert created == {"catalogo": "new-id"}
     mock_create.assert_called_once_with(
-        "http://localhost:8080", "Agente Catálogo Elevadores Alfabra", b"zip-bytes", "tenant-1"
+        "http://localhost:8080",
+        "Agente Catálogo Elevadores Alfabra",
+        b"zip-bytes",
+        "tenant-1",
     )
-    mock_update_tag.assert_called_once_with("http://localhost:8080", "new-id", "catalogo")
+    mock_update_tag.assert_called_once_with(
+        "http://localhost:8080", "new-id", "catalogo"
+    )
     mock_publish.assert_called_once_with("http://localhost:8080", "new-id")
 
 
