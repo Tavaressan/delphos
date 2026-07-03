@@ -53,7 +53,9 @@ export const Header: React.FC = () => {
           <Menu className="w-5 h-5" />
         </button>
         {/* Logo em cor sólida (mesma cor do título, text-primary) via mask-image, pois é um PNG raster sem suporte a currentColor.
-            Em dark mode, a cor sólida vira branca — substitui o antigo dark:brightness-0 dark:invert sem regressão. */}
+            Em dark mode, a cor sólida vira branca — substitui o antigo dark:brightness-0 dark:invert sem regressão.
+            Header em h-28 (112px) é o menor múltiplo da escala Tailwind que acomoda a
+            logo de 102px sem cortar. */}
         <div
           role="img"
           aria-label="Alfabra Logo"
@@ -71,7 +73,7 @@ export const Header: React.FC = () => {
         />
         <span className="hidden sm:block h-5 w-[1px] bg-border-color" />
         <h1 className="hidden sm:block text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
-          Agent Operating Platform
+          Delphos platform
         </h1>
       </div>
 

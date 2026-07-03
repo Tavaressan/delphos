@@ -12,8 +12,8 @@ try {
     assert(headerContent.includes('h-[102px]'), "Logo should be 50% bigger: h-[102px] (68 * 1.5)");
     assert(!headerContent.includes('h-[68px]'), "Old logo height h-[68px] should no longer be present");
 
-    console.log("Checking header container height accommodates bigger logo...");
-    assert(!headerContent.includes('className="h-20 '), "Header container height should be increased beyond h-20 to avoid clipping the bigger logo");
+    console.log("Checking header container height accommodates the 102px logo without clipping...");
+    assert(headerContent.includes('className="h-28 '), "Header container height should be h-28 (112px), the smallest Tailwind scale step that fits a 102px logo");
 
     console.log("Checking solid color treatment on light mode (matching text-primary)...");
     assert(headerContent.includes('bg-primary'), "Logo should use bg-primary (solid color, matching title color) in light mode");

@@ -15,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <title>Alfabra Enterprise Agent Platform</title>
         <meta name="description" content="Plataforma corporativa de execução de agentes e busca híbrida RAG da Alfabra." />
+        <link rel="icon" href="/assets/images/Logo_Alfabra_Icone.png" type="image/png" />
         <script
           dangerouslySetInnerHTML={{
             __html: `
