@@ -1,10 +1,18 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert';
 import { execSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import pg from 'pg';
 import { config } from './config.js';
 
 const { Client } = pg;
+
+// API HTTP de management do RabbitMQ (mesma instância já usada pelo teste T005/T006 para
+// publicar diretamente na exchange, sem depender de um publisher amqp dedicado no Node).
+const RABBITMQ_MGMT_BASE = 'http://localhost:15672/api';
+const RABBITMQ_MGMT_AUTH = 'Basic ' + Buffer.from('guest:guest').toString('base64');
 
 describe('Suite de Testes End-to-End - Alfabra Vector', () => {
   let dbClient;
@@ -304,6 +312,233 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log('🟢 rag-worker responde de forma resiliente mesmo sem chunks indexados para o tenant.');
   });
 
+  test('T012 - workflow-worker (Rust) consome job real e executa a DAG determinística', async () => {
+    // Descoberta de dispatch (issue #118): hoje nenhum caminho em java-core
+    // (AgentService, ExecutionController) publica na routing key "agent.workflow.requested"
+    // que o workflow-worker consome (ver rust-services/workflow-worker/src/rabbitmq.rs -
+    // start_consumer declara a fila "agent.workflow.queue" ligada a essa routing key na
+    // exchange "agent.execution.exchange"). O próprio cenário Gherkin em
+    // java-core/src/test/resources/features/04-workflow-execution.feature já descreve esse
+    // fluxo, mas está marcado "@pending" - nunca foi automatizado. Este teste publica o job
+    // diretamente na exchange (mesma técnica já usada pelo T005/T006 para
+    // document.ingestion.jobs) para exercitar o worker Rust real, sem inventar filas/routing
+    // keys que não existem no código.
+    //
+    // A definição de DAG usada (workflow_id fixo) já é semeada pela migração Flyway
+    // V4__seed_workflow_data.sql: 2 nós (RAG -> TOOL) para a versão 1.
+    //
+    // Limitação conhecida e documentada: o workflow-worker publica seus eventos de ciclo de
+    // vida (agent.workflow.started/completed/failed) usando routing_key = eventType. O
+    // RabbitMQConfig do java-core só liga a fila "agent.execution.events" à routing key
+    // "agent.execution.events" - essas mensagens não são roteadas para lá e por isso nunca
+    // chegam ao AgentExecutionEventListener nem à tabela agent_executions. Ou seja, HOJE não
+    // existe nenhuma linha em Postgres para consultar como "outcome" desta execução de
+    // workflow. Para validar o comportamento real do worker sem fabricar uma integração que
+    // não existe, este teste declara uma fila temporária e a vincula, via API de
+    // gerenciamento do RabbitMQ, diretamente às routing keys que o worker já publica.
+    const workflowId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
+    const workflowVersion = 1;
+    const executionId = randomUUID();
+    const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
+    const tmpQueue = `e2e.workflow.outcome.${executionId}`;
+
+    console.log('Passo 1: Aguardando o workflow-worker declarar a fila "agent.workflow.queue"...');
+    let workerReady = false;
+    for (let i = 0; i < 30; i++) {
+      const res = await fetch(`${RABBITMQ_MGMT_BASE}/queues/%2f/agent.workflow.queue`, {
+        headers: { Authorization: RABBITMQ_MGMT_AUTH }
+      });
+      if (res.status === 200) {
+        workerReady = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    assert.ok(workerReady, 'Erro: workflow-worker não declarou a fila "agent.workflow.queue" a tempo (worker não conectou ao RabbitMQ?).');
+
+    console.log('Passo 2: Declarando fila temporária e vinculando às routing keys de eventos do workflow-worker...');
+    const declareRes = await fetch(`${RABBITMQ_MGMT_BASE}/queues/%2f/${tmpQueue}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: RABBITMQ_MGMT_AUTH },
+      body: JSON.stringify({ durable: false, auto_delete: true })
+    });
+    assert.ok([200, 201, 204].includes(declareRes.status), 'Falha ao declarar fila temporária de observação de eventos.');
+
+    for (const routingKey of ['agent.workflow.started', 'agent.workflow.completed', 'agent.workflow.failed']) {
+      const bindRes = await fetch(`${RABBITMQ_MGMT_BASE}/bindings/%2f/e/agent.execution.exchange/q/${tmpQueue}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: RABBITMQ_MGMT_AUTH },
+        body: JSON.stringify({ routing_key: routingKey })
+      });
+      assert.ok([200, 201, 204].includes(bindRes.status), `Falha ao vincular fila temporária à routing key ${routingKey}.`);
+    }
+
+    try {
+      console.log(`Passo 3: Publicando job de workflow (execution_id=${executionId}) na routing key "agent.workflow.requested"...`);
+      const publishRes = await fetch(`${RABBITMQ_MGMT_BASE}/exchanges/%2f/agent.execution.exchange/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: RABBITMQ_MGMT_AUTH },
+        body: JSON.stringify({
+          properties: { delivery_mode: 2 },
+          routing_key: 'agent.workflow.requested',
+          payload: JSON.stringify({
+            workflow_id: workflowId,
+            workflow_version: workflowVersion,
+            tenant_id: tenantId,
+            execution_id: executionId
+          }),
+          payload_encoding: 'string'
+        })
+      });
+      assert.strictEqual(publishRes.status, 200, 'Falha ao publicar job de workflow no RabbitMQ.');
+      const publishBody = await publishRes.json();
+      assert.strictEqual(publishBody.routed, true, 'Erro: mensagem de job de workflow não foi roteada a nenhuma fila (binding "agent.workflow.requested" ausente - o workflow-worker subiu?).');
+
+      console.log('Passo 4: Monitorando a fila temporária até o workflow-worker publicar o evento de conclusão...');
+      let completionEvent = null;
+      const maxAttempts = 20;
+      for (let i = 0; i < maxAttempts; i++) {
+        const getRes = await fetch(`${RABBITMQ_MGMT_BASE}/queues/%2f/${tmpQueue}/get`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: RABBITMQ_MGMT_AUTH },
+          body: JSON.stringify({ count: 5, ackmode: 'ack_requeue_false', encoding: 'auto' })
+        });
+        const messages = await getRes.json();
+        const events = messages.map((m) => JSON.parse(m.payload));
+        const match = events.find(
+          (evt) => evt.executionId === executionId && evt.eventType !== 'agent.workflow.started'
+        );
+        console.log(`Verificação ${i + 1}/${maxAttempts}: ${events.length} evento(s) recebido(s) na fila temporária.`);
+        if (match) {
+          completionEvent = match;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      assert.ok(completionEvent, 'Erro: workflow-worker não publicou evento de conclusão (completed/failed) a tempo.');
+      assert.strictEqual(
+        completionEvent.eventType,
+        'agent.workflow.completed',
+        `Erro: workflow-worker finalizou com evento inesperado: ${JSON.stringify(completionEvent)}`
+      );
+      assert.strictEqual(completionEvent.executionId, executionId, 'Erro: evento de conclusão não corresponde ao execution_id do job publicado.');
+      assert.ok(
+        completionEvent.payload && typeof completionEvent.payload.outputResult === 'string' && completionEvent.payload.outputResult.length > 0,
+        'Erro: payload de conclusão do workflow-worker não contém outputResult.'
+      );
+      assert.ok(
+        completionEvent.payload.outputResult.includes('2 nodes'),
+        `Erro: DAG semeada tem 2 nós (RAG -> TOOL), mas o resultado não reflete isso: ${completionEvent.payload.outputResult}`
+      );
+      assert.ok(
+        typeof completionEvent.payload.executionTimeMs === 'number' && completionEvent.payload.executionTimeMs >= 0,
+        'Erro: executionTimeMs ausente ou inválido no evento de conclusão.'
+      );
+
+      console.log('🟢 workflow-worker consumiu o job real, carregou a DAG semeada do Postgres e publicou o evento de conclusão.');
+    } finally {
+      // Limpeza da fila temporária de observação, independentemente do resultado do teste.
+      await fetch(`${RABBITMQ_MGMT_BASE}/queues/%2f/${tmpQueue}`, {
+        method: 'DELETE',
+        headers: { Authorization: RABBITMQ_MGMT_AUTH }
+      });
+    }
+  });
+
+  test('T013 - crew-worker (Python/CrewAI) executa job real usando agente mockado seedado (piso)', async () => {
+    if (config.embeddingProvider === 'real' && !config.vertexAiApiKey && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      console.log('⚠️ Provedor configurado como REAL, mas credenciais ausentes. Ignorando teste.');
+      return;
+    }
+
+    // Dispatch real (issue #118): ExecutionController.submitExecution publica
+    // {execution_id, conversation_id, agent_id, tenant_id, prompt_final, manifest_config?}
+    // na routing key "agent.execution.jobs" (RabbitMQConfig.QUEUE_JOBS/ROUTING_KEY_JOBS).
+    // Essa é a MESMA fila consumida pelo crew-worker Python
+    // (python-services/crew-worker/src/main.py: basic_consume(queue="agent.execution.jobs")),
+    // não pelo rag-worker (que escuta "agent.retrieval.queue" / "agent.retrieval.requested",
+    // usado hoje apenas no sub-fluxo de delegação multi-agente do CrewAiRuntimeAdapter).
+    //
+    // Para exercitar esse caminho com um agente CrewAI real (mockado via
+    // CREW_WORKER_MODE=mock - runtime/crewai_adapter.py troca o LLM Vertex AI por MockLLM),
+    // semeamos diretamente uma linha em `agents` com o mesmo texto de
+    // mock_agents/piso/instructions.md usado por seed_mock_agents.py (um dos 4 agentes mock
+    // do MVP), em vez de repetir o fluxo de upload de ZIP multipart em Node - consistente com
+    // a orientação de adicionar apenas o setup mínimo necessário, como já é feito para
+    // documents/users nos testes T005/T006.
+    const agentId = '2f5c9e02-7a4b-4dfb-9e60-2a139c0d55d4';
+    const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
+
+    console.log('Passo 1: Semeando agente CrewAI mockado (piso) diretamente no PostgreSQL...');
+    const pisoInstructionsPath = path.resolve(
+      process.cwd(),
+      'python-services/crew-worker/src/mock_agents/piso/instructions.md'
+    );
+    const pisoInstructions = fs.readFileSync(pisoInstructionsPath, 'utf8');
+
+    await dbClient.query(
+      `INSERT INTO agents (id, tenant_id, name, system_instructions, status, tag)
+       VALUES ($1, $2, $3, $4, 'PUBLISHED', 'piso')`,
+      [agentId, tenantId, 'Agente de Piso E2E', pisoInstructions]
+    );
+
+    console.log('Passo 2: Enviando requisição de execução referenciando o agentId real seedado...');
+    const chatReq = await fetch(`${config.backendUrl}/api/executions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'Calcule a especificação de piso para uma cabine comercial de 630kg, 1100x1400mm.',
+        tenantId,
+        agentId
+      })
+    });
+
+    assert.strictEqual(chatReq.status, 200, 'Falha ao iniciar execução via crew-worker com agente seedado (piso).');
+    const chatPayload = await chatReq.json();
+    const executionId = chatPayload.executionId;
+    assert.ok(executionId, 'Erro: executionId não retornado pelo backend.');
+    assert.strictEqual(
+      chatPayload.agentId,
+      agentId,
+      'Erro: o dispatch não propagou o agentId seedado (piso) para o payload de execução.'
+    );
+
+    console.log(`Passo 3: Polling da execução ${executionId} processada pelo crew-worker (CREW_WORKER_MODE=mock)...`);
+    let completed = false;
+    let finalOutput = '';
+    const maxAttempts = 20;
+    for (let i = 0; i < maxAttempts; i++) {
+      const res = await fetch(`${config.backendUrl}/api/executions/${executionId}`);
+      if (res.status === 200) {
+        const payload = await res.json();
+        console.log(`Verificação ${i + 1}/${maxAttempts}: Status = ${payload.status}`);
+        if (payload.status === 'COMPLETED') {
+          completed = true;
+          finalOutput = payload.output;
+          break;
+        }
+        if (payload.status === 'FAILED') {
+          assert.fail(`A execução via agente CrewAI mockado (piso) falhou: ${payload.errorMessage}`);
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    assert.ok(completed, 'Erro: a execução via crew-worker (agente piso) não transicionou para COMPLETED.');
+    assert.ok(finalOutput && finalOutput.length > 0, 'Erro: crew-worker não retornou resposta para o agente piso.');
+
+    console.log('Passo 4: Confirmando no Postgres que o crew-worker de fato processou com o agent_id seedado...');
+    const execRes = await dbClient.query('SELECT agent_id FROM agent_executions WHERE id = $1', [executionId]);
+    assert.strictEqual(
+      execRes.rows[0]?.agent_id,
+      agentId,
+      'Erro: agent_executions.agent_id não corresponde ao agente piso seedado.'
+    );
+
+    console.log('🟢 crew-worker processou execução real via agente CrewAI mockado (piso), dispatch ponta a ponta validado.');
+  });
+
   test('T009 - Teardown / Limpeza pós-teste robusta', async () => {
     console.log('Passo 1: Executando limpeza dos dados de teste criados no PostgreSQL...');
 
@@ -315,6 +550,13 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
 
     // Limpar o usuário de teste
     await dbClient.query("DELETE FROM users WHERE username = 'admin_e2e'");
+
+    // Limpar o agente CrewAI mockado (piso) seedado pelo teste T013. FK de
+    // conversations/documents para agents é ON DELETE SET NULL, então a remoção é segura
+    // mesmo com conversas já criadas apontando para este agente.
+    const pisoAgentId = '2f5c9e02-7a4b-4dfb-9e60-2a139c0d55d4';
+    const delAgentRes = await dbClient.query('DELETE FROM agents WHERE id = $1', [pisoAgentId]);
+    console.log(`Linhas de agente (piso E2E) deletadas: ${delAgentRes.rowCount}`);
 
     // Validar se chunks sumiram
     const chunksCount = await dbClient.query('SELECT count(*) FROM document_chunks WHERE document_id = $1', [docId]);
