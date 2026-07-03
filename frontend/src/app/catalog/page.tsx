@@ -6,6 +6,7 @@ import { AgentUploadManager } from '../../features/admin/components/AgentUploadM
 import { Search, Pencil, Check, X, PowerOff, Trash2 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
+import { validateAgentZipFileName } from '../../features/admin/agentUploadValidation';
 
 interface Agent {
   id: string;
@@ -81,11 +82,24 @@ export default function CatalogPage() {
 
   const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
-    if (selectedFile && !selectedFile.name.endsWith('.zip')) {
-      setActionError('O arquivo do script deve ser um ZIP (.zip).');
-      return;
+    if (selectedFile) {
+      const validationError = validateAgentZipFileName(selectedFile.name);
+      if (validationError) {
+        setActionError(validationError);
+        return;
+      }
     }
     setEditFile(selectedFile ?? null);
+  };
+
+  const extractErrorMessage = async (res: Response): Promise<string> => {
+    try {
+      const data = await res.json();
+      if (data?.error) return data.error;
+    } catch {
+      // resposta sem corpo JSON; usa fallback abaixo
+    }
+    return `Status ${res.status}`;
   };
 
   const saveEdit = async (id: string) => {
@@ -98,7 +112,7 @@ export default function CatalogPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editState),
       });
-      if (!res.ok) throw new Error(`Status ${res.status}`);
+      if (!res.ok) throw new Error(await extractErrorMessage(res));
       let updated: Agent = await res.json();
 
       if (editFile) {
@@ -108,7 +122,7 @@ export default function CatalogPage() {
           method: 'PUT',
           body: formData,
         });
-        if (!packageRes.ok) throw new Error(`Status ${packageRes.status}`);
+        if (!packageRes.ok) throw new Error(await extractErrorMessage(packageRes));
         updated = await packageRes.json();
       }
 
@@ -117,7 +131,7 @@ export default function CatalogPage() {
       setEditFile(null);
     } catch (err) {
       console.error('Erro ao salvar agente:', err);
-      setActionError('Falha ao salvar as alterações do agente.');
+      setActionError(err instanceof Error ? err.message : 'Falha ao salvar as alterações do agente.');
     } finally {
       setActionLoading(null);
     }
