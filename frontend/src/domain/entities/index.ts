@@ -10,6 +10,29 @@ export interface User {
   role?: 'ROLE_USER' | 'ROLE_ADMIN';
 }
 
+export interface UserSession {
+  id: string; // UUID
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: string | null;
+  lastActiveAt: string | null;
+}
+
+export interface UserProfile {
+  id: string; // UUID
+  username: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  jobTitle: string | null;
+  avatarUrl: string | null;
+  status: string;
+  tenantId: string;
+  createdAt: string | null;
+  lastLogin: string | null;
+  roles: string[];
+}
+
 export interface RetrievalSource {
   documentId: string | null;
   documentName: string | null;

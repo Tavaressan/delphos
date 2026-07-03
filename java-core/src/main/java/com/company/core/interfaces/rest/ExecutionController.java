@@ -169,6 +169,28 @@ public class ExecutionController {
         }
     }
 
+    @GetMapping
+    public ResponseEntity<java.util.List<Map<String, Object>>> listExecutions(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+        UUID tenantId = (tenantIdStr != null && !tenantIdStr.isEmpty())
+                ? UUID.fromString(tenantIdStr)
+                : UUID.fromString("00000000-0000-0000-0000-000000000000");
+
+        java.util.List<Map<String, Object>> response = executionRepository.findByTenantId(tenantId)
+                .stream()
+                .map(execution -> {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("executionId", execution.getId().toString());
+                    item.put("status", execution.getStatus());
+                    item.put("prompt", execution.getPromptFinal());
+                    item.put("startedAt", execution.getStartedAt());
+                    item.put("finishedAt", execution.getFinishedAt());
+                    return item;
+                })
+                .collect(java.util.stream.Collectors.toList());
+
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getExecution(@PathVariable UUID id) {
         AgentExecution execution = executionRepository.findById(id).orElse(null);
