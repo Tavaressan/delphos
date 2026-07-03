@@ -80,21 +80,24 @@ public class ExecutionController {
             }
 
             String agentIdStr = request.get("agentId");
-            Agent agent = null;
-            if (agentIdStr != null && !agentIdStr.isEmpty()) {
-                agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
-                if (agent == null) {
-                    Map<String, Object> errorResp = new HashMap<>();
-                    errorResp.put("error", "Agent not found: " + agentIdStr);
-                    return ResponseEntity.status(404).body(errorResp);
-                }
+            if (agentIdStr == null || agentIdStr.isEmpty()) {
+                Map<String, Object> errorResp = new HashMap<>();
+                errorResp.put("error", "agentId é obrigatório");
+                return ResponseEntity.badRequest().body(errorResp);
+            }
+
+            Agent agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
+            if (agent == null) {
+                Map<String, Object> errorResp = new HashMap<>();
+                errorResp.put("error", "Agent not found: " + agentIdStr);
+                return ResponseEntity.status(404).body(errorResp);
             }
 
             if (conversation == null) {
                 conversation = new Conversation();
                 conversation.setUser(user);
                 conversation.setTenantId(tenantId);
-                conversation.setTitle(agent != null ? "Chat com " + agent.getName() : "Conversa de Teste RAG");
+                conversation.setTitle("Chat com " + agent.getName());
                 conversation.setAgent(agent);
                 conversation = conversationRepository.save(conversation);
             }
@@ -110,7 +113,7 @@ public class ExecutionController {
             AgentExecution execution = new AgentExecution();
             execution.setConversation(conversation);
             
-            UUID actualAgentId = (agent != null) ? agent.getId() : UUID.randomUUID();
+            UUID actualAgentId = agent.getId();
             execution.setAgentId(actualAgentId);
             execution.setTenantId(tenantId);
             execution.setStatus("REQUESTED");

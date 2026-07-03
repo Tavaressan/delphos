@@ -28,8 +28,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 
 @ExtendWith(MockitoExtension.class)
 class ExecutionControllerTest {
@@ -101,6 +103,18 @@ class ExecutionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
 
+        verify(executionRepository, never()).save(any());
+    }
+
+    @Test
+    void submitExecution_withoutAgentId_returns400AndDoesNotPublishToRabbit() throws Exception {
+        mockMvc.perform(post("/api/executions")
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"prompt\":\"teste sem agentId\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("agentId é obrigatório"));
+
+        verify(rabbitTemplate, never()).convertAndSend(any(String.class), any(String.class), any(Object.class));
         verify(executionRepository, never()).save(any());
     }
 
