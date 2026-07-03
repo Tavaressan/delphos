@@ -42,7 +42,7 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-28 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
+    <header className="h-14 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
       <div className="flex items-center gap-3">
         {/* Hamburger — mobile only */}
         <button
