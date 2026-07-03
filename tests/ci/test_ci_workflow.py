@@ -169,6 +169,13 @@ def test_e2e_integration_job_exists_and_runs_with_mock_llm():
         "para NAO mesclar o docker-compose.override.yml (que forca "
         "EMBEDDING_PROVIDER=real para desenvolvimento local)"
     )
+    assert "docker-compose.ci-ports.yml" in run_steps, (
+        "job 'e2e-integration' precisa republicar as portas de core/"
+        "embedding-service/frontend (docker-compose.ci-ports.yml), ja que "
+        "usar so '-f docker-compose.yml' tambem remove os port mappings que "
+        "so existem no override de dev -- sem isso a suite Node.js (rodando "
+        "no host runner) nao alcanca esses servicos"
+    )
     assert "EMBEDDING_PROVIDER=mock" in run_steps
     assert "LLM_PROVIDER=mock" in run_steps
     assert "CREW_WORKER_MODE=mock" in run_steps
