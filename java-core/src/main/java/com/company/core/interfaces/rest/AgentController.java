@@ -3,12 +3,14 @@ package com.company.core.interfaces.rest;
 import com.company.core.application.AgentService;
 import com.company.core.application.AuditService;
 import com.company.core.domain.entities.Agent;
+import com.company.core.domain.repositories.AgentExecutionRepository;
 import com.company.core.domain.repositories.AgentRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,13 +20,20 @@ import java.util.UUID;
 @RequestMapping("/api")
 public class AgentController {
 
+    private static final List<String> RUNNING_EXECUTION_STATUSES = Arrays.asList(
+            "REQUESTED", "QUEUED", "DISPATCHED", "STARTED", "THINKING",
+            "TOOL_RUNNING", "WAITING_TOOL", "RETRIEVAL_RUNNING");
+
     private final AgentService agentService;
     private final AgentRepository agentRepository;
+    private final AgentExecutionRepository agentExecutionRepository;
     private final AuditService auditService;
 
-    public AgentController(AgentService agentService, AgentRepository agentRepository, AuditService auditService) {
+    public AgentController(AgentService agentService, AgentRepository agentRepository,
+                            AgentExecutionRepository agentExecutionRepository, AuditService auditService) {
         this.agentService = agentService;
         this.agentRepository = agentRepository;
+        this.agentExecutionRepository = agentExecutionRepository;
         this.auditService = auditService;
     }
 
@@ -56,7 +65,7 @@ public class AgentController {
         UUID tenantId = (tenantIdStr != null && !tenantIdStr.isEmpty())
                 ? UUID.fromString(tenantIdStr)
                 : UUID.fromString("00000000-0000-0000-0000-000000000000");
-        List<Agent> agents = agentRepository.findByTenantId(tenantId);
+        List<Agent> agents = agentRepository.findByTenantIdAndStatusNot(tenantId, "INACTIVE");
         return ResponseEntity.ok(agents);
     }
 
@@ -100,6 +109,24 @@ public class AgentController {
     @PatchMapping("/admin/agents/{id}/deactivate")
     public ResponseEntity<?> deactivateAgent(@PathVariable UUID id) {
         return changeStatus(id, "INACTIVE", "DEACTIVATE_AGENT");
+    }
+
+    @DeleteMapping("/admin/agents/{id}")
+    public ResponseEntity<?> deleteAgent(@PathVariable UUID id) {
+        Agent agent = agentRepository.findById(id).orElse(null);
+        if (agent == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        if (agentExecutionRepository.existsByAgentIdAndStatusIn(id, RUNNING_EXECUTION_STATUSES)) {
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", "Não é possível excluir o agente: há execuções em andamento.");
+            return ResponseEntity.status(409).body(error);
+        }
+
+        agentRepository.delete(agent);
+        auditService.logAction("DELETE_AGENT", "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}", agent.getTenantId());
+        return ResponseEntity.noContent().build();
     }
 
     private ResponseEntity<?> changeStatus(UUID id, String newStatus, String auditAction) {
