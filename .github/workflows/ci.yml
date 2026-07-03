@@ -468,6 +468,13 @@ jobs:
       - name: Run E2E integration suite (mock LLM)
         env:
           SKIP_RESET: "true"
+          # .env.example define NEXT_PUBLIC_BACKEND_URL=http://localhost:8000,
+          # que é a porta do embedding-service, não do core (Spring Boot, porta
+          # 8080). tests/e2e/config.js só preenche uma chave do .env se ela
+          # ainda não estiver em process.env, então essa env var aqui tem
+          # prioridade sobre a linha (incorreta) do .env.example sem precisar
+          # editar esse arquivo compartilhado.
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
         run: npm run test:e2e
 
       - name: Dump container logs on failure
