@@ -194,6 +194,87 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log('🟢 Chunks vetoriais e dimensões validados com sucesso.');
   });
 
+  test('T010 - Regressão #117: arquivo ausente no MinIO deve falhar a ingestão (FAILED + processing_error), sem mascarar com texto mock', async () => {
+    // 1. Inserir documento fictício apontando para um arquivo que não existe
+    // nem no MinIO nem localmente no ingestion-worker.
+    const docId = 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380b01';
+    const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
+    const missingFilePath = 'arquivo_que_nao_existe_no_minio_117.pdf';
+
+    console.log(`Passo 1: Inserindo documento de teste com ID ${docId} apontando para arquivo inexistente...`);
+
+    await dbClient.query(`
+      INSERT INTO users (id, username, email, password_hash, first_name, last_name, status)
+      VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a00', 'admin_e2e', 'admin_e2e@company.com', 'hash', 'Admin', 'E2E', 'ACTIVE')
+      ON CONFLICT (username) DO NOTHING
+    `);
+
+    const userRes = await dbClient.query("SELECT id FROM users WHERE username = 'admin_e2e'");
+    const userId = userRes.rows[0].id;
+
+    await dbClient.query(`
+      INSERT INTO documents (id, name, file_path, file_size, file_type, created_by, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [docId, 'documento_ausente_117.pdf', missingFilePath, 1024, 'pdf', userId, 'UPLOADING']);
+
+    // 2. Publicar mensagem para o RabbitMQ via API de Gerenciamento HTTP
+    console.log('Passo 2: Publicando mensagem de ingestão referenciando arquivo ausente...');
+    const rabbitUrl = 'http://localhost:15672/api/exchanges/%2f/amq.default/publish';
+    const auth = 'Basic ' + Buffer.from('guest:guest').toString('base64');
+
+    const rabbitPublishRes = await fetch(rabbitUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': auth
+      },
+      body: JSON.stringify({
+        properties: { delivery_mode: 2 },
+        routing_key: 'document.ingestion.jobs',
+        payload: JSON.stringify({
+          document_id: docId,
+          file_path: missingFilePath,
+          tenant_id: tenantId,
+          file_type: 'pdf'
+        }),
+        payload_encoding: 'string'
+      })
+    });
+
+    assert.strictEqual(rabbitPublishRes.status, 200, 'Falha ao enviar mensagem de ingestão ao RabbitMQ via API de Gerenciamento.');
+
+    // 3. Fazer polling no banco verificando a transição de status para FAILED
+    // com processing_error populado (nunca deve virar INDEXED com texto mock).
+    console.log('Passo 3: Monitorando alteração de status do documento no banco...');
+    let failed = false;
+    let lastStatus = null;
+    let lastError = null;
+    const maxPollAttempts = 20;
+    for (let i = 0; i < maxPollAttempts; i++) {
+      const res = await dbClient.query('SELECT status, processing_error FROM documents WHERE id = $1', [docId]);
+      lastStatus = res.rows[0]?.status;
+      lastError = res.rows[0]?.processing_error;
+
+      console.log(`Verificação ${i + 1}/${maxPollAttempts}: Status = ${lastStatus}`);
+      if (lastStatus === 'FAILED') {
+        failed = true;
+        break;
+      }
+      if (lastStatus === 'INDEXED') {
+        assert.fail('O documento com arquivo ausente foi indexado com sucesso — o fallback de desenvolvimento mascarou a falha (regressão da issue #117).');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    assert.ok(failed, `Erro: O documento com arquivo ausente não transicionou para FAILED no tempo esperado (último status: ${lastStatus}).`);
+    assert.ok(lastError && lastError.length > 0, 'Erro: processing_error deveria estar populado para o documento com arquivo ausente.');
+    console.log(`🟢 Documento com arquivo ausente corretamente marcado como FAILED. processing_error: "${lastError}"`);
+
+    // 4. Limpeza
+    await dbClient.query('DELETE FROM documents WHERE id = $1', [docId]);
+  });
+
   test('T007 e T008 - Teste do Endpoint de Chat / RAG de ponta a ponta', async () => {
     // Validar se provedor real exige chaves de acesso
     if (config.embeddingProvider === 'real' && !config.vertexAiApiKey && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
