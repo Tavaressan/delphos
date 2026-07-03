@@ -161,4 +161,40 @@ public class AgentServiceTest {
         assertThat(result.getSystemInstructions()).isEqualTo(mdContent);
         assertThat(result.getManifestConfig()).isNull();
     }
+
+    @Test
+    void updateAgentPackage_replacesInstructionsAndManifestOfExistingAgent() throws Exception {
+        // Arrange
+        UUID tenantId = UUID.randomUUID();
+        Agent existingAgent = new Agent();
+        existingAgent.setId(UUID.randomUUID());
+        existingAgent.setName("Agente Existente");
+        existingAgent.setTenantId(tenantId);
+        existingAgent.setSystemInstructions("instrucoes antigas");
+
+        String newMdContent = "# Novas instrucoes";
+        String newYamlContent = "schema_version: 2";
+        byte[] zipBytes = createMockZip(newMdContent, newYamlContent);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", zipBytes);
+
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
+        when(agentRepository.save(any(Agent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
+        });
+
+        // Act
+        Agent result = agentService.updateAgentPackage(existingAgent, file);
+
+        // Assert
+        assertThat(result.getSystemInstructions()).isEqualTo(newMdContent);
+        assertThat(result.getManifestConfig()).isEqualTo(newYamlContent);
+        assertThat(result.getZipPath()).contains(existingAgent.getId().toString());
+    }
 }

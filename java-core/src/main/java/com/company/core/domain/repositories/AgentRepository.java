@@ -9,4 +9,5 @@ import java.util.UUID;
 @Repository
 public interface AgentRepository extends JpaRepository<Agent, UUID> {
     List<Agent> findByTenantId(UUID tenantId);
+    List<Agent> findByTenantIdAndStatusNot(UUID tenantId, String status);
 }

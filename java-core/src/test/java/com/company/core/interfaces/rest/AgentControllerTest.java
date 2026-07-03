@@ -3,6 +3,7 @@ package com.company.core.interfaces.rest;
 import com.company.core.application.AgentService;
 import com.company.core.application.AuditService;
 import com.company.core.domain.entities.Agent;
+import com.company.core.domain.repositories.AgentExecutionRepository;
 import com.company.core.domain.repositories.AgentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +19,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -35,19 +40,23 @@ class AgentControllerTest {
     private AgentRepository agentRepository;
 
     @Mock
+    private AgentExecutionRepository agentExecutionRepository;
+
+    @Mock
     private AuditService auditService;
 
     private MockMvc mockMvc;
 
     @BeforeEach
     void setup() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new AgentController(agentService, agentRepository, auditService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                new AgentController(agentService, agentRepository, agentExecutionRepository, auditService)).build();
     }
 
     @Test
     void listAgents_withNoTenantId_returnsEmptyList() throws Exception {
         UUID defaultTenant = UUID.fromString("00000000-0000-0000-0000-000000000000");
-        when(agentRepository.findByTenantId(defaultTenant)).thenReturn(List.of());
+        when(agentRepository.findByTenantIdAndStatusNot(defaultTenant, "INACTIVE")).thenReturn(List.of());
 
         mockMvc.perform(get("/api/agents"))
                 .andExpect(status().isOk())
@@ -61,11 +70,28 @@ class AgentControllerTest {
         agent.setId(UUID.randomUUID());
         agent.setName("Agente RAG");
         agent.setTenantId(tenantId);
-        when(agentRepository.findByTenantId(tenantId)).thenReturn(List.of(agent));
+        when(agentRepository.findByTenantIdAndStatusNot(tenantId, "INACTIVE")).thenReturn(List.of(agent));
 
         mockMvc.perform(get("/api/agents").param("tenantId", tenantId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Agente RAG"));
+    }
+
+    @Test
+    void listAgents_excludesInactiveAgents() throws Exception {
+        UUID tenantId = UUID.randomUUID();
+        Agent activeAgent = new Agent();
+        activeAgent.setId(UUID.randomUUID());
+        activeAgent.setName("Agente Ativo");
+        activeAgent.setTenantId(tenantId);
+        activeAgent.setStatus("PUBLISHED");
+        // Repository is expected to filter INACTIVE agents out at the query level.
+        when(agentRepository.findByTenantIdAndStatusNot(tenantId, "INACTIVE")).thenReturn(List.of(activeAgent));
+
+        mockMvc.perform(get("/api/agents").param("tenantId", tenantId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Agente Ativo"));
     }
 
     @Test
@@ -160,5 +186,92 @@ class AgentControllerTest {
         mockMvc.perform(patch("/api/admin/agents/" + id + "/deactivate"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("INACTIVE"));
+    }
+
+    @Test
+    void deleteAgent_withValidIdAndNoRunningExecutions_deletesAndReturnsNoContent() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent agent = new Agent();
+        agent.setId(id);
+        agent.setName("Agente a Excluir");
+        agent.setTenantId(UUID.randomUUID());
+        agent.setStatus("PUBLISHED");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(agent));
+        when(agentExecutionRepository.existsByAgentIdAndStatusIn(eq(id), anyList())).thenReturn(false);
+
+        mockMvc.perform(delete("/api/admin/agents/" + id))
+                .andExpect(status().isNoContent());
+
+        verify(agentRepository).delete(agent);
+    }
+
+    @Test
+    void deleteAgent_withUnknownId_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(agentRepository.findById(id)).thenReturn(Optional.empty());
+
+        mockMvc.perform(delete("/api/admin/agents/" + id))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void updateAgentPackage_withValidId_returnsUpdatedAgent() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent existing = new Agent();
+        existing.setId(id);
+        existing.setName("Agente Existente");
+        existing.setTenantId(UUID.randomUUID());
+        existing.setStatus("PUBLISHED");
+
+        Agent updated = new Agent();
+        updated.setId(id);
+        updated.setName("Agente Existente");
+        updated.setTenantId(existing.getTenantId());
+        updated.setStatus("PUBLISHED");
+        updated.setSystemInstructions("novas instrucoes");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(existing));
+        when(agentService.updateAgentPackage(any(), any())).thenReturn(updated);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", "zip-content".getBytes());
+
+        mockMvc.perform(multipart("/api/admin/agents/" + id + "/package")
+                        .file(file)
+                        .with(req -> { req.setMethod("PUT"); return req; }))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.systemInstructions").value("novas instrucoes"));
+    }
+
+    @Test
+    void updateAgentPackage_withUnknownId_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(agentRepository.findById(id)).thenReturn(Optional.empty());
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", "zip-content".getBytes());
+
+        mockMvc.perform(multipart("/api/admin/agents/" + id + "/package")
+                        .file(file)
+                        .with(req -> { req.setMethod("PUT"); return req; }))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteAgent_withRunningExecutions_returns409() throws Exception {
+        UUID id = UUID.randomUUID();
+        Agent agent = new Agent();
+        agent.setId(id);
+        agent.setName("Agente em Execucao");
+        agent.setTenantId(UUID.randomUUID());
+        agent.setStatus("PUBLISHED");
+
+        when(agentRepository.findById(id)).thenReturn(Optional.of(agent));
+        when(agentExecutionRepository.existsByAgentIdAndStatusIn(eq(id), anyList())).thenReturn(true);
+
+        mockMvc.perform(delete("/api/admin/agents/" + id))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").exists());
     }
 }
