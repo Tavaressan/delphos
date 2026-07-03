@@ -203,6 +203,7 @@ public class StepDefinitions {
 
         AgentExecution exec = new AgentExecution();
         exec.setConversation(conv);
+        exec.setTenantId(conv.getTenantId());
         exec.setAgentId(UUID.randomUUID());
         exec.setStatus("STARTED");
         exec.setPromptFinal("test prompt");
