@@ -353,11 +353,16 @@ class CrewAiRuntimeAdapter:
 
         # 4. Inicializar CrewAI Agent com ferramentas dinâmicas
         allow_delegation = False
+        allow_script_execution = False
         if self.manifest_config:
             try:
                 manifest = yaml.safe_load(self.manifest_config)
                 settings = manifest.get("agent_settings", {})
                 allow_delegation = settings.get("allow_delegation", False)
+                # Issue #111: execução de scripts é opt-in por manifest — supera a
+                # ausência travada em #101/#107, mas mantém a capacidade desligada
+                # por padrão (least privilege).
+                allow_script_execution = settings.get("allow_script_execution", False)
             except Exception as ex:
                 print(f"[CrewAiRuntimeAdapter] Error parsing manifest_config: {ex}")
 
@@ -575,6 +580,21 @@ class CrewAiRuntimeAdapter:
             tools.append(calculate_floor_specs)
         elif self._agent_tag == "orquestrador":
             tools.append(route_to_agent)
+
+        if allow_script_execution:
+            print(
+                "[CrewAiRuntimeAdapter] Script execution enabled via manifest. "
+                "Instantiating SandboxedScriptTool..."
+            )
+            from tools.sandboxed_script_tool import SandboxedScriptTool
+
+            tools.append(
+                SandboxedScriptTool(
+                    channel=self.channel,
+                    execution_id=self.execution_id,
+                    tenant_id=self.tenant_id,
+                )
+            )
 
         agent = Agent(
             role=self._agent_role,
