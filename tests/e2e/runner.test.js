@@ -1,8 +1,13 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert';
 import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from './config.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const { Client } = pg;
 
@@ -113,6 +118,21 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     const docId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a99';
     const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
 
+    // Desde a correção da issue #117, o ingestion-worker não tem mais um
+    // fallback silencioso para arquivo ausente — ele precisa encontrar o
+    // arquivo de verdade (MinIO ou, como aqui, leitura local). O diretório
+    // rust-services/ é montado como /app dentro do container do
+    // ingestion-worker (docker-compose.yml), então um arquivo escrito aqui
+    // no host é lido pelo fallback legítimo de leitura local
+    // (std::fs::read), sem precisar subir nada no MinIO nem usar
+    // INGESTION_DEV_FALLBACK.
+    const fileName = 'e2e_test_doc_T005.txt';
+    const localFilePath = path.resolve(__dirname, '../../rust-services', fileName);
+    fs.writeFileSync(
+      localFilePath,
+      'Texto de teste E2E para validar chunking, geração de embeddings e persistência no pgvector.'
+    );
+
     console.log(`Passo 1: Inserindo documento de teste com ID ${docId}...`);
 
     // Assegurar usuário padrão admin para o FK
@@ -128,70 +148,74 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     await dbClient.query(`
       INSERT INTO documents (id, name, file_path, file_size, file_type, created_by, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
-    `, [docId, 'e2e_test_doc.pdf', 'e2e_test_doc.pdf', 1024, 'pdf', userId, 'UPLOADING']);
+    `, [docId, fileName, fileName, 1024, 'txt', userId, 'UPLOADING']);
 
-    // 2. Publicar mensagem para o RabbitMQ via API de Gerenciamento HTTP
-    console.log('Passo 2: Publicando mensagem de ingestão no RabbitMQ...');
-    const rabbitUrl = 'http://localhost:15672/api/exchanges/%2f/amq.default/publish';
-    const auth = 'Basic ' + Buffer.from('guest:guest').toString('base64');
+    try {
+      // 2. Publicar mensagem para o RabbitMQ via API de Gerenciamento HTTP
+      console.log('Passo 2: Publicando mensagem de ingestão no RabbitMQ...');
+      const rabbitUrl = 'http://localhost:15672/api/exchanges/%2f/amq.default/publish';
+      const auth = 'Basic ' + Buffer.from('guest:guest').toString('base64');
 
-    const rabbitPublishRes = await fetch(rabbitUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': auth
-      },
-      body: JSON.stringify({
-        properties: { delivery_mode: 2 },
-        routing_key: 'document.ingestion.jobs',
-        payload: JSON.stringify({
-          document_id: docId,
-          file_path: 'e2e_test_doc.pdf',
-          tenant_id: tenantId,
-          file_type: 'pdf'
-        }),
-        payload_encoding: 'string'
-      })
-    });
+      const rabbitPublishRes = await fetch(rabbitUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': auth
+        },
+        body: JSON.stringify({
+          properties: { delivery_mode: 2 },
+          routing_key: 'document.ingestion.jobs',
+          payload: JSON.stringify({
+            document_id: docId,
+            file_path: fileName,
+            tenant_id: tenantId,
+            file_type: 'txt'
+          }),
+          payload_encoding: 'string'
+        })
+      });
 
-    assert.strictEqual(rabbitPublishRes.status, 200, 'Falha ao enviar mensagem de ingestão ao RabbitMQ via API de Gerenciamento.');
+      assert.strictEqual(rabbitPublishRes.status, 200, 'Falha ao enviar mensagem de ingestão ao RabbitMQ via API de Gerenciamento.');
 
-    // 3. Fazer polling no banco verificando a transição de status para INDEXED
-    console.log('Passo 3: Monitorando alteração de status do documento no banco...');
-    let indexed = false;
-    const maxPollAttempts = 15;
-    for (let i = 0; i < maxPollAttempts; i++) {
-      const res = await dbClient.query('SELECT status, processing_error FROM documents WHERE id = $1', [docId]);
-      const status = res.rows[0]?.status;
-      const error = res.rows[0]?.processing_error;
+      // 3. Fazer polling no banco verificando a transição de status para INDEXED
+      console.log('Passo 3: Monitorando alteração de status do documento no banco...');
+      let indexed = false;
+      const maxPollAttempts = 15;
+      for (let i = 0; i < maxPollAttempts; i++) {
+        const res = await dbClient.query('SELECT status, processing_error FROM documents WHERE id = $1', [docId]);
+        const status = res.rows[0]?.status;
+        const error = res.rows[0]?.processing_error;
 
-      console.log(`Verificação ${i + 1}/${maxPollAttempts}: Status = ${status}`);
-      if (status === 'INDEXED') {
-        indexed = true;
-        break;
+        console.log(`Verificação ${i + 1}/${maxPollAttempts}: Status = ${status}`);
+        if (status === 'INDEXED') {
+          indexed = true;
+          break;
+        }
+        if (status === 'FAILED') {
+          assert.fail(`O processamento do documento falhou com erro: ${error}`);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      if (status === 'FAILED') {
-        assert.fail(`O processamento do documento falhou com erro: ${error}`);
-      }
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      assert.ok(indexed, 'Erro: O status do documento de teste não transicionou para INDEXED no tempo esperado.');
+
+      // 4. Validar chunks de vetores no pgvector
+      console.log('Passo 4: Validando persistência e dimensionalidade dos vetores no PostgreSQL...');
+      const chunksRes = await dbClient.query('SELECT id, embedding::text FROM document_chunks WHERE document_id = $1', [docId]);
+
+      assert.ok(chunksRes.rows.length > 0, 'Erro: Nenhum chunk vetorial foi localizado no banco.');
+
+      // Obter o vetor e verificar o tamanho
+      const rawVector = chunksRes.rows[0].embedding;
+      // O formato retornado do cast ::text é: [0.123, -0.456, ...]
+      const vectorElements = rawVector.replace('[', '').replace(']', '').split(',');
+
+      assert.strictEqual(vectorElements.length, 768, `Erro: A dimensionalidade do vetor deveria ser 768, mas retornou ${vectorElements.length}.`);
+      console.log('🟢 Chunks vetoriais e dimensões validados com sucesso.');
+    } finally {
+      fs.rmSync(localFilePath, { force: true });
     }
-
-    assert.ok(indexed, 'Erro: O status do documento de teste não transicionou para INDEXED no tempo esperado.');
-
-    // 4. Validar chunks de vetores no pgvector
-    console.log('Passo 4: Validando persistência e dimensionalidade dos vetores no PostgreSQL...');
-    const chunksRes = await dbClient.query('SELECT id, embedding::text FROM document_chunks WHERE document_id = $1', [docId]);
-
-    assert.ok(chunksRes.rows.length > 0, 'Erro: Nenhum chunk vetorial foi localizado no banco.');
-
-    // Obter o vetor e verificar o tamanho
-    const rawVector = chunksRes.rows[0].embedding;
-    // O formato retornado do cast ::text é: [0.123, -0.456, ...]
-    const vectorElements = rawVector.replace('[', '').replace(']', '').split(',');
-
-    assert.strictEqual(vectorElements.length, 768, `Erro: A dimensionalidade do vetor deveria ser 768, mas retornou ${vectorElements.length}.`);
-    console.log('🟢 Chunks vetoriais e dimensões validados com sucesso.');
   });
 
   test('T007 e T008 - Teste do Endpoint de Chat / RAG de ponta a ponta', async () => {
