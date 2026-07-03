@@ -59,7 +59,7 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-28 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
+    <header className="h-14 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
       <div className="flex items-center gap-3">
         {/* Hamburger — mobile only */}
         <button
@@ -70,11 +70,12 @@ export const Header: React.FC = () => {
           <Menu className="w-5 h-5" />
         </button>
         {/* Logo em cor sólida (mesma cor do título, text-primary) via mask-image, pois é um PNG raster sem suporte a currentColor.
-            Em dark mode, a cor sólida vira branca — substitui o antigo dark:brightness-0 dark:invert sem regressão. */}
+            Em dark mode, a cor sólida vira branca — substitui o antigo dark:brightness-0 dark:invert sem regressão.
+            Altura reduzida para caber no header h-14 (56px) sem cortar a imagem. */}
         <div
           role="img"
           aria-label="Alfabra Logo"
-          className="h-[102px] aspect-[3856/2160] bg-primary dark:bg-white transition-colors duration-200"
+          className="h-8 aspect-[3856/2160] bg-primary dark:bg-white transition-colors duration-200"
           style={{
             WebkitMaskImage: 'url(/assets/images/LogoMarca_Alfabra.png)',
             maskImage: 'url(/assets/images/LogoMarca_Alfabra.png)',
@@ -88,7 +89,7 @@ export const Header: React.FC = () => {
         />
         <span className="hidden sm:block h-5 w-[1px] bg-border-color" />
         <h1 className="hidden sm:block text-sm font-bold tracking-wider text-primary select-none heading-font uppercase">
-          Agent Operating Platform
+          Delphos platform
         </h1>
       </div>
 
