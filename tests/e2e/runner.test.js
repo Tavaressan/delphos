@@ -250,6 +250,60 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log(`Saída do chat: "${finalOutput}"`);
   });
 
+  test('T011 - Fluxo RAG resiliente com contexto vazio (tenant sem documentos indexados)', async () => {
+    if (config.embeddingProvider === 'real' && !config.vertexAiApiKey && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      console.log('⚠️ Provedor configurado como REAL, mas credenciais ausentes. Ignorando teste.');
+      return;
+    }
+
+    console.log('Passo 1: Enviando chat para tenant sem nenhum documento indexado...');
+    const emptyTenantId = '11111111-1111-1111-1111-111111111111';
+
+    const chatReq = await fetch(`${config.backendUrl}/api/executions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        prompt: 'Existe algum documento cadastrado sobre esse assunto?',
+        tenantId: emptyTenantId
+      })
+    });
+
+    assert.strictEqual(chatReq.status, 200, 'Falha ao iniciar execução cognitiva para tenant sem documentos.');
+    const chatPayload = await chatReq.json();
+    const executionId = chatPayload.executionId;
+    assert.ok(executionId, 'Erro: executionId não retornado pelo backend.');
+
+    console.log(`Passo 2: Polling da execução cognitiva ${executionId} (contexto vazio)...`);
+
+    let completed = false;
+    let finalOutput = '';
+    const maxAttempts = 20;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      const res = await fetch(`${config.backendUrl}/api/executions/${executionId}`);
+      if (res.status === 200) {
+        const payload = await res.json();
+        console.log(`Verificação ${i + 1}/${maxAttempts}: Status = ${payload.status}`);
+        if (payload.status === 'COMPLETED') {
+          completed = true;
+          finalOutput = payload.output;
+          break;
+        }
+        if (payload.status === 'FAILED') {
+          assert.fail(`A execução com contexto vazio falhou inesperadamente: ${payload.errorMessage}`);
+        }
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    assert.ok(completed, 'Erro: execução com contexto vazio não transicionou para COMPLETED.');
+    assert.ok(finalOutput && finalOutput.length > 0, 'Erro: rag-worker não retornou resposta mesmo sem chunks recuperados.');
+
+    console.log('🟢 rag-worker responde de forma resiliente mesmo sem chunks indexados para o tenant.');
+  });
+
   test('T009 - Teardown / Limpeza pós-teste robusta', async () => {
     console.log('Passo 1: Executando limpeza dos dados de teste criados no PostgreSQL...');
 

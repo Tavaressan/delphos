@@ -138,6 +138,50 @@ def test_native_module_jobs_still_present():
         assert job_name in jobs, f"job nativo '{job_name}' nao deve ser removido"
 
 
+def test_e2e_integration_job_exists_and_runs_with_mock_llm():
+    """Deve existir um job que sobe o docker-compose completo e roda a suite
+    E2E (tests/e2e/runner.test.js) usando providers mockados de LLM, para
+    validar containers reais se comunicando entre si sem depender de
+    credenciais da Vertex AI ou de rede externa."""
+    workflow = _load_workflow()
+    jobs = workflow["jobs"]
+    assert "e2e-integration" in jobs, "job de integracao E2E via docker-compose nao encontrado"
+
+    job = jobs["e2e-integration"]
+
+    needs = job.get("needs")
+    needs_set = {needs} if isinstance(needs, str) else set(needs or [])
+    assert needs_set == {"changes"}, (
+        "job 'e2e-integration' deve depender apenas de 'changes' (rodar em "
+        "paralelo aos jobs nativos e de docker-build, nao apos eles)"
+    )
+
+    condition = job.get("if", "")
+    for name in MODULE_FILTERS:
+        assert f"needs.changes.outputs.{name}" in condition, (
+            f"job 'e2e-integration' deve rodar quando o modulo '{name}' mudar"
+        )
+
+    run_steps = " ".join(step.get("run", "") for step in job["steps"])
+
+    assert "-f docker-compose.yml" in run_steps, (
+        "job 'e2e-integration' deve usar '-f docker-compose.yml' explicito "
+        "para NAO mesclar o docker-compose.override.yml (que forca "
+        "EMBEDDING_PROVIDER=real para desenvolvimento local)"
+    )
+    assert "EMBEDDING_PROVIDER=mock" in run_steps
+    assert "LLM_PROVIDER=mock" in run_steps
+    assert "CREW_WORKER_MODE=mock" in run_steps
+    assert "npm run test:e2e" in run_steps
+
+    teardown_steps = [s for s in job["steps"] if "down" in s.get("run", "")]
+    assert teardown_steps, "job 'e2e-integration' deve derrubar a stack no final"
+    assert any(s.get("if") == "always()" for s in teardown_steps), (
+        "o teardown do docker-compose deve rodar com if: always(), mesmo se "
+        "os testes E2E falharem"
+    )
+
+
 def test_docker_build_jobs_exist_and_run_in_parallel():
     """Issue #86: deve existir ao menos um job de build de imagem Docker,
     condicionado ao path-filter corrigido e rodando em paralelo aos jobs
