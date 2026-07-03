@@ -49,6 +49,8 @@ tasks.named<Test>("test") {
 }
 
 tasks.register<Test>("integrationTest") {
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
     description = "Executa cenários BDD Cucumber com Testcontainers (pgvector/pgvector:pg16)"
     group = "verification"
     useJUnitPlatform()
