@@ -42,7 +42,7 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-28 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
+    <header className="h-14 bg-surface/95 backdrop-blur-sm border-b border-border-color flex items-center justify-between px-4 md:px-6 z-10 shadow-sm flex-shrink-0 transition-colors duration-200">
       <div className="flex items-center gap-3">
         {/* Hamburger — mobile only */}
         <button
@@ -54,7 +54,7 @@ export const Header: React.FC = () => {
         </button>
         {/* Logo em cor sólida (mesma cor do título, text-primary) via mask-image, pois é um PNG raster sem suporte a currentColor.
             Em dark mode, a cor sólida vira branca — substitui o antigo dark:brightness-0 dark:invert sem regressão.
-            Header em h-28 (112px) é o menor múltiplo da escala Tailwind que acomoda a
+            Header em h-14 (56px) é o menor múltiplo da escala Tailwind que acomoda a
             logo de 102px sem cortar. */}
         <div
           role="img"

@@ -39,13 +39,15 @@ Cargo.lock
 *.swp
 *.swo
 
+#Extension de arquivos de log
+.VSCodeCounter/
+
 # Docker
 *.log
 .env
 
 # Bloqueio absoluto de chaves de nuvem
-infrastructure/gcp/
-*.json
+infrastructure/gcp/*.json
 
 
 # Python
