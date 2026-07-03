@@ -58,7 +58,7 @@ export const Header: React.FC = () => {
         <div
           role="img"
           aria-label="Alfabra Logo"
-          className="h-8 aspect-[3856/2160] bg-primary dark:bg-white transition-colors duration-200"
+          className="h-[102px] aspect-[3856/2160] bg-primary dark:bg-white transition-colors duration-200"
           style={{
             WebkitMaskImage: 'url(/assets/images/LogoMarca_Alfabra.png)',
             maskImage: 'url(/assets/images/LogoMarca_Alfabra.png)',
