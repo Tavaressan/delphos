@@ -54,6 +54,20 @@ public class User {
     @Column(name = "updated_at")
     private Instant updatedAt = Instant.now();
 
+    @Size(max = 500)
+    @Column(name = "avatar_url")
+    private String avatarUrl;
+
+    @Size(max = 150)
+    @Column(name = "job_title")
+    private String jobTitle;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId = UUID.fromString("00000000-0000-0000-0000-000000000000");
+
+    @Column(name = "last_login")
+    private Instant lastLogin;
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
         name = "user_roles",
@@ -140,5 +154,37 @@ public class User {
 
     public void setRoles(Set<Role> roles) {
         this.roles = roles;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
+    }
+
+    public String getJobTitle() {
+        return jobTitle;
+    }
+
+    public void setJobTitle(String jobTitle) {
+        this.jobTitle = jobTitle;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
+    }
+
+    public Instant getLastLogin() {
+        return lastLogin;
+    }
+
+    public void setLastLogin(Instant lastLogin) {
+        this.lastLogin = lastLogin;
     }
 }
