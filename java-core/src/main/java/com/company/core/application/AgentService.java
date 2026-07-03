@@ -58,29 +58,69 @@ public class AgentService {
 
     @Transactional
     public Agent createAgent(String name, MultipartFile file, UUID tenantId) throws Exception {
-        // 1. Validation of the ZIP file
+        byte[] zipBytes = readAndValidateZip(file);
+        ParsedZip parsed = parseZip(zipBytes);
+
+        // Create the Agent Entity
+        Agent agent = new Agent();
+        agent.setName(name);
+        agent.setTenantId(tenantId);
+        agent.setSystemInstructions(parsed.systemInstructions);
+        if (parsed.manifestConfig != null) {
+            agent.setManifestConfig(parsed.manifestConfig);
+        }
+        agent = agentRepository.save(agent);
+        auditService.logAction("CREATE_AGENT", "Agent: " + name, "{\"agentId\":\"" + agent.getId() + "\"}", tenantId);
+
+        agent = uploadZipAndProcessDocuments(agent, zipBytes, tenantId);
+
+        return agent;
+    }
+
+    @Transactional
+    public Agent updateAgentPackage(Agent agent, MultipartFile file) throws Exception {
+        byte[] zipBytes = readAndValidateZip(file);
+        ParsedZip parsed = parseZip(zipBytes);
+
+        agent.setSystemInstructions(parsed.systemInstructions);
+        agent.setManifestConfig(parsed.manifestConfig);
+        agent = agentRepository.save(agent);
+
+        agent = uploadZipAndProcessDocuments(agent, zipBytes, agent.getTenantId());
+        auditService.logAction("UPDATE_AGENT_PACKAGE", "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}", agent.getTenantId());
+
+        return agent;
+    }
+
+    private byte[] readAndValidateZip(MultipartFile file) throws Exception {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("Arquivo ZIP vazio.");
         }
+        return file.getBytes();
+    }
 
-        byte[] zipBytes = file.getBytes();
+    private static class ParsedZip {
+        String systemInstructions;
+        String manifestConfig;
+    }
+
+    private ParsedZip parseZip(byte[] zipBytes) throws Exception {
         long totalUncompressedSize = 0;
         boolean hasRootMd = false;
         String systemInstructions = "";
         String manifestConfig = null;
 
-        // First pass: validation
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 if (!entry.isDirectory()) {
                     totalUncompressedSize += entry.getSize();
                     String entryName = entry.getName();
-                    
+
                     // Check if MD is in root (does not contain slashes, or is at depth 0)
                     if (entryName.endsWith(".md") && !entryName.contains("/") && !entryName.contains("\\")) {
                         hasRootMd = true;
-                        
+
                         // Read first root MD content as system instructions
                         if (systemInstructions.isEmpty()) {
                             ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -114,18 +154,14 @@ public class AgentService {
             throw new IllegalArgumentException("O tamanho total descompactado do ZIP (" + (totalUncompressedSize / (1024 * 1024)) + "MB) excede o limite de 20MB.");
         }
 
-        // 2. Create the Agent Entity
-        Agent agent = new Agent();
-        agent.setName(name);
-        agent.setTenantId(tenantId);
-        agent.setSystemInstructions(systemInstructions);
-        if (manifestConfig != null) {
-            agent.setManifestConfig(manifestConfig);
-        }
-        agent = agentRepository.save(agent);
-        auditService.logAction("CREATE_AGENT", "Agent: " + name, "{\"agentId\":\"" + agent.getId() + "\"}", tenantId);
+        ParsedZip parsed = new ParsedZip();
+        parsed.systemInstructions = systemInstructions;
+        parsed.manifestConfig = manifestConfig;
+        return parsed;
+    }
 
-        // 3. Upload original ZIP to MinIO
+    private Agent uploadZipAndProcessDocuments(Agent agent, byte[] zipBytes, UUID tenantId) throws Exception {
+        // Upload original ZIP to MinIO
         String zipPath = "agents-data/agent-" + agent.getId() + "/agent.zip";
         try (InputStream is = new ByteArrayInputStream(zipBytes)) {
             minioClient.putObject(PutObjectArgs.builder()
@@ -138,7 +174,7 @@ public class AgentService {
         agent.setZipPath(zipPath);
         agent = agentRepository.save(agent);
 
-        // 4. Extract and upload individual files, then notify ingestion worker
+        // Extract and upload individual files, then notify ingestion worker
         User creator = userRepository.findByUsername("admin").orElse(null);
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {

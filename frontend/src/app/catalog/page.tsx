@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Header, Sidebar, Footer } from '../../components/layout';
 import { AgentUploadManager } from '../../features/admin/components/AgentUploadManager';
-import { Search, Pencil, Check, X, PowerOff } from 'lucide-react';
+import { Search, Pencil, Check, X, PowerOff, Trash2 } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 
@@ -15,6 +15,7 @@ interface Agent {
   status?: string;
   description?: string;
   tenant?: string;
+  systemInstructions?: string;
 }
 
 interface EditState {
@@ -22,6 +23,7 @@ interface EditState {
   description: string;
   tag: string;
   version: string;
+  systemInstructions: string;
 }
 
 export default function CatalogPage() {
@@ -30,8 +32,10 @@ export default function CatalogPage() {
   const [searchAgent, setSearchAgent] = useState('');
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editState, setEditState] = useState<EditState>({ name: '', description: '', tag: '', version: '' });
+  const [editState, setEditState] = useState<EditState>({ name: '', description: '', tag: '', version: '', systemInstructions: '' });
+  const [editFile, setEditFile] = useState<File | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchAgents = useCallback(async () => {
     if (!tenantId) return;
@@ -59,20 +63,34 @@ export default function CatalogPage() {
 
   const startEdit = (agent: Agent) => {
     setEditingId(agent.id);
+    setEditFile(null);
+    setActionError(null);
     setEditState({
       name: agent.name,
       description: agent.description ?? '',
       tag: agent.tag ?? '',
       version: agent.version ?? '',
+      systemInstructions: agent.systemInstructions ?? '',
     });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
+    setEditFile(null);
+  };
+
+  const handleEditFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile && !selectedFile.name.endsWith('.zip')) {
+      setActionError('O arquivo do script deve ser um ZIP (.zip).');
+      return;
+    }
+    setEditFile(selectedFile ?? null);
   };
 
   const saveEdit = async (id: string) => {
     setActionLoading(id);
+    setActionError(null);
     try {
       const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
       const res = await fetch(`${BASE_URL.replace(/\/$/, '')}/api/admin/agents/${id}`, {
@@ -81,11 +99,51 @@ export default function CatalogPage() {
         body: JSON.stringify(editState),
       });
       if (!res.ok) throw new Error(`Status ${res.status}`);
-      const updated: Agent = await res.json();
+      let updated: Agent = await res.json();
+
+      if (editFile) {
+        const formData = new FormData();
+        formData.append('file', editFile);
+        const packageRes = await fetch(`${BASE_URL.replace(/\/$/, '')}/api/admin/agents/${id}/package`, {
+          method: 'PUT',
+          body: formData,
+        });
+        if (!packageRes.ok) throw new Error(`Status ${packageRes.status}`);
+        updated = await packageRes.json();
+      }
+
       setAgents(old => old.map(a => a.id === id ? { ...a, ...updated } : a));
       setEditingId(null);
+      setEditFile(null);
     } catch (err) {
       console.error('Erro ao salvar agente:', err);
+      setActionError('Falha ao salvar as alterações do agente.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!window.confirm(`Tem certeza que deseja excluir permanentemente o agente "${name}"? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    setActionLoading(id);
+    setActionError(null);
+    try {
+      const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+      const res = await fetch(`${BASE_URL.replace(/\/$/, '')}/api/admin/agents/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        if (res.status === 409) {
+          setActionError('Não é possível excluir: há execuções em andamento para este agente.');
+        } else {
+          setActionError('Falha ao excluir o agente.');
+        }
+        return;
+      }
+      setAgents(old => old.filter(a => a.id !== id));
+    } catch (err) {
+      console.error('Erro ao excluir agente:', err);
+      setActionError('Falha ao excluir o agente.');
     } finally {
       setActionLoading(null);
     }
@@ -161,6 +219,12 @@ export default function CatalogPage() {
             </div>
           </div>
 
+          {actionError && !editingId && (
+            <div className="mb-4 text-xs text-danger bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 rounded px-3 py-2">
+              {actionError}
+            </div>
+          )}
+
           <div className="flex flex-col lg:flex-row gap-6">
 
             {/* Grid de Cards de Agentes */}
@@ -210,6 +274,25 @@ export default function CatalogPage() {
                                   placeholder="Versão"
                                 />
                               </div>
+                              <textarea
+                                className="bg-secondary/20 border border-border-color rounded px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-primary w-full font-mono"
+                                rows={4}
+                                value={editState.systemInstructions}
+                                onChange={e => setEditState(s => ({ ...s, systemInstructions: e.target.value }))}
+                                placeholder="Instruções de sistema (system instructions)"
+                              />
+                              <label className="text-[10px] text-text-secondary flex flex-col gap-1">
+                                Reenviar pacote ZIP do agente (opcional)
+                                <input
+                                  type="file"
+                                  accept=".zip"
+                                  onChange={handleEditFileChange}
+                                  className="text-[10px] text-text-secondary file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:bg-slate-100 dark:file:bg-slate-800 file:text-text-secondary"
+                                />
+                              </label>
+                              {actionError && (
+                                <p className="text-[10px] text-danger">{actionError}</p>
+                              )}
                             </div>
                           ) : (
                             <div className="flex justify-between items-start gap-2">
@@ -288,6 +371,14 @@ export default function CatalogPage() {
                                     <PowerOff className="w-3 h-3" /> Desativar
                                   </button>
                                 )}
+
+                                <button
+                                  onClick={() => handleDelete(agent.id, agent.name)}
+                                  disabled={isActing}
+                                  className="flex items-center gap-1 bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-danger text-[10px] font-bold py-1 px-2 rounded border border-red-200 dark:border-red-900/50 transition-colors disabled:opacity-50"
+                                >
+                                  <Trash2 className="w-3 h-3" /> Excluir
+                                </button>
                               </>
                             )}
                           </div>

@@ -11,4 +11,5 @@ public interface AgentExecutionRepository extends JpaRepository<AgentExecution, 
     List<AgentExecution> findByConversationId(UUID conversationId);
     List<AgentExecution> findByStatus(String status);
     List<AgentExecution> findByTenantId(UUID tenantId);
+    boolean existsByAgentIdAndStatusIn(UUID agentId, List<String> statuses);
 }
