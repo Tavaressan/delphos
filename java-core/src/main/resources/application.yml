@@ -37,6 +37,14 @@ spring:
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASS:guest}
 
+  servlet:
+    multipart:
+      # AgentService aceita pacotes ZIP com até 20MB descompactados (ver AgentService#parseZip);
+      # o limite aqui precisa ser maior que isso para o request nem chegar a ser rejeitado antes
+      # de alcançar essa validação (ver issue #110).
+      max-file-size: ${AGENT_UPLOAD_MAX_FILE_SIZE:25MB}
+      max-request-size: ${AGENT_UPLOAD_MAX_REQUEST_SIZE:25MB}
+
 server:
   port: 8080
 
