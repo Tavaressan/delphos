@@ -10,41 +10,45 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // As variáveis CSS armazenam triplas RGB ("R G B"); usamos o formato
+        // `rgb(var(--x) / <alpha-value>)` para que os modificadores de
+        // opacidade do Tailwind (ex.: `bg-secondary/20`) funcionem
+        // corretamente no modo escuro. Ver issue #109.
         primary: {
-          DEFAULT: 'var(--primary)',
-          dark: 'var(--primary-dark)',
-          light: 'var(--primary-light)',
+          DEFAULT: 'rgb(var(--primary) / <alpha-value>)',
+          dark: 'rgb(var(--primary-dark) / <alpha-value>)',
+          light: 'rgb(var(--primary-light) / <alpha-value>)',
         },
         secondary: {
-          DEFAULT: 'var(--secondary)',
-          dark: 'var(--secondary-dark)',
-          light: 'var(--secondary-light)',
+          DEFAULT: 'rgb(var(--secondary) / <alpha-value>)',
+          dark: 'rgb(var(--secondary-dark) / <alpha-value>)',
+          light: 'rgb(var(--secondary-light) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: 'var(--accent)',
-          dark: 'var(--accent-dark)',
-          light: 'var(--accent-light)',
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          dark: 'rgb(var(--accent-dark) / <alpha-value>)',
+          light: 'rgb(var(--accent-light) / <alpha-value>)',
         },
         success: {
-          DEFAULT: 'var(--success)',
-          dark: 'var(--success-dark)',
-          light: 'var(--success-light)',
+          DEFAULT: 'rgb(var(--success) / <alpha-value>)',
+          dark: 'rgb(var(--success-dark) / <alpha-value>)',
+          light: 'rgb(var(--success-light) / <alpha-value>)',
         },
         warning: {
-          DEFAULT: 'var(--warning)',
-          dark: 'var(--warning-dark)',
-          light: 'var(--warning-light)',
+          DEFAULT: 'rgb(var(--warning) / <alpha-value>)',
+          dark: 'rgb(var(--warning-dark) / <alpha-value>)',
+          light: 'rgb(var(--warning-light) / <alpha-value>)',
         },
         danger: {
-          DEFAULT: 'var(--danger)',
-          dark: 'var(--danger-dark)',
-          light: 'var(--danger-light)',
+          DEFAULT: 'rgb(var(--danger) / <alpha-value>)',
+          dark: 'rgb(var(--danger-dark) / <alpha-value>)',
+          light: 'rgb(var(--danger-light) / <alpha-value>)',
         },
-        background: 'var(--background)',
-        surface: 'var(--surface)',
-        'text-primary': 'var(--text-primary)',
-        'text-secondary': 'var(--text-secondary)',
-        'border-color': 'var(--border-color)',
+        background: 'rgb(var(--background) / <alpha-value>)',
+        surface: 'rgb(var(--surface) / <alpha-value>)',
+        'text-primary': 'rgb(var(--text-primary) / <alpha-value>)',
+        'text-secondary': 'rgb(var(--text-secondary) / <alpha-value>)',
+        'border-color': 'rgb(var(--border-color) / <alpha-value>)',
       },
       fontFamily: {
         heading: ['var(--font-inter)', 'Inter', 'sans-serif'],

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../../../providers/AuthProvider';
+import { validateAgentZipFileName } from '../agentUploadValidation';
 
 interface AgentUploadManagerProps {
   onSuccess?: () => void;
@@ -17,8 +18,9 @@ export const AgentUploadManager: React.FC<AgentUploadManagerProps> = ({ onSucces
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFile = e.target.files[0];
-      if (!selectedFile.name.endsWith('.zip')) {
-        setError('O arquivo selecionado deve ser um arquivo ZIP (.zip).');
+      const validationError = validateAgentZipFileName(selectedFile.name);
+      if (validationError) {
+        setError(validationError);
         setFile(null);
         return;
       }

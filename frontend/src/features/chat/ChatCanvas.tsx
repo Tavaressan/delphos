@@ -10,13 +10,14 @@ import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
-import { filterSelectableAgents } from './agentFilters';
+import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
   const isAdmin = user?.role === 'ROLE_ADMIN';
   const { activeConversationId, setActiveConversationId, createConversation, refreshConversations } = useConversations();
   const [agents, setAgents] = useState<any[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState<boolean>(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [inputMsg, setInputMsg] = useState<string>('');
@@ -49,6 +50,8 @@ export const ChatCanvas: React.FC = () => {
         }
       } catch (err) {
         console.error("Erro ao carregar agentes:", err);
+      } finally {
+        setAgentsLoaded(true);
       }
     };
     if (tenantId) {
@@ -126,7 +129,7 @@ export const ChatCanvas: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            {agents.length > 0 && (
+            {agents.length > 0 ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-text-secondary">Agente:</span>
                 <select
@@ -141,7 +144,9 @@ export const ChatCanvas: React.FC = () => {
                   ))}
                 </select>
               </div>
-            )}
+            ) : agentsLoaded ? (
+              <span className="text-xs font-semibold text-warning">{NO_ACTIVE_AGENTS_MESSAGE}</span>
+            ) : null}
 
             {isLoading && (
               <span className="flex items-center gap-1.5 text-xs text-accent font-semibold animate-pulse">
