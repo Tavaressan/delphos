@@ -10,6 +10,7 @@ import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
+import { filterSelectableAgents } from './agentFilters';
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
@@ -39,9 +40,12 @@ export const ChatCanvas: React.FC = () => {
     const fetchAgents = async () => {
       try {
         const list = await apiClient.get<any[]>(`/api/agents?tenantId=${tenantId}`);
-        setAgents(list);
-        if (list.length > 0) {
-          setSelectedAgentId(list[0].id);
+        // Defesa em profundidade: o backend já filtra agentes INACTIVE, mas
+        // reforçamos aqui para não expor agentes desativados no seletor do chat.
+        const selectable = filterSelectableAgents(list ?? []);
+        setAgents(selectable);
+        if (selectable.length > 0) {
+          setSelectedAgentId(selectable[0].id);
         }
       } catch (err) {
         console.error("Erro ao carregar agentes:", err);
