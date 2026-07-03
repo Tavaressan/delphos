@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node tests/layout.test.js && node tests/header.test.js && node --import tsx --test tests/smoke.test.js tests/unit.test.ts tests/agent-chat-upload.test.ts tests/user-adapter.test.ts tests/user-session-adapter.test.ts"
+    "test": "node tests/layout.test.js && node tests/header.test.js && node --import tsx --test tests/smoke.test.js tests/unit.test.ts tests/agent-chat-upload.test.ts tests/agent-reactivation.test.ts tests/user-adapter.test.ts tests/user-session-adapter.test.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -29,5 +29,8 @@
     "tailwindcss": "^3.4.1",
     "tsx": "^4.22.4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "eslint": "^8.57.1"
   }
 }

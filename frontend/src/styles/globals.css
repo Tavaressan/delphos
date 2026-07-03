@@ -2,56 +2,63 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * As variáveis de cor abaixo usam o formato de tripla RGB ("R G B", sem
+ * vírgulas) em vez de hex, porque o tailwind.config.js as consome como
+ * `rgb(var(--x) / <alpha-value>)` — isso é necessário para que os
+ * modificadores de opacidade do Tailwind (ex.: `bg-secondary/20`) funcionem
+ * corretamente. Ver issue #109.
+ */
 :root {
-  --primary: #22409A;
-  --primary-dark: #183072;
-  --primary-light: #3b5cb8;
-  --secondary: #E5E4E2;
-  --secondary-dark: #CCCCCC;
-  --secondary-light: #F5F4F2;
-  --accent: #00ACC1;
-  --accent-dark: #00838F;
-  --accent-light: #4DD0E1;
-  --success: #2E7D32;
-  --success-dark: #1B5E20;
-  --success-light: #4CAF50;
-  --warning: #F9A825;
-  --warning-dark: #F57F17;
-  --warning-light: #FBC02D;
-  --danger: #C62828;
-  --danger-dark: #B71C1C;
-  --danger-light: #E53935;
-  --background: #FBFBFE;
-  --surface: #FFFFFF;
-  --text-primary: #1E293B; /* Slate 800 */
-  --text-secondary: #64748B; /* Slate 500 */
-  --border-color: #E2E8F0; /* Slate 200 */
+  --primary: 34 64 154; /* #22409A */
+  --primary-dark: 24 48 114; /* #183072 */
+  --primary-light: 59 92 184; /* #3b5cb8 */
+  --secondary: 229 228 226; /* #E5E4E2 */
+  --secondary-dark: 204 204 204; /* #CCCCCC */
+  --secondary-light: 245 244 242; /* #F5F4F2 */
+  --accent: 0 172 193; /* #00ACC1 */
+  --accent-dark: 0 131 143; /* #00838F */
+  --accent-light: 77 208 225; /* #4DD0E1 */
+  --success: 46 125 50; /* #2E7D32 */
+  --success-dark: 27 94 32; /* #1B5E20 */
+  --success-light: 76 175 80; /* #4CAF50 */
+  --warning: 249 168 37; /* #F9A825 */
+  --warning-dark: 245 127 23; /* #F57F17 */
+  --warning-light: 251 192 45; /* #FBC02D */
+  --danger: 198 40 40; /* #C62828 */
+  --danger-dark: 183 28 28; /* #B71C1C */
+  --danger-light: 229 57 53; /* #E53935 */
+  --background: 251 251 254; /* #FBFBFE */
+  --surface: 255 255 255; /* #FFFFFF */
+  --text-primary: 30 41 59; /* #1E293B — Slate 800 */
+  --text-secondary: 100 116 139; /* #64748B — Slate 500 */
+  --border-color: 226 232 240; /* #E2E8F0 — Slate 200 */
 }
 
 .dark {
-  --primary: #3b5cb8;
-  --primary-dark: #22409A;
-  --primary-light: #5c7cd8;
-  --secondary: #1F2937;
-  --secondary-dark: #111827;
-  --secondary-light: #374151;
-  --accent: #00ACC1;
-  --accent-dark: #00838F;
-  --accent-light: #4DD0E1;
-  --success: #4CAF50;
-  --success-dark: #2E7D32;
-  --success-light: #81C784;
-  --warning: #FBC02D;
-  --warning-dark: #F9A825;
-  --warning-light: #FFE082;
-  --danger: #E53935;
-  --danger-dark: #C62828;
-  --danger-light: #EF5350;
-  --background: #0F1117;
-  --surface: #151923;
-  --text-primary: #E5EAF2;
-  --text-secondary: #A3AFBF;
-  --border-color: #1F2937;
+  --primary: 59 92 184; /* #3b5cb8 */
+  --primary-dark: 34 64 154; /* #22409A */
+  --primary-light: 92 124 216; /* #5c7cd8 */
+  --secondary: 31 41 55; /* #1F2937 */
+  --secondary-dark: 17 24 39; /* #111827 */
+  --secondary-light: 55 65 81; /* #374151 */
+  --accent: 0 172 193; /* #00ACC1 */
+  --accent-dark: 0 131 143; /* #00838F */
+  --accent-light: 77 208 225; /* #4DD0E1 */
+  --success: 76 175 80; /* #4CAF50 */
+  --success-dark: 46 125 50; /* #2E7D32 */
+  --success-light: 129 199 132; /* #81C784 */
+  --warning: 251 192 45; /* #FBC02D */
+  --warning-dark: 249 168 37; /* #F9A825 */
+  --warning-light: 255 224 130; /* #FFE082 */
+  --danger: 229 57 53; /* #E53935 */
+  --danger-dark: 198 40 40; /* #C62828 */
+  --danger-light: 239 83 80; /* #EF5350 */
+  --background: 15 17 23; /* #0F1117 */
+  --surface: 21 25 35; /* #151923 */
+  --text-primary: 229 234 242; /* #E5EAF2 */
+  --text-secondary: 163 175 191; /* #A3AFBF */
+  --border-color: 31 41 55; /* #1F2937 */
 }
 
 @layer base {
