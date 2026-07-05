@@ -113,16 +113,20 @@ class CrewAiRuntimeAdapter:
         db_url = os.environ.get(
             "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/rag_db"
         )
+        conn = None
         try:
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
-            cur.execute(
-                "SELECT name, system_instructions, tag FROM agents WHERE id = %s",
-                (agent_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
+            try:
+                cur.execute(
+                    "SELECT name, system_instructions, tag FROM agents WHERE id = %s",
+                    (agent_id,),
+                )
+                row = cur.fetchone()
+            finally:
+                # Fecha o cursor mesmo se a query falhar (ex.: agent_id malformado),
+                # para não deixar conexões/cursores vazando (issue #124).
+                cur.close()
 
             if row is None:
                 self.publish_event(
@@ -146,6 +150,11 @@ class CrewAiRuntimeAdapter:
                 {"reason": f"DB lookup failed for agent_id '{agent_id}': {str(e)}"},
             )
             raise
+        finally:
+            # Garante que a conexão seja sempre fechada, mesmo em caso de erro,
+            # para não deixar o worker em estado inconsistente (issue #124).
+            if conn is not None:
+                conn.close()
 
     def publish_event(self, event_type: str, payload: dict):
         event_body = {

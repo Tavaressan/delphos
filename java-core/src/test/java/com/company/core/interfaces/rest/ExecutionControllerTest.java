@@ -14,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import tools.jackson.databind.ObjectMapper;
@@ -25,9 +26,11 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -117,5 +120,51 @@ class ExecutionControllerTest {
         mockMvc.perform(get("/api/executions?tenantId=" + tenantId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("COMPLETED"));
+    }
+
+    @Test
+    void submitExecution_withoutAgentId_returns400AndDoesNotPublish() throws Exception {
+        String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\"}";
+
+        mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("agentId é obrigatório"));
+
+        verifyNoInteractions(rabbitTemplate);
+        verify(executionRepository, never()).save(any());
+        verify(agentRepository, never()).findById(any());
+    }
+
+    @Test
+    void submitExecution_withBlankAgentId_returns400AndDoesNotPublish() throws Exception {
+        String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\",\"agentId\":\"\"}";
+
+        mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("agentId é obrigatório"));
+
+        verifyNoInteractions(rabbitTemplate);
+        verify(executionRepository, never()).save(any());
+    }
+
+    @Test
+    void submitExecution_withNonExistentAgentId_returns404AndDoesNotPublish() throws Exception {
+        UUID unknownAgentId = UUID.randomUUID();
+        when(agentRepository.findById(unknownAgentId)).thenReturn(Optional.empty());
+
+        String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\",\"agentId\":\"" + unknownAgentId + "\"}";
+
+        mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("Agent not found: " + unknownAgentId));
+
+        verifyNoInteractions(rabbitTemplate);
+        verify(executionRepository, never()).save(any());
     }
 }
