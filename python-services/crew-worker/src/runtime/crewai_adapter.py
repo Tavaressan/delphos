@@ -205,31 +205,36 @@ class CrewAiRuntimeAdapter:
         print(
             f"[CrewAiRuntimeAdapter] Querying database at {db_url} for similarity search..."
         )
+        conn = None
         try:
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
+            try:
+                embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+                effective_agent_id = (
+                    agent_id_override
+                    if agent_id_override is not None
+                    else self.agent_id
+                )
 
-            embedding_str = "[" + ",".join(map(str, embedding)) + "]"
-            effective_agent_id = (
-                agent_id_override if agent_id_override is not None else self.agent_id
-            )
-
-            cur.execute(
-                """
-                SELECT dc.id, dc.content, d.id, d.name,
-                       1 - (dc.embedding <=> %s::vector) as similarity
-                FROM document_chunks dc
-                JOIN documents d ON dc.document_id = d.id
-                WHERE dc.tenant_id = %s
-                  AND (d.agent_id = %s OR d.agent_id IS NULL)
-                ORDER BY similarity DESC
-                LIMIT 5
-                """,
-                (embedding_str, self.tenant_id, effective_agent_id),
-            )
-            rows = cur.fetchall()
-            cur.close()
-            conn.close()
+                cur.execute(
+                    """
+                    SELECT dc.id, dc.content, d.id, d.name,
+                           1 - (dc.embedding <=> %s::vector) as similarity
+                    FROM document_chunks dc
+                    JOIN documents d ON dc.document_id = d.id
+                    WHERE dc.tenant_id = %s
+                      AND (d.agent_id = %s OR d.agent_id IS NULL)
+                    ORDER BY similarity DESC
+                    LIMIT 5
+                    """,
+                    (embedding_str, self.tenant_id, effective_agent_id),
+                )
+                rows = cur.fetchall()
+            finally:
+                # Fecha o cursor mesmo se a query falhar, para não deixar
+                # conexões/cursores vazando (mesma classe de bug da issue #124).
+                cur.close()
 
             if not rows:
                 print("[CrewAiRuntimeAdapter] No document chunks found in database.")
@@ -261,6 +266,9 @@ class CrewAiRuntimeAdapter:
         except Exception as e:
             print(f"[CrewAiRuntimeAdapter] Database similarity search failed: {str(e)}")
             return f"Erro ao acessar a base de dados vetorial: {str(e)}", []
+        finally:
+            if conn is not None:
+                conn.close()
 
     def execute(self) -> str:
         # 1. Validar e sanitizar input do usuário contra Prompt Injection
@@ -496,16 +504,20 @@ class CrewAiRuntimeAdapter:
             db_url = os.environ.get(
                 "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/rag_db"
             )
+            conn = None
             try:
                 conn = psycopg2.connect(db_url)
                 cur = conn.cursor()
-                cur.execute(
-                    "SELECT id, name, system_instructions FROM agents WHERE name = %s AND tenant_id = %s::uuid LIMIT 1",
-                    (agent_name, self.tenant_id),
-                )
-                row = cur.fetchone()
-                cur.close()
-                conn.close()
+                try:
+                    cur.execute(
+                        "SELECT id, name, system_instructions FROM agents WHERE name = %s AND tenant_id = %s::uuid LIMIT 1",
+                        (agent_name, self.tenant_id),
+                    )
+                    row = cur.fetchone()
+                finally:
+                    # Fecha o cursor mesmo se a query falhar, para não deixar
+                    # conexões/cursores vazando (mesma classe de bug da issue #124).
+                    cur.close()
             except Exception as e:
                 result = f"Erro ao buscar agente '{agent_name}': {str(e)}"
                 self.publish_event(
@@ -519,6 +531,9 @@ class CrewAiRuntimeAdapter:
                     },
                 )
                 return result
+            finally:
+                if conn is not None:
+                    conn.close()
 
             if row is None:
                 result = f"Agente '{agent_name}' não encontrado para este tenant."

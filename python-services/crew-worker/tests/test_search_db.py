@@ -108,3 +108,31 @@ def test_search_db_uses_parameterized_agent_id():
         _, params = mock_cur.execute.call_args[0]
 
     assert "agent-a" in params
+
+
+def test_search_db_closes_connection_and_cursor_even_when_query_fails():
+    # Regressão da issue #124: cur.close()/conn.close() devem rodar mesmo se
+    # cur.execute (ou fetchall) lançar exceção, para não vazar conexão/cursor.
+    adapter = _make_adapter_for_search()
+
+    with patch("runtime.crewai_adapter.psycopg2") as mock_pg, patch(
+        "runtime.crewai_adapter.requests"
+    ) as mock_req:
+
+        mock_req.post.return_value.status_code = 200
+        mock_req.post.return_value.json.return_value = {
+            "data": [{"embedding": [0.1] * 768}]
+        }
+
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.execute.side_effect = Exception("db unavailable")
+        mock_conn.cursor.return_value = mock_cur
+        mock_pg.connect.return_value = mock_conn
+
+        result, sources = adapter._search_db("query test")
+
+    assert "Erro ao acessar a base de dados vetorial" in result
+    assert sources == []
+    mock_cur.close.assert_called_once()
+    mock_conn.close.assert_called_once()

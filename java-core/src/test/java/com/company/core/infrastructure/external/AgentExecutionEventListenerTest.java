@@ -95,4 +95,31 @@ class AgentExecutionEventListenerTest {
         assertThat(execution.getStatus()).isEqualTo("FAILED");
         assertThat(execution.getErrorMessage()).isEqualTo("step 2 failed");
     }
+
+    // agent.workflow.failed também deve tolerar as demais chaves conhecidas (reason/error),
+    // usando o mesmo helper extractErrorMessage que os eventos de RAG/CrewAI já usam.
+    @Test
+    void workflowFailedFallsBackToReasonAndErrorKeys() {
+        String message = """
+                {"eventType":"agent.workflow.failed","executionId":"%s","payload":{"reason":"dag inválido"}}
+                """.formatted(executionId);
+
+        listener.handleExecutionEvent(message);
+
+        assertThat(execution.getErrorMessage()).isEqualTo("dag inválido");
+    }
+
+    // workflow-worker (Rust) publica agent.workflow.started ao iniciar o processamento do job
+    // (routing key que antes não tinha bind na fila e era descartada silenciosamente — issue #123).
+    @Test
+    void workflowStartedSetsStatusToStarted() {
+        String message = """
+                {"eventType":"agent.workflow.started","executionId":"%s","payload":{}}
+                """.formatted(executionId);
+
+        listener.handleExecutionEvent(message);
+
+        assertThat(execution.getStatus()).isEqualTo("STARTED");
+        assertThat(execution.getStartedAt()).isNotNull();
+    }
 }
