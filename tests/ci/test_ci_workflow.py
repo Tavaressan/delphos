@@ -23,6 +23,11 @@ WORKFLOW_PATH = (
 
 MODULE_FILTERS = ("rust", "java", "frontend", "python")
 
+# Filtro adicional (não é um "módulo" de serviço, mas precisa do mesmo
+# tratamento de fail-safe/normalização): cobre a própria suíte E2E e os
+# arquivos docker-compose/scripts que o job e2e-integration usa diretamente.
+ALL_FILTERS = MODULE_FILTERS + ("e2e",)
+
 
 def _load_workflow():
     with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
@@ -108,7 +113,7 @@ def test_paths_filter_step_is_fail_safe():
         "se o paths-filter falhar"
     )
     run_script = normalize_step.get("run", "")
-    for name in MODULE_FILTERS:
+    for name in ALL_FILTERS:
         assert f"{name}=true" in run_script, (
             f"step de normalizacao precisa ter um caminho de fallback que "
             f"define {name}=true quando o filtro falha"
@@ -121,7 +126,7 @@ def test_job_outputs_come_from_normalize_step():
     workflow = _load_workflow()
     changes_job = _changes_job(workflow)
     outputs = changes_job.get("outputs", {})
-    for name in MODULE_FILTERS:
+    for name in ALL_FILTERS:
         assert name in outputs
         assert "steps.normalize.outputs." in outputs[name], (
             f"output '{name}' do job changes deve vir de steps.normalize, "
@@ -136,6 +141,25 @@ def test_native_module_jobs_still_present():
     jobs = workflow["jobs"]
     for job_name in ("rust-check", "java-check", "frontend-check", "python-ci"):
         assert job_name in jobs, f"job nativo '{job_name}' nao deve ser removido"
+
+
+def test_e2e_filter_covers_e2e_suite_and_its_dependencies():
+    """O filtro 'e2e' precisa cobrir tests/e2e/** e os arquivos docker-compose/
+    scripts que o job e2e-integration usa diretamente -- sem isso, uma PR que
+    só muda cenarios em tests/e2e/** deixa rust/java/frontend/python todos
+    'false' e o job que deveria validar essa mudanca e pulado (achado ao
+    mesclar a PR #122, onde os testes T012/T013 nunca rodaram em CI)."""
+    workflow = _load_workflow()
+    filters = _filters_yaml(_changes_job(workflow))
+    assert "e2e" in filters, "filtro 'e2e' ausente"
+    paths = filters["e2e"]
+    assert any(p.startswith("tests/e2e/") for p in paths), (
+        "filtro 'e2e' precisa cobrir tests/e2e/**"
+    )
+    assert any("docker-compose.yml" in p for p in paths), (
+        "filtro 'e2e' precisa cobrir docker-compose.yml (usado pelo job "
+        "e2e-integration para subir a stack)"
+    )
 
 
 def test_e2e_integration_job_exists_and_runs_with_mock_llm():
@@ -157,7 +181,7 @@ def test_e2e_integration_job_exists_and_runs_with_mock_llm():
     )
 
     condition = job.get("if", "")
-    for name in MODULE_FILTERS:
+    for name in ALL_FILTERS:
         assert f"needs.changes.outputs.{name}" in condition, (
             f"job 'e2e-integration' deve rodar quando o modulo '{name}' mudar"
         )
