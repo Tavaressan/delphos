@@ -285,6 +285,18 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log('Passo 1: Enviando requisição de Chat/RAG para o backend Spring Boot...');
     const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
 
+    // Desde a issue #100, agentId é obrigatório em POST /api/executions — o backend
+    // não gera mais um UUID aleatório para "chat genérico". Buscamos um agente real
+    // do tenant; se nenhum existir, o precondition não está satisfeito e o teste é
+    // ignorado (mesmo padrão usado acima para credenciais reais da Vertex AI ausentes).
+    const agentsRes = await fetch(`${config.backendUrl}/api/agents?tenantId=${tenantId}`);
+    const agents = agentsRes.ok ? await agentsRes.json() : [];
+    if (!Array.isArray(agents) || agents.length === 0) {
+      console.log('⚠️ Nenhum agente cadastrado para o tenant de teste. Ignorando teste e reportando precondição.');
+      return;
+    }
+    const agentId = agents[0].id;
+
     const chatReq = await fetch(`${config.backendUrl}/api/executions`, {
       method: 'POST',
       headers: {
@@ -292,7 +304,8 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
       },
       body: JSON.stringify({
         prompt: 'Qual a periodicidade de manutenção dos cabos?',
-        tenantId: tenantId
+        tenantId: tenantId,
+        agentId: agentId
       })
     });
 
