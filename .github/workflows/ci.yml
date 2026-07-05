@@ -444,9 +444,9 @@ jobs:
             echo "ADC_PATH=/tmp/ci-fake-adc.json"
           } >> .env
 
-      - name: Build and start full stack (docker-compose.yml only, sem override de dev)
+      - name: Build and start full stack (docker-compose.yml + portas de CI, sem override de dev)
         run: |
-          docker compose -f docker-compose.yml up -d --build \
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d --build \
             postgres redis minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker \
             frontend
@@ -468,12 +468,19 @@ jobs:
       - name: Run E2E integration suite (mock LLM)
         env:
           SKIP_RESET: "true"
+          # .env.example define NEXT_PUBLIC_BACKEND_URL=http://localhost:8000,
+          # que é a porta do embedding-service, não do core (Spring Boot, porta
+          # 8080). tests/e2e/config.js só preenche uma chave do .env se ela
+          # ainda não estiver em process.env, então essa env var aqui tem
+          # prioridade sobre a linha (incorreta) do .env.example sem precisar
+          # editar esse arquivo compartilhado.
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
         run: npm run test:e2e
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml logs --tail=200
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --tail=200
 
       - name: Tear down stack
         if: always()
-        run: docker compose -f docker-compose.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml down -v

@@ -169,10 +169,29 @@ def test_e2e_integration_job_exists_and_runs_with_mock_llm():
         "para NAO mesclar o docker-compose.override.yml (que forca "
         "EMBEDDING_PROVIDER=real para desenvolvimento local)"
     )
+    assert "docker-compose.ci-ports.yml" in run_steps, (
+        "job 'e2e-integration' precisa republicar as portas de core/"
+        "embedding-service/frontend (docker-compose.ci-ports.yml), ja que "
+        "usar so '-f docker-compose.yml' tambem remove os port mappings que "
+        "so existem no override de dev -- sem isso a suite Node.js (rodando "
+        "no host runner) nao alcanca esses servicos"
+    )
     assert "EMBEDDING_PROVIDER=mock" in run_steps
     assert "LLM_PROVIDER=mock" in run_steps
     assert "CREW_WORKER_MODE=mock" in run_steps
     assert "npm run test:e2e" in run_steps
+
+    e2e_test_step = next(
+        (s for s in job["steps"] if s.get("run", "").strip() == "npm run test:e2e"), None
+    )
+    assert e2e_test_step is not None, "step que roda 'npm run test:e2e' nao encontrado"
+    assert e2e_test_step.get("env", {}).get("NEXT_PUBLIC_BACKEND_URL") == "http://localhost:8080", (
+        ".env.example define NEXT_PUBLIC_BACKEND_URL=http://localhost:8000 (porta do "
+        "embedding-service, nao do core). O step que roda a suite E2E precisa sobrescrever "
+        "essa variavel via 'env:' explicito para http://localhost:8080 (porta real do core) "
+        "-- tests/e2e/config.js so preenche uma chave do .env se ela ainda nao estiver em "
+        "process.env, entao um append no .env nao teria efeito"
+    )
 
     teardown_steps = [s for s in job["steps"] if "down" in s.get("run", "")]
     assert teardown_steps, "job 'e2e-integration' deve derrubar a stack no final"

@@ -4,8 +4,11 @@ import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { config } from './config.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const { Client } = pg;
 
@@ -121,6 +124,21 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     const docId = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a99';
     const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
 
+    // Desde a correção da issue #117, o ingestion-worker não tem mais um
+    // fallback silencioso para arquivo ausente — ele precisa encontrar o
+    // arquivo de verdade (MinIO ou, como aqui, leitura local). O diretório
+    // rust-services/ é montado como /app dentro do container do
+    // ingestion-worker (docker-compose.yml), então um arquivo escrito aqui
+    // no host é lido pelo fallback legítimo de leitura local
+    // (std::fs::read), sem precisar subir nada no MinIO nem usar
+    // INGESTION_DEV_FALLBACK.
+    const fileName = 'e2e_test_doc_T005.txt';
+    const localFilePath = path.resolve(__dirname, '../../rust-services', fileName);
+    fs.writeFileSync(
+      localFilePath,
+      'Texto de teste E2E para validar chunking, geração de embeddings e persistência no pgvector.'
+    );
+
     console.log(`Passo 1: Inserindo documento de teste com ID ${docId}...`);
 
     // Assegurar usuário padrão admin para o FK
@@ -136,10 +154,101 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     await dbClient.query(`
       INSERT INTO documents (id, name, file_path, file_size, file_type, created_by, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
-    `, [docId, 'e2e_test_doc.pdf', 'e2e_test_doc.pdf', 1024, 'pdf', userId, 'UPLOADING']);
+    `, [docId, fileName, fileName, 1024, 'txt', userId, 'UPLOADING']);
+
+    try {
+      // 2. Publicar mensagem para o RabbitMQ via API de Gerenciamento HTTP
+      console.log('Passo 2: Publicando mensagem de ingestão no RabbitMQ...');
+      const rabbitUrl = 'http://localhost:15672/api/exchanges/%2f/amq.default/publish';
+      const auth = 'Basic ' + Buffer.from('guest:guest').toString('base64');
+
+      const rabbitPublishRes = await fetch(rabbitUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': auth
+        },
+        body: JSON.stringify({
+          properties: { delivery_mode: 2 },
+          routing_key: 'document.ingestion.jobs',
+          payload: JSON.stringify({
+            document_id: docId,
+            file_path: fileName,
+            tenant_id: tenantId,
+            file_type: 'txt'
+          }),
+          payload_encoding: 'string'
+        })
+      });
+
+      assert.strictEqual(rabbitPublishRes.status, 200, 'Falha ao enviar mensagem de ingestão ao RabbitMQ via API de Gerenciamento.');
+
+      // 3. Fazer polling no banco verificando a transição de status para INDEXED
+      console.log('Passo 3: Monitorando alteração de status do documento no banco...');
+      let indexed = false;
+      const maxPollAttempts = 15;
+      for (let i = 0; i < maxPollAttempts; i++) {
+        const res = await dbClient.query('SELECT status, processing_error FROM documents WHERE id = $1', [docId]);
+        const status = res.rows[0]?.status;
+        const error = res.rows[0]?.processing_error;
+
+        console.log(`Verificação ${i + 1}/${maxPollAttempts}: Status = ${status}`);
+        if (status === 'INDEXED') {
+          indexed = true;
+          break;
+        }
+        if (status === 'FAILED') {
+          assert.fail(`O processamento do documento falhou com erro: ${error}`);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      assert.ok(indexed, 'Erro: O status do documento de teste não transicionou para INDEXED no tempo esperado.');
+
+      // 4. Validar chunks de vetores no pgvector
+      console.log('Passo 4: Validando persistência e dimensionalidade dos vetores no PostgreSQL...');
+      const chunksRes = await dbClient.query('SELECT id, embedding::text FROM document_chunks WHERE document_id = $1', [docId]);
+
+      assert.ok(chunksRes.rows.length > 0, 'Erro: Nenhum chunk vetorial foi localizado no banco.');
+
+      // Obter o vetor e verificar o tamanho
+      const rawVector = chunksRes.rows[0].embedding;
+      // O formato retornado do cast ::text é: [0.123, -0.456, ...]
+      const vectorElements = rawVector.replace('[', '').replace(']', '').split(',');
+
+      assert.strictEqual(vectorElements.length, 768, `Erro: A dimensionalidade do vetor deveria ser 768, mas retornou ${vectorElements.length}.`);
+      console.log('🟢 Chunks vetoriais e dimensões validados com sucesso.');
+    } finally {
+      fs.rmSync(localFilePath, { force: true });
+    }
+  });
+
+  test('T010 - Regressão #117: arquivo ausente no MinIO deve falhar a ingestão (FAILED + processing_error), sem mascarar com texto mock', async () => {
+    // 1. Inserir documento fictício apontando para um arquivo que não existe
+    // nem no MinIO nem localmente no ingestion-worker.
+    const docId = 'd1eebc99-9c0b-4ef8-bb6d-6bb9bd380b01';
+    const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
+    const missingFilePath = 'arquivo_que_nao_existe_no_minio_117.pdf';
+
+    console.log(`Passo 1: Inserindo documento de teste com ID ${docId} apontando para arquivo inexistente...`);
+
+    await dbClient.query(`
+      INSERT INTO users (id, username, email, password_hash, first_name, last_name, status)
+      VALUES ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a00', 'admin_e2e', 'admin_e2e@company.com', 'hash', 'Admin', 'E2E', 'ACTIVE')
+      ON CONFLICT (username) DO NOTHING
+    `);
+
+    const userRes = await dbClient.query("SELECT id FROM users WHERE username = 'admin_e2e'");
+    const userId = userRes.rows[0].id;
+
+    await dbClient.query(`
+      INSERT INTO documents (id, name, file_path, file_size, file_type, created_by, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `, [docId, 'documento_ausente_117.pdf', missingFilePath, 1024, 'pdf', userId, 'UPLOADING']);
 
     // 2. Publicar mensagem para o RabbitMQ via API de Gerenciamento HTTP
-    console.log('Passo 2: Publicando mensagem de ingestão no RabbitMQ...');
+    console.log('Passo 2: Publicando mensagem de ingestão referenciando arquivo ausente...');
     const rabbitUrl = 'http://localhost:15672/api/exchanges/%2f/amq.default/publish';
     const auth = 'Basic ' + Buffer.from('guest:guest').toString('base64');
 
@@ -154,7 +263,7 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
         routing_key: 'document.ingestion.jobs',
         payload: JSON.stringify({
           document_id: docId,
-          file_path: 'e2e_test_doc.pdf',
+          file_path: missingFilePath,
           tenant_id: tenantId,
           file_type: 'pdf'
         }),
@@ -164,42 +273,36 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
 
     assert.strictEqual(rabbitPublishRes.status, 200, 'Falha ao enviar mensagem de ingestão ao RabbitMQ via API de Gerenciamento.');
 
-    // 3. Fazer polling no banco verificando a transição de status para INDEXED
+    // 3. Fazer polling no banco verificando a transição de status para FAILED
+    // com processing_error populado (nunca deve virar INDEXED com texto mock).
     console.log('Passo 3: Monitorando alteração de status do documento no banco...');
-    let indexed = false;
-    const maxPollAttempts = 15;
+    let failed = false;
+    let lastStatus = null;
+    let lastError = null;
+    const maxPollAttempts = 20;
     for (let i = 0; i < maxPollAttempts; i++) {
       const res = await dbClient.query('SELECT status, processing_error FROM documents WHERE id = $1', [docId]);
-      const status = res.rows[0]?.status;
-      const error = res.rows[0]?.processing_error;
+      lastStatus = res.rows[0]?.status;
+      lastError = res.rows[0]?.processing_error;
 
-      console.log(`Verificação ${i + 1}/${maxPollAttempts}: Status = ${status}`);
-      if (status === 'INDEXED') {
-        indexed = true;
+      console.log(`Verificação ${i + 1}/${maxPollAttempts}: Status = ${lastStatus}`);
+      if (lastStatus === 'FAILED') {
+        failed = true;
         break;
       }
-      if (status === 'FAILED') {
-        assert.fail(`O processamento do documento falhou com erro: ${error}`);
+      if (lastStatus === 'INDEXED') {
+        assert.fail('O documento com arquivo ausente foi indexado com sucesso — o fallback de desenvolvimento mascarou a falha (regressão da issue #117).');
       }
 
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    assert.ok(indexed, 'Erro: O status do documento de teste não transicionou para INDEXED no tempo esperado.');
+    assert.ok(failed, `Erro: O documento com arquivo ausente não transicionou para FAILED no tempo esperado (último status: ${lastStatus}).`);
+    assert.ok(lastError && lastError.length > 0, 'Erro: processing_error deveria estar populado para o documento com arquivo ausente.');
+    console.log(`🟢 Documento com arquivo ausente corretamente marcado como FAILED. processing_error: "${lastError}"`);
 
-    // 4. Validar chunks de vetores no pgvector
-    console.log('Passo 4: Validando persistência e dimensionalidade dos vetores no PostgreSQL...');
-    const chunksRes = await dbClient.query('SELECT id, embedding::text FROM document_chunks WHERE document_id = $1', [docId]);
-
-    assert.ok(chunksRes.rows.length > 0, 'Erro: Nenhum chunk vetorial foi localizado no banco.');
-
-    // Obter o vetor e verificar o tamanho
-    const rawVector = chunksRes.rows[0].embedding;
-    // O formato retornado do cast ::text é: [0.123, -0.456, ...]
-    const vectorElements = rawVector.replace('[', '').replace(']', '').split(',');
-
-    assert.strictEqual(vectorElements.length, 768, `Erro: A dimensionalidade do vetor deveria ser 768, mas retornou ${vectorElements.length}.`);
-    console.log('🟢 Chunks vetoriais e dimensões validados com sucesso.');
+    // 4. Limpeza
+    await dbClient.query('DELETE FROM documents WHERE id = $1', [docId]);
   });
 
   test('T007 e T008 - Teste do Endpoint de Chat / RAG de ponta a ponta', async () => {
@@ -212,6 +315,18 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log('Passo 1: Enviando requisição de Chat/RAG para o backend Spring Boot...');
     const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
 
+    // Desde a issue #100, agentId é obrigatório em POST /api/executions — o backend
+    // não gera mais um UUID aleatório para "chat genérico". Buscamos um agente real
+    // do tenant; se nenhum existir, o precondition não está satisfeito e o teste é
+    // ignorado (mesmo padrão usado acima para credenciais reais da Vertex AI ausentes).
+    const agentsRes = await fetch(`${config.backendUrl}/api/agents?tenantId=${tenantId}`);
+    const agents = agentsRes.ok ? await agentsRes.json() : [];
+    if (!Array.isArray(agents) || agents.length === 0) {
+      console.log('⚠️ Nenhum agente cadastrado para o tenant de teste. Ignorando teste e reportando precondição.');
+      return;
+    }
+    const agentId = agents[0].id;
+
     const chatReq = await fetch(`${config.backendUrl}/api/executions`, {
       method: 'POST',
       headers: {
@@ -219,7 +334,8 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
       },
       body: JSON.stringify({
         prompt: 'Qual a periodicidade de manutenção dos cabos?',
-        tenantId: tenantId
+        tenantId: tenantId,
+        agentId: agentId
       })
     });
 

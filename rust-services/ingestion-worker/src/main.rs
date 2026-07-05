@@ -522,7 +522,30 @@ async fn execute_ingestion(pool: &sqlx::PgPool, job: &IngestionJob) -> Result<()
     Ok(())
 }
 
+/// Texto usado apenas quando `INGESTION_DEV_FALLBACK=true` está setado explicitamente
+/// no ambiente. Nunca deve ser usado em produção: existe só para permitir
+/// desenvolvimento local sem MinIO configurado. Ver `download_file_with_fallback`.
+const DEV_FALLBACK_TEXT: &str = "Alfabra Vector - Documento de Teste de Auditoria de TI.\nEste documento detalha os controles de segurança do sistema, incluindo autenticação stateless via JWT de 256 bits, segregação de banco por tenantId e o isolamento rígido dos runtimes dos workers utilizando KEDA e sandbox AST de Groovy para prevenir qualquer tipo de injeção de dependências no host.";
+
+/// Retorna true somente quando a variável de ambiente `INGESTION_DEV_FALLBACK`
+/// estiver explicitamente setada como "true" (case-insensitive). Desligado por
+/// padrão — nunca deve mascarar falhas reais em produção.
+fn dev_fallback_enabled() -> bool {
+    env::var("INGESTION_DEV_FALLBACK")
+        .map(|v| v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 async fn download_file(file_path: &str) -> Result<Vec<u8>> {
+    download_file_with_fallback(file_path, dev_fallback_enabled()).await
+}
+
+/// Baixa o arquivo do MinIO (ou localmente, como segundo fallback legítimo para
+/// ambientes sem MinIO). Se nenhum dos dois encontrar o arquivo, propaga um erro
+/// real por padrão. Somente quando `allow_dev_fallback` for `true` (opt-in via
+/// `INGESTION_DEV_FALLBACK=true`) um texto mock de desenvolvimento é retornado —
+/// isso nunca deve acontecer silenciosamente em produção.
+async fn download_file_with_fallback(file_path: &str, allow_dev_fallback: bool) -> Result<Vec<u8>> {
     let minio_host = env::var("MINIO_HOST").unwrap_or_else(|_| "minio".to_string());
     let minio_port = env::var("MINIO_PORT").unwrap_or_else(|_| "9000".to_string());
 
@@ -556,31 +579,28 @@ async fn download_file(file_path: &str) -> Result<Vec<u8>> {
         return Ok(bytes);
     }
 
-    // Fallback: Se for desenvolvimento, retornar um texto padrão de sucesso
-    println!("Arquivo não encontrado. Utilizando fallback textual de desenvolvimento.");
-    let mock_text = "Alfabra Vector - Documento de Teste de Auditoria de TI.\nEste documento detalha os controles de segurança do sistema, incluindo autenticação stateless via JWT de 256 bits, segregação de banco por tenantId e o isolamento rígido dos runtimes dos workers utilizando KEDA e sandbox AST de Groovy para prevenir qualquer tipo de injeção de dependências no host.".to_string();
-    Ok(mock_text.into_bytes())
+    if allow_dev_fallback {
+        println!(
+            "AVISO: Arquivo '{}' não encontrado no MinIO nem localmente. \
+             INGESTION_DEV_FALLBACK=true está setado — retornando texto mock de desenvolvimento. \
+             Isso NUNCA deve estar habilitado em produção.",
+            file_path
+        );
+        return Ok(DEV_FALLBACK_TEXT.as_bytes().to_vec());
+    }
+
+    // Sem fallback: propagar erro real. Um arquivo ausente/corrompido deve fazer
+    // o documento transicionar para FAILED com processing_error populado, e não
+    // ser mascarado por um texto padrão.
+    Err(anyhow::anyhow!(
+        "Arquivo '{}' não encontrado no MinIO nem localmente.",
+        file_path
+    ))
 }
 
 fn extract_text_from_pdf(pdf_bytes: &[u8]) -> Result<String> {
     println!("Processando extração de texto do PDF...");
-    let doc = match lopdf::Document::load_mem(pdf_bytes) {
-        Ok(d) => d,
-        Err(e) => {
-            println!("Falha ao ler os bytes do PDF com lopdf: {}. Tentando converter para String (modo desenvolvimento)...", e);
-            let text = String::from_utf8_lossy(pdf_bytes).to_string();
-            if text.contains("Alfabra Vector")
-                || text.contains("Documento")
-                || text.contains("Auditoria")
-            {
-                println!(
-                    "Texto de fallback do desenvolvimento detectado. Ignorando erro do lopdf."
-                );
-                return Ok(text);
-            }
-            return Err(e).context("Failed to parse PDF document bytes");
-        }
-    };
+    let doc = lopdf::Document::load_mem(pdf_bytes).context("Failed to parse PDF document bytes")?;
 
     let mut text = String::new();
     let mut page_numbers: Vec<u32> = doc.get_pages().keys().cloned().collect();
