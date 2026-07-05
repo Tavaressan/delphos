@@ -380,6 +380,58 @@ public class StepDefinitions {
     @E("deve enviar o NACK da mensagem original")
     public void enviarNackOriginal() {}
 
+    // ===== Issue #123 — eventos de conclusão/falha do workflow-worker =====
+
+    @Dado("que existe uma execução de workflow registrada com status {string}")
+    public void existeExecucaoWorkflowComStatus(String status) {
+        AgentExecution exec = new AgentExecution();
+        exec.setTenantId(UUID.randomUUID());
+        exec.setAgentId(UUID.randomUUID());
+        exec.setStatus(status);
+        exec.setPromptFinal("workflow dag execution");
+        exec.setStartedAt(Instant.now());
+        exec = executionRepository.save(exec);
+        lastExecutionId = exec.getId();
+    }
+
+    @Quando("o listener processa um evento {string} publicado pelo workflow-worker para essa execução")
+    public void listenerProcessaEventoWorkflow(String eventType) throws Exception {
+        // Formato exatamente igual ao publicado por rust-services/workflow-worker/src/rabbitmq.rs
+        Map<String, Object> payload = new HashMap<>();
+        if ("agent.workflow.completed".equals(eventType)) {
+            payload.put("outputResult", "Workflow concluído: aprovação registrada");
+            payload.put("executionTimeMs", 1500);
+        } else {
+            payload.put("errorMessage", "Node 'validate-input' failed: timeout");
+            payload.put("errorCode", "EXECUTION_ERROR");
+        }
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("eventId", UUID.randomUUID().toString());
+        event.put("eventType", eventType);
+        event.put("executionId", lastExecutionId.toString());
+        event.put("timestamp", Instant.now().toString());
+        event.put("payload", payload);
+
+        listener.handleExecutionEvent(objectMapper.writeValueAsString(event));
+    }
+
+    @E("o campo output_result deve conter o resultado do workflow")
+    public void campoOutputResultContemResultadoWorkflow() {
+        String outputResult = jdbcTemplate.queryForObject(
+            "SELECT output_result FROM agent_executions WHERE id = ?",
+            String.class, lastExecutionId);
+        assertThat(outputResult).contains("Workflow concluído");
+    }
+
+    @E("o campo error_message deve conter a mensagem de erro do workflow")
+    public void campoErrorMessageContemErroWorkflow() {
+        String errorMessage = jdbcTemplate.queryForObject(
+            "SELECT error_message FROM agent_executions WHERE id = ?",
+            String.class, lastExecutionId);
+        assertThat(errorMessage).contains("validate-input");
+    }
+
     // ===== Steps @pending — retrieval (no-op) =====
 
     @Dado("que o agente executa uma busca semântica na base de conhecimento")

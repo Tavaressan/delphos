@@ -160,6 +160,27 @@ public class AgentExecutionEventListener {
                     log.error("Agent execution {} FAILED: {}", executionId, execution.getErrorMessage());
                     break;
 
+                // Eventos de conclusão/falha do workflow-worker (Rust). Usam eventType em formato
+                // diferente (dotted) dos eventos de RAG/CrewAI acima (PascalCase), por isso precisam
+                // de um branch próprio — ver rust-services/workflow-worker/src/rabbitmq.rs (issue #123).
+                case "agent.workflow.completed":
+                    execution.setStatus("COMPLETED");
+                    execution.setFinishedAt(Instant.now());
+                    Map<String, Object> workflowCompletedPayload = (Map<String, Object>) event.get("payload");
+                    execution.setOutputResult((String) workflowCompletedPayload.get("outputResult"));
+                    executionRepository.save(execution);
+                    log.info("Workflow execution {} COMPLETED successfully", executionId);
+                    break;
+
+                case "agent.workflow.failed":
+                    execution.setStatus("FAILED");
+                    execution.setFinishedAt(Instant.now());
+                    Map<String, Object> workflowFailedPayload = (Map<String, Object>) event.get("payload");
+                    execution.setErrorMessage((String) workflowFailedPayload.get("errorMessage"));
+                    executionRepository.save(execution);
+                    log.error("Workflow execution {} FAILED: {}", executionId, execution.getErrorMessage());
+                    break;
+
                 default:
                     log.warn("Unknown event type: {}", eventType);
                     break;
