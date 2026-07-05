@@ -29,6 +29,7 @@ jobs:
       java: ${{ steps.normalize.outputs.java }}
       frontend: ${{ steps.normalize.outputs.frontend }}
       python: ${{ steps.normalize.outputs.python }}
+      e2e: ${{ steps.normalize.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,6 +65,17 @@ jobs:
               - 'frontend/**'
             python:
               - 'python-services/**'
+            # Cobre a própria suíte E2E e os arquivos que o job
+            # e2e-integration usa diretamente — sem isso, uma mudança que só
+            # toca tests/e2e/** (ex.: novos cenários) faz rust/java/frontend/
+            # python ficarem todos 'false' e o job que deveria validar
+            # justamente essa mudança é pulado (achado ao mesclar a PR #122).
+            e2e:
+              - 'tests/e2e/**'
+              - 'docker-compose.yml'
+              - 'docker-compose.ci-ports.yml'
+              - 'scripts/reset.sh'
+              - 'scripts/setup.sh'
 
       - name: Normalize filter outputs (fail-safe)
         id: normalize
@@ -75,6 +87,7 @@ jobs:
           F_JAVA: ${{ steps.filter.outputs.java }}
           F_FRONTEND: ${{ steps.filter.outputs.frontend }}
           F_PYTHON: ${{ steps.filter.outputs.python }}
+          F_E2E: ${{ steps.filter.outputs.e2e }}
         run: |
           set -euo pipefail
           # Fail-safe: se o paths-filter falhou ou não conseguiu calcular o
@@ -86,6 +99,7 @@ jobs:
             echo "java=true" >> "$GITHUB_OUTPUT"
             echo "frontend=true" >> "$GITHUB_OUTPUT"
             echo "python=true" >> "$GITHUB_OUTPUT"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -97,6 +111,7 @@ jobs:
             echo "java=true" >> "$GITHUB_OUTPUT"
             echo "frontend=true" >> "$GITHUB_OUTPUT"
             echo "python=true" >> "$GITHUB_OUTPUT"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -104,6 +119,7 @@ jobs:
           echo "java=$F_JAVA" >> "$GITHUB_OUTPUT"
           echo "frontend=$F_FRONTEND" >> "$GITHUB_OUTPUT"
           echo "python=$F_PYTHON" >> "$GITHUB_OUTPUT"
+          echo "e2e=$F_E2E" >> "$GITHUB_OUTPUT"
 
       - name: Sanity check filter outputs
         if: always()
@@ -114,10 +130,12 @@ jobs:
           echo "java=${{ steps.normalize.outputs.java }}"
           echo "frontend=${{ steps.normalize.outputs.frontend }}"
           echo "python=${{ steps.normalize.outputs.python }}"
+          echo "e2e=${{ steps.normalize.outputs.e2e }}"
           if [ -z "${{ steps.normalize.outputs.rust }}" ] || \
              [ -z "${{ steps.normalize.outputs.java }}" ] || \
              [ -z "${{ steps.normalize.outputs.frontend }}" ] || \
-             [ -z "${{ steps.normalize.outputs.python }}" ]; then
+             [ -z "${{ steps.normalize.outputs.python }}" ] || \
+             [ -z "${{ steps.normalize.outputs.e2e }}" ]; then
             echo "::error::Um ou mais outputs do filtro de paths estão vazios - normalize step com bug"
             exit 1
           fi
@@ -408,7 +426,10 @@ jobs:
   # evitam qualquer chamada de rede à Vertex AI — só a orquestração via
   # RabbitMQ, a busca vetorial no pgvector e o HTTP entre serviços são reais.
   # Roda sempre que qualquer módulo mudar (mesmo path-filter do job `changes`)
-  # porque uma regressão de integração pode vir de qualquer serviço.
+  # porque uma regressão de integração pode vir de qualquer serviço, e também
+  # quando a própria suíte E2E (ou os arquivos docker-compose/scripts que ela
+  # usa) mudar — sem o filtro `e2e`, uma PR que só adiciona/ajusta cenários em
+  # tests/e2e/** nunca disparava este job (achado ao mesclar a PR #122).
   e2e-integration:
     name: Integration E2E (Docker Compose + Mock LLM)
     runs-on: ubuntu-latest
@@ -417,7 +438,8 @@ jobs:
       needs.changes.outputs.rust == 'true' ||
       needs.changes.outputs.java == 'true' ||
       needs.changes.outputs.frontend == 'true' ||
-      needs.changes.outputs.python == 'true'
+      needs.changes.outputs.python == 'true' ||
+      needs.changes.outputs.e2e == 'true'
     timeout-minutes: 25
     steps:
       - name: Checkout code
