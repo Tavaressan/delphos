@@ -23,6 +23,14 @@ public class RabbitMQConfig {
     public static final String ROUTING_KEY_DLQ = "agent.execution.dlq";
     public static final String ROUTING_KEY_EVENTS = "agent.execution.events";
 
+    // O workflow-worker (Rust) publica eventos de conclusão/falha usando eventType
+    // como routing key (ver rust-services/workflow-worker/src/rabbitmq.rs::publish_event),
+    // e não "agent.execution.events". Como o exchange é Direct (sem suporte a wildcard),
+    // é preciso um bind explícito por routing key real publicada (issue #123).
+    public static final String ROUTING_KEY_WORKFLOW_STARTED = "agent.workflow.started";
+    public static final String ROUTING_KEY_WORKFLOW_COMPLETED = "agent.workflow.completed";
+    public static final String ROUTING_KEY_WORKFLOW_FAILED = "agent.workflow.failed";
+
     @Bean
     public DirectExchange agentExchange() {
         return new DirectExchange(EXCHANGE_NAME, true, false);
@@ -80,5 +88,20 @@ public class RabbitMQConfig {
     @Bean
     public Binding bindingEventsQueue(Queue eventsQueue, DirectExchange agentExchange) {
         return BindingBuilder.bind(eventsQueue).to(agentExchange).with(ROUTING_KEY_EVENTS);
+    }
+
+    @Bean
+    public Binding bindingEventsQueueWorkflowStarted(Queue eventsQueue, DirectExchange agentExchange) {
+        return BindingBuilder.bind(eventsQueue).to(agentExchange).with(ROUTING_KEY_WORKFLOW_STARTED);
+    }
+
+    @Bean
+    public Binding bindingEventsQueueWorkflowCompleted(Queue eventsQueue, DirectExchange agentExchange) {
+        return BindingBuilder.bind(eventsQueue).to(agentExchange).with(ROUTING_KEY_WORKFLOW_COMPLETED);
+    }
+
+    @Bean
+    public Binding bindingEventsQueueWorkflowFailed(Queue eventsQueue, DirectExchange agentExchange) {
+        return BindingBuilder.bind(eventsQueue).to(agentExchange).with(ROUTING_KEY_WORKFLOW_FAILED);
     }
 }
