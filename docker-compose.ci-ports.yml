@@ -1,0 +1,26 @@
+# Portas expostas ao host apenas para o job `e2e-integration` do CI.
+#
+# O job usa `-f docker-compose.yml` explícito (sem docker-compose.override.yml,
+# que força EMBEDDING_PROVIDER=real para desenvolvimento local). Isso também
+# remove os port mappings de core/embedding-service/frontend que só existem
+# no override — sem eles, a suíte Node.js (rodando no host runner, fora da
+# rede docker) não consegue alcançar esses serviços. Este arquivo republica
+# só as portas necessárias para o teste, sem nenhuma variável de ambiente.
+version: "3.9"
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  core:
+    ports:
+      - "8080:8080"
+
+  embedding-service:
+    ports:
+      - "8000:8000"
+
+  frontend:
+    ports:
+      - "3000:3000"
