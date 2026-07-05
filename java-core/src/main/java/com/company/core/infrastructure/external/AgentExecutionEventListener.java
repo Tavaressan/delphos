@@ -155,7 +155,10 @@ public class AgentExecutionEventListener {
                     execution.setStatus("FAILED");
                     execution.setFinishedAt(Instant.now());
                     Map<String, Object> failPayload = (Map<String, Object>) event.get("payload");
-                    execution.setErrorMessage((String) failPayload.get("errorMessage"));
+                    // Produtores diferentes usam chaves diferentes para a mensagem de erro:
+                    // rag-worker (Rust) publica "error", crew-worker (Python) publica "reason".
+                    // Nenhum dos dois usa "errorMessage", então o campo ficava sempre null.
+                    execution.setErrorMessage(extractErrorMessage(failPayload));
                     executionRepository.save(execution);
                     log.error("Agent execution {} FAILED: {}", executionId, execution.getErrorMessage());
                     break;
@@ -188,5 +191,16 @@ public class AgentExecutionEventListener {
         } catch (Exception e) {
             log.error("Error processing agent execution event", e);
         }
+    }
+
+    private String extractErrorMessage(Map<String, Object> payload) {
+        Object value = payload.get("errorMessage");
+        if (value == null) {
+            value = payload.get("reason");
+        }
+        if (value == null) {
+            value = payload.get("error");
+        }
+        return value != null ? value.toString() : null;
     }
 }
