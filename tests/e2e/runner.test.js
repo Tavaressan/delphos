@@ -377,6 +377,17 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     console.log('Passo 1: Enviando chat para tenant sem nenhum documento indexado...');
     const emptyTenantId = '11111111-1111-1111-1111-111111111111';
 
+    // Desde a issue #100, agentId é obrigatório em POST /api/executions. Este
+    // teste valida resiliência a contexto vazio (sem documentos), não a
+    // ausência de agente — então seedamos um agente mínimo para o tenant
+    // (sem nenhum documento associado), preservando o cenário original.
+    const emptyTenantAgentId = '22222222-2222-2222-2222-222222222222';
+    await dbClient.query(`
+      INSERT INTO agents (id, tenant_id, name, system_instructions, status)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO NOTHING
+    `, [emptyTenantAgentId, emptyTenantId, 'Agente E2E Contexto Vazio', 'Você é um assistente de teste.', 'PUBLISHED']);
+
     const chatReq = await fetch(`${config.backendUrl}/api/executions`, {
       method: 'POST',
       headers: {
@@ -384,7 +395,8 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
       },
       body: JSON.stringify({
         prompt: 'Existe algum documento cadastrado sobre esse assunto?',
-        tenantId: emptyTenantId
+        tenantId: emptyTenantId,
+        agentId: emptyTenantAgentId
       })
     });
 
