@@ -39,9 +39,7 @@ def test_process_job_with_nonexistent_agent_id_nacks_without_crashing(capsys):
         # Reproduz o comportamento real de CrewAiRuntimeAdapter quando o
         # agent_id não existe na tabela `agents` (ValueError levantado no
         # __init__, ver runtime/crewai_adapter.py::_load_agent_config).
-        MockAdapter.side_effect = ValueError(
-            "Agent 'agent-does-not-exist' not found"
-        )
+        MockAdapter.side_effect = ValueError("Agent 'agent-does-not-exist' not found")
 
         # Não deve propagar a exceção para fora de process_job.
         main.process_job(ch, method, None, body)

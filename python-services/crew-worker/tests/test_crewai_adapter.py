@@ -9,7 +9,9 @@ def channel():
     return ch
 
 
-def _make_adapter(channel, agent_id=None, db_row=None, db_raises=None, query_raises=None):
+def _make_adapter(
+    channel, agent_id=None, db_row=None, db_raises=None, query_raises=None
+):
     with patch("runtime.crewai_adapter.LLM"), patch(
         "runtime.crewai_adapter.psycopg2"
     ) as mock_pg:
