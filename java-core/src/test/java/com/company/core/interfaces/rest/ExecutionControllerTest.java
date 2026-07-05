@@ -152,6 +152,21 @@ class ExecutionControllerTest {
     }
 
     @Test
+    void submitExecution_withMalformedAgentId_returns400AndDoesNotPublish() throws Exception {
+        String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\",\"agentId\":\"not-a-uuid\"}";
+
+        mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("agentId inválido: not-a-uuid"));
+
+        verifyNoInteractions(rabbitTemplate);
+        verify(executionRepository, never()).save(any());
+        verify(agentRepository, never()).findById(any());
+    }
+
+    @Test
     void submitExecution_withNonExistentAgentId_returns404AndDoesNotPublish() throws Exception {
         UUID unknownAgentId = UUID.randomUUID();
         when(agentRepository.findById(unknownAgentId)).thenReturn(Optional.empty());

@@ -88,7 +88,7 @@ export const ChatCanvas: React.FC = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMsg.trim() || isLoading) return;
+    if (!inputMsg.trim() || isLoading || !selectedAgentId) return;
 
     const userPrompt = inputMsg.trim();
     setInputMsg('');
@@ -254,7 +254,14 @@ export const ChatCanvas: React.FC = () => {
             value={inputMsg}
             onChange={setInputMsg}
             onSubmit={handleSend}
-            disabled={isLoading}
+            disabled={isLoading || !selectedAgentId}
+            placeholder={
+              selectedAgentId
+                ? undefined
+                : agentsLoaded
+                ? NO_ACTIVE_AGENTS_MESSAGE
+                : 'Carregando agentes...'
+            }
           />
         </div>
       </div>

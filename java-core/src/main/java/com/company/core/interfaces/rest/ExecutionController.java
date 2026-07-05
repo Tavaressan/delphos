@@ -70,7 +70,16 @@ public class ExecutionController {
                 return ResponseEntity.badRequest().body(errorResp);
             }
 
-            Agent agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
+            UUID agentUuid;
+            try {
+                agentUuid = UUID.fromString(agentIdStr);
+            } catch (IllegalArgumentException ex) {
+                Map<String, Object> errorResp = new HashMap<>();
+                errorResp.put("error", "agentId inválido: " + agentIdStr);
+                return ResponseEntity.badRequest().body(errorResp);
+            }
+
+            Agent agent = agentRepository.findById(agentUuid).orElse(null);
             if (agent == null) {
                 Map<String, Object> errorResp = new HashMap<>();
                 errorResp.put("error", "Agent not found: " + agentIdStr);
