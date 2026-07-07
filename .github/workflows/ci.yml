@@ -437,7 +437,6 @@ jobs:
     if: |
       needs.changes.outputs.rust == 'true' ||
       needs.changes.outputs.java == 'true' ||
-      needs.changes.outputs.frontend == 'true' ||
       needs.changes.outputs.python == 'true' ||
       needs.changes.outputs.e2e == 'true'
     timeout-minutes: 25
