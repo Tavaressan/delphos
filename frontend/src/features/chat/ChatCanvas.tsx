@@ -12,6 +12,7 @@ import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
 import { MessageContent } from './MessageContent';
+import { ToolCallRenderer } from './tool-renderers';
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
@@ -200,6 +201,9 @@ export const ChatCanvas: React.FC = () => {
                       : 'bg-secondary/20 dark:bg-slate-800/40 text-text-primary border border-border-color rounded-tl-none'
                   }`}>
                     <MessageContent role={msg.role} content={msg.content} />
+
+                    {/* Renderer específico por tipo de ferramenta invocada pelo agente (issue #138) */}
+                    {msg.toolCall && <ToolCallRenderer toolCall={msg.toolCall} />}
 
                     {/* Fontes RAG — visível somente para admin */}
                     {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
