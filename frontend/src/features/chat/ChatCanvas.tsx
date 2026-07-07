@@ -11,6 +11,7 @@ import { apiClient } from '../../infrastructure/api/apiClient';
 import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
+import { MessageContent } from './MessageContent';
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
@@ -198,7 +199,7 @@ export const ChatCanvas: React.FC = () => {
                       ? 'bg-secondary/40 text-text-secondary border border-border-color italic font-mono text-[11px]'
                       : 'bg-secondary/20 dark:bg-slate-800/40 text-text-primary border border-border-color rounded-tl-none'
                   }`}>
-                    {msg.content}
+                    <MessageContent role={msg.role} content={msg.content} />
 
                     {/* Fontes RAG — visível somente para admin */}
                     {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
