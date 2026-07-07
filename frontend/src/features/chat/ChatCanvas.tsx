@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useExecution } from '../../hooks/useExecution';
+import { useExecution, TimelineEvent } from '../../hooks/useExecution';
 import { ChatInput } from '../../components/forms/ChatInput';
+import { TaskPanel, Task } from '../../components/panel/TaskPanel';
 import { Message } from '../../domain/entities';
 import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -12,6 +13,22 @@ import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
 import { MessageContent } from './MessageContent';
+
+/**
+ * Adapter: converte TimelineEvent (do useExecution hook) para Task (formato TaskPanel).
+ */
+const timelineToTasks = (events: TimelineEvent[]): Task[] => {
+  return events.map(event => ({
+    id: event.id,
+    name: event.name,
+    status:
+      event.status === 'success' ? 'completed' :
+      event.status === 'warning' ? 'in_progress' :
+      event.status === 'danger' ? 'failed' :
+      'pending',
+    detail: event.details,
+  }));
+};
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
@@ -267,7 +284,7 @@ export const ChatCanvas: React.FC = () => {
         </div>
       </div>
 
-      {/* Execution Timeline — desktop: right panel; mobile: bottom collapsible strip */}
+      {/* Task Panel — desktop: right panel; mobile: bottom collapsible strip */}
       <div className={`
         transition-all duration-300 flex-shrink-0 bg-surface border border-border-color rounded-lg shadow-sm flex flex-col overflow-hidden
         ${isTimelineCollapsed
@@ -275,65 +292,35 @@ export const ChatCanvas: React.FC = () => {
           : 'p-5 h-52 md:h-auto w-full md:w-80'}
       `}>
         {/* Panel header */}
-        <div className="flex items-center justify-between border-b border-border-color pb-2 flex-shrink-0">
+        <div className="flex items-center justify-between border-b border-border-color pb-3 flex-shrink-0">
           {!isTimelineCollapsed && (
-            <span className="text-xs font-bold text-text-secondary uppercase tracking-wider heading-font">Progresso de Execução</span>
-          )}
-          <div className={`flex items-center gap-2 ${isTimelineCollapsed ? 'w-full justify-center' : 'ml-auto'}`}>
-            {!isTimelineCollapsed && (
+            <div className="flex items-center gap-2">
               <Activity className={`w-4 h-4 text-accent ${isLoading ? 'animate-pulse' : ''}`} />
-            )}
-            <button
-              onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
-              className="text-text-secondary hover:text-text-primary p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
-              aria-label={isTimelineCollapsed ? 'Expandir Linha do Tempo' : 'Recolher Linha do Tempo'}
-            >
-              {/* Mobile: chevron vertical; desktop: chevron horizontal */}
-              <span className="md:hidden">
-                {isTimelineCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </span>
-              <span className="hidden md:block">
-                {isTimelineCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </span>
-            </button>
-          </div>
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider heading-font">Tarefas</span>
+            </div>
+          )}
+          <button
+            onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+            className="text-text-secondary hover:text-text-primary p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
+            aria-label={isTimelineCollapsed ? 'Expandir Painel de Tarefas' : 'Recolher Painel de Tarefas'}
+          >
+            {/* Mobile: chevron vertical; desktop: chevron horizontal */}
+            <span className="md:hidden">
+              {isTimelineCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </span>
+            <span className="hidden md:block">
+              {isTimelineCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </span>
+          </button>
         </div>
 
         {!isTimelineCollapsed && (
-          <div className="overflow-y-auto flex-1 flex flex-col gap-4 pr-1 mt-4">
-            {timeline.length > 0 ? (
-              timeline.map((event) => (
-                <div key={event.id} className="flex gap-3 text-xs">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white transition-colors duration-300 ${
-                      event.status === 'success' ? 'bg-success' :
-                      event.status === 'warning' ? 'bg-warning' :
-                      event.status === 'danger' ? 'bg-danger' :
-                      'bg-slate-200 text-slate-500'
-                    }`}>
-                      {event.status === 'success' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                      ) : (
-                        event.id
-                      )}
-                    </div>
-                    <div className="w-[1.5px] flex-1 bg-border-color mt-1" />
-                  </div>
-                  <div className="flex flex-col flex-1 pb-1">
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="font-bold text-text-primary truncate">{event.name}</span>
-                      <span className="text-[9px] font-mono text-text-secondary flex-shrink-0">{event.time}</span>
-                    </div>
-                    <p className="text-text-secondary mt-0.5 text-[11px] leading-relaxed">{event.details}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-text-secondary text-center py-8 gap-2">
-                <Activity className="w-8 h-8 text-text-secondary opacity-60" />
-                <span className="text-xs">Envie uma mensagem para começar.</span>
-              </div>
-            )}
+          <div className="overflow-y-auto flex-1 flex flex-col gap-3 pr-1 mt-4">
+            <TaskPanel
+              tasks={timelineToTasks(timeline)}
+              title="Progresso de Execução"
+              emptyMessage="Envie uma mensagem para começar."
+            />
           </div>
         )}
       </div>
