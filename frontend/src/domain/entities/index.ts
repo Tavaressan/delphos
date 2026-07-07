@@ -100,3 +100,19 @@ export interface Permission {
   id: string;
   name: string;
 }
+
+// Painel de integrações do agente (issue #136): servidores MCP e skills customizadas.
+export type McpTransport = 'stdio' | 'sse';
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  command: string; // comando (stdio) ou URL (sse) do servidor MCP
+  transport: McpTransport;
+}
+
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+}
