@@ -110,7 +110,7 @@ public class ExecutionController {
             AgentExecution execution = new AgentExecution();
             execution.setConversation(conversation);
             
-            UUID actualAgentId = (agent != null) ? agent.getId() : UUID.randomUUID();
+            UUID actualAgentId = (agent != null) ? agent.getId() : null;
             execution.setAgentId(actualAgentId);
             execution.setTenantId(tenantId);
             execution.setStatus("REQUESTED");
@@ -122,7 +122,9 @@ public class ExecutionController {
             Map<String, Object> payload = new HashMap<>();
             payload.put("execution_id", execution.getId().toString());
             payload.put("conversation_id", conversation.getId().toString());
-            payload.put("agent_id", actualAgentId.toString());
+            if (actualAgentId != null) {
+                payload.put("agent_id", actualAgentId.toString());
+            }
             payload.put("tenant_id", tenantId.toString());
             payload.put("prompt_final", prompt);
             if (agent != null && agent.getManifestConfig() != null) {
@@ -158,7 +160,9 @@ public class ExecutionController {
             response.put("status", execution.getStatus());
             response.put("prompt", execution.getPromptFinal());
             response.put("tenantId", tenantId.toString());
-            response.put("agentId", actualAgentId.toString());
+            if (actualAgentId != null) {
+                response.put("agentId", actualAgentId.toString());
+            }
 
             return ResponseEntity.ok(response);
 

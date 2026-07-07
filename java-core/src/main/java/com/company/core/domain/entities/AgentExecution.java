@@ -19,8 +19,7 @@ public class AgentExecution {
     @JoinColumn(name = "conversation_id")
     private Conversation conversation;
 
-    @NotNull
-    @Column(name = "agent_id", nullable = false)
+    @Column(name = "agent_id")
     private UUID agentId;
 
     @NotNull
