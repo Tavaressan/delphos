@@ -12,6 +12,8 @@ import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
 import { MessageContent } from './MessageContent';
+import { ConfirmCard } from './hitl/ConfirmCard';
+import { SensitiveAction } from './hitl/types';
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
@@ -23,6 +25,11 @@ export const ChatCanvas: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [inputMsg, setInputMsg] = useState<string>('');
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState<boolean>(false);
+  // HITL (human-in-the-loop): ação sensível pendente de aprovação humana.
+  // NOTA: o backend ainda não emite este evento em tempo real (issue #137) —
+  // este estado existe apenas para habilitar o ponto de renderização do
+  // ConfirmCard; a integração real (SSE/WebSocket) fica como próximo passo.
+  const [pendingAction, setPendingAction] = useState<SensitiveAction | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
@@ -221,6 +228,15 @@ export const ChatCanvas: React.FC = () => {
               </motion.div>
             ))}
           </AnimatePresence>
+
+          {/* HITL — cartão bloqueante de aprovação de ação sensível (issue #137) */}
+          {pendingAction && (
+            <ConfirmCard
+              action={pendingAction}
+              onApprove={() => setPendingAction(null)}
+              onReject={() => setPendingAction(null)}
+            />
+          )}
 
           {isLoading && (
             <motion.div
