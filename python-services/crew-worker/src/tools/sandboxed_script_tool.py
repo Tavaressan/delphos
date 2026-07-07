@@ -110,6 +110,12 @@ class ScriptValidationError(ValueError):
     """Levantada quando um script viola a allowlist de sandbox."""
 
 
+def validate_script(script: str) -> None:
+    """Alias público de `_validate_script`, para reuso fora deste módulo (ex.:
+    `tools/custom_agent_tools.py`, issue #129) sem depender de nome "privado"."""
+    _validate_script(script)
+
+
 def _validate_script(script: str) -> None:
     """Valida estaticamente o script via AST antes de qualquer execução.
 
