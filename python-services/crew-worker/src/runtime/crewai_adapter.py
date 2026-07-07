@@ -156,6 +156,33 @@ class CrewAiRuntimeAdapter:
             if conn is not None:
                 conn.close()
 
+    def _load_custom_tools(self) -> list:
+        """Carrega as tools Python customizadas do agente (`tools/*.py` no ZIP,
+        issue #129), reaproveitando a validação AST de `sandboxed_script_tool`.
+
+        Uma tool que viola a allowlist rejeita o registro imediatamente (não é
+        adiada para a execução) e a execução do agente é abortada com
+        `AgentExecutionFailed`, na mesma linha de `_load_agent_config`.
+        """
+        from tools.custom_agent_tools import load_custom_tools
+        from tools.sandboxed_script_tool import ScriptValidationError
+
+        try:
+            return load_custom_tools(
+                self.agent_id,
+                channel=self.channel,
+                execution_id=self.execution_id,
+                tenant_id=self.tenant_id,
+            )
+        except ScriptValidationError as e:
+            self.publish_event(
+                "AgentExecutionFailed",
+                {
+                    "reason": f"Custom tool rejected for agent_id '{self.agent_id}': {str(e)}"
+                },
+            )
+            raise
+
     def publish_event(self, event_type: str, payload: dict):
         event_body = {
             "eventId": str(uuid.uuid4()),
@@ -619,6 +646,9 @@ class CrewAiRuntimeAdapter:
                     tenant_id=self.tenant_id,
                 )
             )
+
+        if self.agent_id is not None:
+            tools.extend(self._load_custom_tools())
 
         agent = Agent(
             role=self._agent_role,
