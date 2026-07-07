@@ -84,22 +84,59 @@ fn test_generate_mock_embedding() {
     assert!(diff < 0.001, "Magnitude: {}, diff: {}", sum_sq, diff);
 }
 
+// Regressão da issue #117: extract_text_from_pdf() não deve mais mascarar uma
+// falha real de parsing do lopdf com base numa heurística de conteúdo textual
+// ("Alfabra Vector"/"Documento"/"Auditoria"). Bytes inválidos de PDF devem
+// sempre propagar erro, mesmo que "pareçam" com o antigo texto de fallback.
 #[test]
-fn test_extract_text_from_pdf_with_fallback() {
-    let mock_pdf_bytes = b"Alfabra Vector - Documento de Teste de Auditoria de TI.";
-    let res = extract_text_from_pdf(mock_pdf_bytes);
-    assert!(res.is_ok());
-    let text = res.unwrap();
-    assert!(text.contains("Alfabra Vector"));
+fn test_extract_text_from_pdf_invalid_bytes_propagates_error() {
+    let invalid_pdf_bytes = b"Alfabra Vector - Documento de Teste de Auditoria de TI.";
+    let res = extract_text_from_pdf(invalid_pdf_bytes);
+    assert!(
+        res.is_err(),
+        "Bytes inválidos de PDF não deveriam ser aceitos silenciosamente via heurística de texto"
+    );
+    let err_msg = format!("{:#}", res.unwrap_err());
+    assert!(err_msg.to_lowercase().contains("pdf"));
 }
 
+// Regressão da issue #117: por padrão (sem INGESTION_DEV_FALLBACK=true) um
+// arquivo ausente no MinIO e localmente deve propagar um erro real, e não
+// retornar um texto mock de desenvolvimento silenciosamente.
 #[tokio::test]
-async fn test_download_file_fallback() {
-    let res = download_file("arquivo_inexistente_123.pdf").await;
+async fn test_download_file_missing_propagates_error_by_default() {
+    let res = download_file_with_fallback("arquivo_inexistente_123.pdf", false).await;
+    assert!(
+        res.is_err(),
+        "download_file() deveria falhar quando o arquivo não existe no MinIO nem localmente"
+    );
+    let err_msg = format!("{:#}", res.unwrap_err());
+    assert!(err_msg.contains("arquivo_inexistente_123.pdf"));
+}
+
+// O fallback textual de desenvolvimento só deve ser usado quando explicitamente
+// habilitado (opt-in), nunca como comportamento padrão/silencioso.
+#[tokio::test]
+async fn test_download_file_dev_fallback_is_opt_in_only() {
+    let res = download_file_with_fallback("arquivo_inexistente_456.pdf", true).await;
     assert!(res.is_ok());
     let bytes = res.unwrap();
     let text = String::from_utf8_lossy(&bytes);
     assert!(text.contains("Documento de Teste de Auditoria"));
+}
+
+// Testa ambos os cenários (default e opt-in) numa única thread de teste para
+// evitar condição de corrida com outros testes mutando a mesma env var global.
+#[test]
+fn test_dev_fallback_enabled_defaults_to_false_and_respects_opt_in() {
+    std::env::remove_var("INGESTION_DEV_FALLBACK");
+    assert!(!dev_fallback_enabled());
+
+    std::env::set_var("INGESTION_DEV_FALLBACK", "true");
+    assert!(dev_fallback_enabled());
+
+    std::env::remove_var("INGESTION_DEV_FALLBACK");
+    assert!(!dev_fallback_enabled());
 }
 
 #[tokio::test]
@@ -136,14 +173,26 @@ async fn test_db_integration_ingestion() {
     let test_doc_id = uuid::Uuid::new_v4();
     let test_tenant_id = uuid::Uuid::new_v4();
 
+    // Desde a correção da issue #117, download_file() não mascara mais arquivos
+    // ausentes com um texto mock. Para exercitar o pipeline de ingestão feliz
+    // (chunking + embeddings + persistência) sem depender de MinIO, escrevemos
+    // um arquivo real localmente — download_file() o encontra via fallback
+    // legítimo de leitura local (std::fs::read), sem precisar de INGESTION_DEV_FALLBACK.
+    let local_file_path = "txt_teste_integracao.txt";
+    std::fs::write(
+        local_file_path,
+        "Texto de teste de integração para validar chunking e geração de embeddings.",
+    )
+    .expect("Falha ao escrever arquivo local de teste de integração");
+
     let insert_res = sqlx::query(
         "INSERT INTO documents (id, name, file_path, file_size, file_type, tenant_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7)"
     )
     .bind(test_doc_id)
-    .bind("pdf_teste_integracao.pdf")
-    .bind("pdf_teste_integracao.pdf")
+    .bind(local_file_path)
+    .bind(local_file_path)
     .bind(500 as i64)
-    .bind("pdf")
+    .bind("txt")
     .bind(test_tenant_id)
     .bind("UPLOADING")
     .execute(&pool)
@@ -157,12 +206,15 @@ async fn test_db_integration_ingestion() {
 
     let job = IngestionJob {
         document_id: test_doc_id,
-        file_path: "pdf_teste_integracao.pdf".to_string(),
+        file_path: local_file_path.to_string(),
         tenant_id: test_tenant_id,
-        file_type: "pdf".to_string(),
+        file_type: "txt".to_string(),
     };
 
     let process_res = execute_ingestion(&pool, &job).await;
+
+    let _ = std::fs::remove_file(local_file_path);
+
     assert!(
         process_res.is_ok(),
         "Erro ao processar a ingestão no teste de integração: {:?}",
@@ -179,6 +231,92 @@ async fn test_db_integration_ingestion() {
     assert!(
         chunks_count.0 > 0,
         "Nenhum chunk foi inserido no banco para o documento de teste."
+    );
+
+    let delete_res = sqlx::query("DELETE FROM documents WHERE id = $1")
+        .bind(test_doc_id)
+        .execute(&pool)
+        .await;
+    assert!(delete_res.is_ok());
+}
+
+// Regressão da issue #117: quando o arquivo de um documento não existe no MinIO
+// nem localmente, execute_ingestion() deve propagar o erro real (sem fallback
+// textual mascarando a falha) e process_delivery() deve marcar o documento como
+// FAILED com processing_error populado, refletindo a falha genuína.
+#[tokio::test]
+async fn test_db_integration_missing_file_marks_document_failed() {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/rag_db".to_string());
+
+    let pool = match sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_millis(1500))
+        .connect(&database_url)
+        .await
+    {
+        Ok(p) => p,
+        Err(_) => {
+            println!("Banco de dados local indisponível no teste. Pulando teste de integração.");
+            return;
+        }
+    };
+
+    // Garante que o fallback de desenvolvimento está desligado (comportamento padrão),
+    // para que a ausência do arquivo realmente propague como falha.
+    std::env::remove_var("INGESTION_DEV_FALLBACK");
+
+    let test_doc_id = uuid::Uuid::new_v4();
+    let test_tenant_id = uuid::Uuid::new_v4();
+    let missing_file_path = format!("arquivo_inexistente_{}.pdf", test_doc_id);
+
+    let insert_res = sqlx::query(
+        "INSERT INTO documents (id, name, file_path, file_size, file_type, tenant_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7)"
+    )
+    .bind(test_doc_id)
+    .bind(&missing_file_path)
+    .bind(&missing_file_path)
+    .bind(500 as i64)
+    .bind("pdf")
+    .bind(test_tenant_id)
+    .bind("UPLOADING")
+    .execute(&pool)
+    .await;
+
+    assert!(
+        insert_res.is_ok(),
+        "Falha ao inserir documento de teste de integração: {:?}",
+        insert_res.err()
+    );
+
+    let body = serde_json::json!({
+        "document_id": test_doc_id,
+        "file_path": missing_file_path,
+        "tenant_id": test_tenant_id,
+        "file_type": "pdf",
+    })
+    .to_string();
+
+    let process_res = process_delivery(&pool, &body).await;
+    assert!(
+        process_res.is_err(),
+        "process_delivery() deveria propagar erro quando o arquivo do documento não existe"
+    );
+
+    let row: (String, Option<String>) =
+        sqlx::query_as("SELECT status, processing_error FROM documents WHERE id = $1")
+            .bind(test_doc_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    assert_eq!(
+        row.0, "FAILED",
+        "Documento com arquivo ausente deveria transicionar para FAILED"
+    );
+    assert!(
+        row.1.is_some() && !row.1.as_ref().unwrap().trim().is_empty(),
+        "processing_error deveria estar populado para o documento com falha"
     );
 
     let delete_res = sqlx::query("DELETE FROM documents WHERE id = $1")

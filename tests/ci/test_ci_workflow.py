@@ -23,6 +23,11 @@ WORKFLOW_PATH = (
 
 MODULE_FILTERS = ("rust", "java", "frontend", "python")
 
+# Filtro adicional (não é um "módulo" de serviço, mas precisa do mesmo
+# tratamento de fail-safe/normalização): cobre a própria suíte E2E e os
+# arquivos docker-compose/scripts que o job e2e-integration usa diretamente.
+ALL_FILTERS = MODULE_FILTERS + ("e2e",)
+
 
 def _load_workflow():
     with open(WORKFLOW_PATH, "r", encoding="utf-8") as f:
@@ -108,7 +113,7 @@ def test_paths_filter_step_is_fail_safe():
         "se o paths-filter falhar"
     )
     run_script = normalize_step.get("run", "")
-    for name in MODULE_FILTERS:
+    for name in ALL_FILTERS:
         assert f"{name}=true" in run_script, (
             f"step de normalizacao precisa ter um caminho de fallback que "
             f"define {name}=true quando o filtro falha"
@@ -121,7 +126,7 @@ def test_job_outputs_come_from_normalize_step():
     workflow = _load_workflow()
     changes_job = _changes_job(workflow)
     outputs = changes_job.get("outputs", {})
-    for name in MODULE_FILTERS:
+    for name in ALL_FILTERS:
         assert name in outputs
         assert "steps.normalize.outputs." in outputs[name], (
             f"output '{name}' do job changes deve vir de steps.normalize, "
@@ -136,6 +141,88 @@ def test_native_module_jobs_still_present():
     jobs = workflow["jobs"]
     for job_name in ("rust-check", "java-check", "frontend-check", "python-ci"):
         assert job_name in jobs, f"job nativo '{job_name}' nao deve ser removido"
+
+
+def test_e2e_filter_covers_e2e_suite_and_its_dependencies():
+    """O filtro 'e2e' precisa cobrir tests/e2e/** e os arquivos docker-compose/
+    scripts que o job e2e-integration usa diretamente -- sem isso, uma PR que
+    só muda cenarios em tests/e2e/** deixa rust/java/frontend/python todos
+    'false' e o job que deveria validar essa mudanca e pulado (achado ao
+    mesclar a PR #122, onde os testes T012/T013 nunca rodaram em CI)."""
+    workflow = _load_workflow()
+    filters = _filters_yaml(_changes_job(workflow))
+    assert "e2e" in filters, "filtro 'e2e' ausente"
+    paths = filters["e2e"]
+    assert any(p.startswith("tests/e2e/") for p in paths), (
+        "filtro 'e2e' precisa cobrir tests/e2e/**"
+    )
+    assert any("docker-compose.yml" in p for p in paths), (
+        "filtro 'e2e' precisa cobrir docker-compose.yml (usado pelo job "
+        "e2e-integration para subir a stack)"
+    )
+
+
+def test_e2e_integration_job_exists_and_runs_with_mock_llm():
+    """Deve existir um job que sobe o docker-compose completo e roda a suite
+    E2E (tests/e2e/runner.test.js) usando providers mockados de LLM, para
+    validar containers reais se comunicando entre si sem depender de
+    credenciais da Vertex AI ou de rede externa."""
+    workflow = _load_workflow()
+    jobs = workflow["jobs"]
+    assert "e2e-integration" in jobs, "job de integracao E2E via docker-compose nao encontrado"
+
+    job = jobs["e2e-integration"]
+
+    needs = job.get("needs")
+    needs_set = {needs} if isinstance(needs, str) else set(needs or [])
+    assert needs_set == {"changes"}, (
+        "job 'e2e-integration' deve depender apenas de 'changes' (rodar em "
+        "paralelo aos jobs nativos e de docker-build, nao apos eles)"
+    )
+
+    condition = job.get("if", "")
+    for name in ALL_FILTERS:
+        assert f"needs.changes.outputs.{name}" in condition, (
+            f"job 'e2e-integration' deve rodar quando o modulo '{name}' mudar"
+        )
+
+    run_steps = " ".join(step.get("run", "") for step in job["steps"])
+
+    assert "-f docker-compose.yml" in run_steps, (
+        "job 'e2e-integration' deve usar '-f docker-compose.yml' explicito "
+        "para NAO mesclar o docker-compose.override.yml (que forca "
+        "EMBEDDING_PROVIDER=real para desenvolvimento local)"
+    )
+    assert "docker-compose.ci-ports.yml" in run_steps, (
+        "job 'e2e-integration' precisa republicar as portas de core/"
+        "embedding-service/frontend (docker-compose.ci-ports.yml), ja que "
+        "usar so '-f docker-compose.yml' tambem remove os port mappings que "
+        "so existem no override de dev -- sem isso a suite Node.js (rodando "
+        "no host runner) nao alcanca esses servicos"
+    )
+    assert "EMBEDDING_PROVIDER=mock" in run_steps
+    assert "LLM_PROVIDER=mock" in run_steps
+    assert "CREW_WORKER_MODE=mock" in run_steps
+    assert "npm run test:e2e" in run_steps
+
+    e2e_test_step = next(
+        (s for s in job["steps"] if s.get("run", "").strip() == "npm run test:e2e"), None
+    )
+    assert e2e_test_step is not None, "step que roda 'npm run test:e2e' nao encontrado"
+    assert e2e_test_step.get("env", {}).get("NEXT_PUBLIC_BACKEND_URL") == "http://localhost:8080", (
+        ".env.example define NEXT_PUBLIC_BACKEND_URL=http://localhost:8000 (porta do "
+        "embedding-service, nao do core). O step que roda a suite E2E precisa sobrescrever "
+        "essa variavel via 'env:' explicito para http://localhost:8080 (porta real do core) "
+        "-- tests/e2e/config.js so preenche uma chave do .env se ela ainda nao estiver em "
+        "process.env, entao um append no .env nao teria efeito"
+    )
+
+    teardown_steps = [s for s in job["steps"] if "down" in s.get("run", "")]
+    assert teardown_steps, "job 'e2e-integration' deve derrubar a stack no final"
+    assert any(s.get("if") == "always()" for s in teardown_steps), (
+        "o teardown do docker-compose deve rodar com if: always(), mesmo se "
+        "os testes E2E falharem"
+    )
 
 
 def test_docker_build_jobs_exist_and_run_in_parallel():
