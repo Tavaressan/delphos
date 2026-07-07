@@ -41,10 +41,20 @@ def _get_route_to_agent_tool(adapter, mock_pg):
         "runtime.crewai_adapter.Agent"
     ) as mock_agent_cls, patch("runtime.crewai_adapter.Task"), patch(
         "runtime.crewai_adapter.Crew"
-    ) as mock_crew_cls:
+    ) as mock_crew_cls, patch(
+        "tools.custom_agent_tools.psycopg2"
+    ) as mock_custom_tools_pg:
         mock_requests.post.return_value = MagicMock(
             status_code=200, json=lambda: {"data": [{"embedding": [0.1] * 768}]}
         )
+
+        # issue #129: execute() com agent_id definido também consulta
+        # agent_custom_tools; sem tools customizadas cadastradas para este agente.
+        mock_custom_tools_conn = MagicMock()
+        mock_custom_tools_cur = MagicMock()
+        mock_custom_tools_cur.fetchall.return_value = []
+        mock_custom_tools_conn.cursor.return_value = mock_custom_tools_cur
+        mock_custom_tools_pg.connect.return_value = mock_custom_tools_conn
 
         mock_crew_instance = MagicMock()
         mock_crew_instance.kickoff.return_value = "resposta mock"
