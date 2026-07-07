@@ -9,8 +9,31 @@ from typing import Any, List, Mapping, Optional
 from crewai import Agent, Task, Crew, Process, BaseLLM, LLM
 from crewai.tools import tool
 import yaml
+from pydantic import BaseModel, ValidationError, field_validator
 
 from runtime.instruction_parser import parse as parse_instructions
+
+
+class QuotaValue(BaseModel):
+    """Pydantic model for validating individual quota items."""
+
+    limit: int
+    resource: str
+
+    @field_validator("limit")
+    @classmethod
+    def limit_must_be_positive(cls, v):
+        if v < 0:
+            raise ValueError("limit must be non-negative")
+        return v
+
+    @field_validator("resource")
+    @classmethod
+    def resource_must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("resource must not be empty")
+        return v.strip()
+
 
 _HARDCODED_ROLE = "Elevator Specialist"
 _HARDCODED_GOAL = (
@@ -270,6 +293,85 @@ class CrewAiRuntimeAdapter:
             if conn is not None:
                 conn.close()
 
+    def calculate_sandbox_quota(self, tenant_id: str, action: str, values: list) -> str:
+        """
+        Calcula a cota de tokens do sandbox para um tenant específico.
+
+        Suporta dois formatos:
+        1. Lista de integers: [100, 200, 300] — soma direta
+        2. Lista de dicts: [{"limit": 100, "resource": "tokens"}, ...]
+           — valida e soma pelo campo 'limit'
+
+        Args:
+            tenant_id: Identificador do tenant
+            action: Ação a executar (add, sum, etc.)
+            values: Lista de números ou dicts com estrutura {"limit": <int>, "resource": <str>}
+
+        Returns:
+            JSON string com resultado {"quota_used": <total>, "status": "OK"}
+
+        Raises:
+            ValueError: Se algum item em values não atender ao schema esperado
+            TypeError: Se não conseguir interpretar os valores
+        """
+        tool_call_id = str(uuid.uuid4())
+        tool_start_payload = {
+            "toolCallId": tool_call_id,
+            "toolName": "calculate_sandbox_quota",
+            "inputPayload": {
+                "tenantId": tenant_id,
+                "action": action,
+                "values": values,
+            },
+        }
+        self.publish_event("ToolCallStarted", tool_start_payload)
+
+        try:
+            total = 0
+
+            if not values:
+                # Lista vazia — retorna 0
+                total = 0
+            elif isinstance(values[0], dict):
+                # Formato estruturado: lista de dicts
+                for item in values:
+                    try:
+                        validated = QuotaValue(**item)
+                        total += validated.limit
+                    except ValidationError as e:
+                        raise ValueError(
+                            f"Invalid quota value item {item}: {e.errors()[0]['msg']}"
+                        )
+            else:
+                # Formato legado: lista de números — soma direta
+                total = sum(values)
+
+            time.sleep(2)
+            response_payload = json.dumps({"quota_used": total, "status": "OK"})
+
+            tool_finish_payload = {
+                "toolCallId": tool_call_id,
+                "status": "COMPLETED",
+                "outputResponse": response_payload,
+                "executionTimeMs": 2000,
+                "errorLog": None,
+            }
+            self.publish_event("ToolCallFinished", tool_finish_payload)
+            return response_payload
+
+        except (ValueError, TypeError) as e:
+            # Tratamento de erro com mensagem clara
+            error_msg = f"Error calculating quota: {str(e)}"
+            tool_finish_payload = {
+                "toolCallId": tool_call_id,
+                "status": "FAILED",
+                "outputResponse": json.dumps({"error": str(e), "status": "ERROR"}),
+                "executionTimeMs": 0,
+                "errorLog": error_msg,
+            }
+            self.publish_event("ToolCallFinished", tool_finish_payload)
+            raise
+
     def execute(self) -> str:
         # 1. Validar e sanitizar input do usuário contra Prompt Injection
         from runtime.prompt_validator import validate_and_sanitize
@@ -306,34 +408,11 @@ class CrewAiRuntimeAdapter:
 
         # 3. Definir as ferramentas
         @tool("calculate_sandbox_quota")
-        def calculate_sandbox_quota(tenant_id: str, action: str, values: list) -> str:
+        def calculate_sandbox_quota_tool(
+            tenant_id: str, action: str, values: list
+        ) -> str:
             """Calcula a cota de tokens do sandbox para um tenant específico."""
-            tool_call_id = str(uuid.uuid4())
-            tool_start_payload = {
-                "toolCallId": tool_call_id,
-                "toolName": "calculate_sandbox_quota",
-                "inputPayload": {
-                    "tenantId": tenant_id,
-                    "action": action,
-                    "values": values,
-                },
-            }
-            self.publish_event("ToolCallStarted", tool_start_payload)
-
-            # Perform tool operation
-            time.sleep(2)
-            total = sum(values)
-            response_payload = f'{{"quota_used": {total}, "status": "OK"}}'
-
-            tool_finish_payload = {
-                "toolCallId": tool_call_id,
-                "status": "COMPLETED",
-                "outputResponse": response_payload,
-                "executionTimeMs": 2000,
-                "errorLog": None,
-            }
-            self.publish_event("ToolCallFinished", tool_finish_payload)
-            return response_payload
+            return self.calculate_sandbox_quota(tenant_id, action, values)
 
         @tool("search_knowledge_base")
         def search_knowledge_base(query: str) -> str:
@@ -599,7 +678,7 @@ class CrewAiRuntimeAdapter:
             f"agent_id={self.agent_id} | role={self._agent_role!r} | "
             f"backstory={self._agent_backstory[:80]!r}..."
         )
-        tools = [calculate_sandbox_quota, search_tool]
+        tools = [calculate_sandbox_quota_tool, search_tool]
         if self._agent_tag == "piso":
             tools.append(calculate_floor_specs)
         elif self._agent_tag == "orquestrador":

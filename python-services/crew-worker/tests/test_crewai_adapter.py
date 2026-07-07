@@ -106,3 +106,54 @@ def test_malformed_agent_id_publishes_failed_and_closes_connection(channel):
     published = channel.basic_publish.call_args
     body = json.loads(published.kwargs["body"])
     assert body["eventType"] == "AgentExecutionFailed"
+
+
+# Tests for calculate_sandbox_quota tool
+def test_calculate_sandbox_quota_with_list_of_dicts(channel):
+    """Test that calculate_sandbox_quota accepts and processes list of dicts correctly."""
+    adapter, _ = _make_adapter(channel, agent_id=None)
+
+    # Call the tool with structured values (list of dicts)
+    values = [
+        {"limit": 1000, "resource": "tokens"},
+        {"limit": 50, "resource": "storage_gb"},
+    ]
+
+    result = adapter.calculate_sandbox_quota(
+        tenant_id="tenant_ejemplo_01", action="add", values=values
+    )
+
+    # Verify result is valid JSON and contains expected fields
+    result_json = json.loads(result)
+    assert "quota_used" in result_json
+    assert result_json["status"] == "OK"
+    # Should sum the limit fields: 1000 + 50 = 1050
+    assert result_json["quota_used"] == 1050
+
+
+def test_calculate_sandbox_quota_with_empty_list(channel):
+    """Test that calculate_sandbox_quota handles empty list correctly."""
+    adapter, _ = _make_adapter(channel, agent_id=None)
+
+    result = adapter.calculate_sandbox_quota(
+        tenant_id="tenant_test", action="sum", values=[]
+    )
+
+    result_json = json.loads(result)
+    assert result_json["quota_used"] == 0
+    assert result_json["status"] == "OK"
+
+
+def test_calculate_sandbox_quota_with_invalid_dict(channel):
+    """Test that calculate_sandbox_quota raises proper error for malformed items."""
+    adapter, _ = _make_adapter(channel, agent_id=None)
+
+    # Item missing 'limit' field
+    values = [
+        {"resource": "tokens"},  # Missing 'limit'
+    ]
+
+    with pytest.raises((ValueError, TypeError)):
+        adapter.calculate_sandbox_quota(
+            tenant_id="tenant_test", action="add", values=values
+        )
