@@ -168,35 +168,6 @@ class ExecutionControllerTest {
     }
 
     @Test
-    void submitExecution_withoutAgentId_returns400AndDoesNotPublish() throws Exception {
-        String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\"}";
-
-        mockMvc.perform(post("/api/executions")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("agentId é obrigatório"));
-
-        verifyNoInteractions(rabbitTemplate);
-        verify(executionRepository, never()).save(any());
-        verify(agentRepository, never()).findById(any());
-    }
-
-    @Test
-    void submitExecution_withBlankAgentId_returns400AndDoesNotPublish() throws Exception {
-        String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\",\"agentId\":\"\"}";
-
-        mockMvc.perform(post("/api/executions")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("agentId é obrigatório"));
-
-        verifyNoInteractions(rabbitTemplate);
-        verify(executionRepository, never()).save(any());
-    }
-
-    @Test
     void submitExecution_withMalformedAgentId_returns400AndDoesNotPublish() throws Exception {
         String body = "{\"prompt\":\"Olá\",\"tenantId\":\"" + UUID.randomUUID() + "\",\"agentId\":\"not-a-uuid\"}";
 

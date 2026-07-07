@@ -61,29 +61,27 @@ public class ExecutionController {
             String tenantStr = request.get("tenantId");
             UUID tenantId = (tenantStr != null) ? UUID.fromString(tenantStr) : UUID.randomUUID();
 
-            // 0. agentId é obrigatório: não existe conceito de "agente padrão" no domínio,
-            // então não publicamos execuções para um agentId inventado (ver issue #100).
+            // 0. agentId é opcional: chat genérico sem agente selecionado é um caso
+            // suportado (ver issue #124), cai para agent = null / fallback no crew-worker.
+            // Quando informado, ainda validamos formato e existência (ver issue #100).
             String agentIdStr = request.get("agentId");
-            if (agentIdStr == null || agentIdStr.isEmpty()) {
-                Map<String, Object> errorResp = new HashMap<>();
-                errorResp.put("error", "agentId é obrigatório");
-                return ResponseEntity.badRequest().body(errorResp);
-            }
+            Agent agent = null;
+            if (agentIdStr != null && !agentIdStr.isEmpty()) {
+                UUID agentUuid;
+                try {
+                    agentUuid = UUID.fromString(agentIdStr);
+                } catch (IllegalArgumentException ex) {
+                    Map<String, Object> errorResp = new HashMap<>();
+                    errorResp.put("error", "agentId inválido: " + agentIdStr);
+                    return ResponseEntity.badRequest().body(errorResp);
+                }
 
-            UUID agentUuid;
-            try {
-                agentUuid = UUID.fromString(agentIdStr);
-            } catch (IllegalArgumentException ex) {
-                Map<String, Object> errorResp = new HashMap<>();
-                errorResp.put("error", "agentId inválido: " + agentIdStr);
-                return ResponseEntity.badRequest().body(errorResp);
-            }
-
-            Agent agent = agentRepository.findById(agentUuid).orElse(null);
-            if (agent == null) {
-                Map<String, Object> errorResp = new HashMap<>();
-                errorResp.put("error", "Agent not found: " + agentIdStr);
-                return ResponseEntity.status(404).body(errorResp);
+                agent = agentRepository.findById(agentUuid).orElse(null);
+                if (agent == null) {
+                    Map<String, Object> errorResp = new HashMap<>();
+                    errorResp.put("error", "Agent not found: " + agentIdStr);
+                    return ResponseEntity.status(404).body(errorResp);
+                }
             }
 
             // 1. Ensure a default user exists for testing
