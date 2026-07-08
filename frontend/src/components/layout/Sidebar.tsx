@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../../providers/AuthProvider';
-import { Terminal, Cpu, Database, ChevronLeft, ChevronRight, X, Settings, User } from 'lucide-react';
+import { Terminal, Cpu, Database, CalendarClock, ChevronLeft, ChevronRight, X, Settings, User } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { ConversationList } from '../../features/chat/ConversationList';
 
@@ -101,6 +101,7 @@ export const Sidebar: React.FC = () => {
             <NavLink href="/" icon={Terminal} label="Console de Agentes" title="Console de Agentes" />
             <NavLink href="/catalog" icon={Cpu} label="Catálogo de Agentes" title="Catálogo de Agentes" />
             <NavLink href="/knowledge-base" icon={Database} label="Bases de Conhecimento" title="Bases de Conhecimento" />
+            <NavLink href="/schedule" icon={CalendarClock} label="Agendamentos" title="Agendamentos" />
 
             <hr className="mx-4 border-slate-200 dark:border-slate-800 my-1" />
 
@@ -187,6 +188,10 @@ export const Sidebar: React.FC = () => {
                     <Link href="/knowledge-base" className={`px-6 gap-3 py-3.5 flex items-center text-sm font-semibold transition-all duration-200 ${isActive('/knowledge-base') ? 'bg-primary text-white border-l-4 border-accent' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800/50'}`}>
                       <Database className={`w-4 h-4 ${isActive('/knowledge-base') ? 'text-accent' : 'text-slate-400 dark:text-slate-500'}`} />
                       <span>Bases de Conhecimento</span>
+                    </Link>
+                    <Link href="/schedule" className={`px-6 gap-3 py-3.5 flex items-center text-sm font-semibold transition-all duration-200 ${isActive('/schedule') ? 'bg-primary text-white border-l-4 border-accent' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800/50'}`}>
+                      <CalendarClock className={`w-4 h-4 ${isActive('/schedule') ? 'text-accent' : 'text-slate-400 dark:text-slate-500'}`} />
+                      <span>Agendamentos</span>
                     </Link>
 
                     <hr className="mx-4 border-slate-200 dark:border-slate-800 my-1" />
