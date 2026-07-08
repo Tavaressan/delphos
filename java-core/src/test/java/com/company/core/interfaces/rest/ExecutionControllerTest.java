@@ -20,6 +20,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
@@ -148,7 +149,7 @@ class ExecutionControllerTest {
 
         verify(rabbitTemplate).convertAndSend(anyString(), anyString(), payloadCaptor.capture());
         ObjectMapper mapper = new ObjectMapper();
-        Map<String, Object> publishedPayload = mapper.readValue(payloadCaptor.getValue(), Map.class);
+        Map<String, Object> publishedPayload = mapper.readValue(payloadCaptor.getValue(), new TypeReference<Map<String, Object>>() {});
         assertThat(publishedPayload).doesNotContainKey("agent_id");
     }
 
