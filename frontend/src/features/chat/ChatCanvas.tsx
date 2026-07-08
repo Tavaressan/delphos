@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useExecution } from '../../hooks/useExecution';
+import { useStreamingMessage } from '../../hooks/useStreamingMessage';
 import { ChatInput } from '../../components/forms/ChatInput';
 import { Message } from '../../domain/entities';
 import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus } from 'lucide-react';
@@ -12,6 +13,7 @@ import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
 import { MessageContent } from './MessageContent';
+import { ToolCallRenderer } from './tool-renderers';
 import { ConfirmCard } from './hitl/ConfirmCard';
 import { SensitiveAction } from './hitl/types';
 
@@ -33,7 +35,12 @@ export const ChatCanvas: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null);
 
+  const { text: streamingText, isStreaming, start: startStreaming, reset: resetStreaming } = useStreamingMessage();
+  const streamedExecutionIdRef = useRef<string | null>(null);
+
   const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output, sources) => {
+    resetStreaming();
+    streamedExecutionIdRef.current = null;
     setChatHistory(prev => [
       ...prev,
       {
@@ -44,6 +51,18 @@ export const ChatCanvas: React.FC = () => {
     ]);
     refreshConversations();
   });
+
+  // Assim que uma execução é submetida, conecta ao streaming (SSE) da
+  // resposta do agente para exibi-la progressivamente (issue #142). Se o
+  // backend não suportar o endpoint de streaming, a conexão falha
+  // silenciosamente (ver useStreamingMessage) e a resposta final chega
+  // normalmente pelo polling já existente em useExecution.
+  useEffect(() => {
+    if (activeExecution?.id && streamedExecutionIdRef.current !== activeExecution.id) {
+      streamedExecutionIdRef.current = activeExecution.id;
+      startStreaming(activeExecution.id);
+    }
+  }, [activeExecution?.id, startStreaming]);
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -208,6 +227,9 @@ export const ChatCanvas: React.FC = () => {
                   }`}>
                     <MessageContent role={msg.role} content={msg.content} />
 
+                    {/* Renderer específico por tipo de ferramenta invocada pelo agente (issue #138) */}
+                    {msg.toolCall && <ToolCallRenderer toolCall={msg.toolCall} />}
+
                     {/* Fontes RAG — visível somente para admin */}
                     {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
                       <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1">
@@ -238,7 +260,26 @@ export const ChatCanvas: React.FC = () => {
             />
           )}
 
-          {isLoading && (
+          {isLoading && isStreaming && streamingText && (
+            // Resposta do agente aparecendo progressivamente via streaming SSE (issue #142)
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex gap-3 mr-auto max-w-[85%] items-start"
+            >
+              <div className="w-8 h-8 rounded flex-shrink-0 bg-primary text-white font-bold flex items-center justify-center text-xs animate-pulse">
+                AG
+              </div>
+              <div
+                data-testid="streaming-message-bubble"
+                className="bg-secondary/20 dark:bg-slate-800/40 border border-border-color rounded-lg rounded-tl-none p-3.5 text-xs leading-relaxed text-text-primary"
+              >
+                {streamingText}
+              </div>
+            </motion.div>
+          )}
+
+          {isLoading && (!isStreaming || !streamingText) && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

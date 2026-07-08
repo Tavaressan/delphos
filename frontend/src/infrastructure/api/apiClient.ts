@@ -1,6 +1,6 @@
 import { ErrorResponse } from '../../types';
 
-const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+export const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
 const DEFAULT_TIMEOUT = 15000; // 15 seconds
 
 export class ApiError extends Error {

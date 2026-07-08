@@ -75,6 +75,8 @@ export interface Message {
   createdAt?: string;
   citation?: string;
   sources?: RetrievalSource[];
+  /** Payload de tool-call, quando a mensagem representa uma invocação de ferramenta pelo agente (issue #138). */
+  toolCall?: import('../../features/chat/tool-renderers/types').ToolCallPayload;
 }
 
 export interface AgentExecution {
