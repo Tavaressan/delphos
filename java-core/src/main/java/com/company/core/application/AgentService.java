@@ -1,8 +1,10 @@
 package com.company.core.application;
 
 import com.company.core.domain.entities.Agent;
+import com.company.core.domain.entities.AgentCustomTool;
 import com.company.core.domain.entities.Document;
 import com.company.core.domain.entities.User;
+import com.company.core.domain.repositories.AgentCustomToolRepository;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
 import com.company.core.domain.repositories.UserRepository;
@@ -32,6 +34,7 @@ public class AgentService {
     private final AgentRepository agentRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
+    private final AgentCustomToolRepository agentCustomToolRepository;
     private final MinioClient minioClient;
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
@@ -40,9 +43,15 @@ public class AgentService {
     @Value("${minio.bucket:agents-data}")
     private String minioBucket = "agents-data";
 
+    // Nome de arquivo de tool derivado do basename de tools/<nome>.py: letras, dígitos,
+    // underscore e hífen, começando por letra ou underscore (issue #129).
+    private static final java.util.regex.Pattern TOOL_NAME_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Za-z_][A-Za-z0-9_-]*$");
+
     public AgentService(AgentRepository agentRepository,
                         DocumentRepository documentRepository,
                         UserRepository userRepository,
+                        AgentCustomToolRepository agentCustomToolRepository,
                         MinioClient minioClient,
                         RabbitTemplate rabbitTemplate,
                         ObjectMapper objectMapper,
@@ -50,6 +59,7 @@ public class AgentService {
         this.agentRepository = agentRepository;
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
+        this.agentCustomToolRepository = agentCustomToolRepository;
         this.minioClient = minioClient;
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
@@ -73,6 +83,7 @@ public class AgentService {
         auditService.logAction("CREATE_AGENT", "Agent: " + name, "{\"agentId\":\"" + agent.getId() + "\"}", tenantId);
 
         agent = uploadZipAndProcessDocuments(agent, zipBytes, tenantId);
+        saveCustomTools(agent, parsed.customTools);
 
         return agent;
     }
@@ -87,9 +98,29 @@ public class AgentService {
         agent = agentRepository.save(agent);
 
         agent = uploadZipAndProcessDocuments(agent, zipBytes, agent.getTenantId());
+        saveCustomTools(agent, parsed.customTools);
         auditService.logAction("UPDATE_AGENT_PACKAGE", "Agent: " + agent.getName(), "{\"agentId\":\"" + agent.getId() + "\"}", agent.getTenantId());
 
         return agent;
+    }
+
+    /**
+     * Persiste as tools Python customizadas extraídas de {@code tools/*.py} no ZIP do
+     * agente (issue #129). Em atualização, substitui integralmente o conjunto anterior
+     * (mesma semântica de replace usada para system_instructions/manifest_config).
+     */
+    private void saveCustomTools(Agent agent, Map<String, String> customTools) {
+        agentCustomToolRepository.deleteByAgentId(agent.getId());
+        if (customTools == null || customTools.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : customTools.entrySet()) {
+            AgentCustomTool tool = new AgentCustomTool();
+            tool.setAgent(agent);
+            tool.setToolName(entry.getKey());
+            tool.setScriptContent(entry.getValue());
+            agentCustomToolRepository.save(tool);
+        }
     }
 
     private byte[] readAndValidateZip(MultipartFile file) throws Exception {
@@ -102,6 +133,7 @@ public class AgentService {
     private static class ParsedZip {
         String systemInstructions;
         String manifestConfig;
+        Map<String, String> customTools = new LinkedHashMap<>();
     }
 
     private ParsedZip parseZip(byte[] zipBytes) throws Exception {
@@ -109,6 +141,7 @@ public class AgentService {
         boolean hasRootMd = false;
         String systemInstructions = "";
         String manifestConfig = null;
+        Map<String, String> customTools = new LinkedHashMap<>();
 
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
             ZipEntry entry;
@@ -140,6 +173,18 @@ public class AgentService {
                             bos.write(buffer, 0, len);
                         }
                         manifestConfig = bos.toString("UTF-8");
+                    } else if (isToolsScript(entryName)) {
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        byte[] buffer = new byte[1024];
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            bos.write(buffer, 0, len);
+                        }
+                        String scriptContent = bos.toString("UTF-8");
+                        String toolName = toolNameFromEntry(entryName);
+                        if (!scriptContent.isBlank()) {
+                            customTools.put(toolName, scriptContent);
+                        }
                     }
                 }
                 zis.closeEntry();
@@ -157,7 +202,37 @@ public class AgentService {
         ParsedZip parsed = new ParsedZip();
         parsed.systemInstructions = systemInstructions;
         parsed.manifestConfig = manifestConfig;
+        parsed.customTools = customTools;
         return parsed;
+    }
+
+    /**
+     * Um arquivo é uma tool customizada (issue #129) se estiver diretamente dentro da
+     * pasta {@code tools/} na raiz do ZIP (não em subpastas) e tiver extensão {@code .py}.
+     */
+    private boolean isToolsScript(String entryName) {
+        String normalized = entryName.replace('\\', '/');
+        if (!normalized.startsWith("tools/") || !normalized.endsWith(".py")) {
+            return false;
+        }
+        String rest = normalized.substring("tools/".length());
+        return !rest.isEmpty() && !rest.contains("/");
+    }
+
+    /**
+     * Deriva o nome da tool a partir do basename do arquivo (ex.: {@code tools/sum_values.py}
+     * -> {@code sum_values}), validando que o resultado é um identificador seguro.
+     */
+    private String toolNameFromEntry(String entryName) {
+        String normalized = entryName.replace('\\', '/');
+        String fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
+        String toolName = fileName.substring(0, fileName.length() - ".py".length());
+        if (!TOOL_NAME_PATTERN.matcher(toolName).matches()) {
+            throw new IllegalArgumentException(
+                    "Nome de tool inválido derivado de '" + entryName + "': '" + toolName
+                            + "'. Use apenas letras, números, '_' e '-', começando por letra ou '_'.");
+        }
+        return toolName;
     }
 
     private Agent uploadZipAndProcessDocuments(Agent agent, byte[] zipBytes, UUID tenantId) throws Exception {
