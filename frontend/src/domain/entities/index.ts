@@ -93,6 +93,19 @@ export interface AgentExecution {
   sources?: RetrievalSource[];
 }
 
+export type ScheduleStatus = 'ACTIVE' | 'CANCELLED';
+
+export interface Schedule {
+  id: string; // UUID
+  agentId: string; // UUID
+  agentName: string | null;
+  cronExpression: string;
+  prompt: string;
+  status: ScheduleStatus;
+  createdAt: string; // ISO 8601 string
+  nextRunAt: string | null; // ISO 8601 string
+}
+
 export interface Role {
   id: string;
   name: string;
