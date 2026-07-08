@@ -75,6 +75,8 @@ export interface Message {
   createdAt?: string;
   citation?: string;
   sources?: RetrievalSource[];
+  /** Payload de tool-call, quando a mensagem representa uma invocação de ferramenta pelo agente (issue #138). */
+  toolCall?: import('../../features/chat/tool-renderers/types').ToolCallPayload;
 }
 
 export interface AgentExecution {
@@ -112,4 +114,20 @@ export interface Role {
 export interface Permission {
   id: string;
   name: string;
+}
+
+// Painel de integrações do agente (issue #136): servidores MCP e skills customizadas.
+export type McpTransport = 'stdio' | 'sse';
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  command: string; // comando (stdio) ou URL (sse) do servidor MCP
+  transport: McpTransport;
+}
+
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
 }
