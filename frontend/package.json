@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node tests/layout.test.js && node tests/header.test.js && node --import tsx --test tests/smoke.test.js tests/unit.test.ts tests/agent-chat-upload.test.ts tests/agent-reactivation.test.ts tests/agent-upload-validation.test.ts tests/user-adapter.test.ts tests/user-session-adapter.test.ts tests/message-content.test.tsx tests/tool-renderers.test.tsx tests/use-streaming-message.test.ts tests/confirm-card.test.tsx tests/permission-mode-select.test.tsx"
+    "test": "node tests/layout.test.js && node tests/header.test.js && node --import tsx --test tests/smoke.test.js tests/unit.test.ts tests/agent-chat-upload.test.ts tests/agent-reactivation.test.ts tests/agent-upload-validation.test.ts tests/user-adapter.test.ts tests/user-session-adapter.test.ts tests/message-content.test.tsx tests/task-panel.test.tsx tests/tool-renderers.test.tsx tests/use-streaming-message.test.ts tests/confirm-card.test.tsx tests/permission-mode-select.test.tsx"
   },
   "dependencies": {
     "clsx": "^2.1.1",
