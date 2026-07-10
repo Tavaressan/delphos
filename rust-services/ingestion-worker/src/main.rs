@@ -548,17 +548,11 @@ async fn download_file(file_path: &str) -> Result<Vec<u8>> {
 async fn download_file_with_fallback(file_path: &str, allow_dev_fallback: bool) -> Result<Vec<u8>> {
     let minio_host = env::var("MINIO_HOST").unwrap_or_else(|_| "minio".to_string());
     let minio_port = env::var("MINIO_PORT").unwrap_or_else(|_| "9000".to_string());
-
-    // Tratamento para extrair apenas o nome do arquivo se o file_path contiver diretórios
-    let clean_path = if let Some(pos) = file_path.rfind('/') {
-        &file_path[pos + 1..]
-    } else {
-        file_path
-    };
+    let minio_bucket = env::var("MINIO_BUCKET").unwrap_or_else(|_| "agents-data".to_string());
 
     let url = format!(
-        "http://{}:{}/documents/{}",
-        minio_host, minio_port, clean_path
+        "http://{}:{}/{}/{}",
+        minio_host, minio_port, minio_bucket, file_path
     );
     println!("Tentando baixar arquivo de: {}", url);
 

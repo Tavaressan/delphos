@@ -3,6 +3,7 @@ package com.company.core.infrastructure.config;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
+import io.minio.SetBucketPolicyArgs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +43,25 @@ public class MinioConfig {
             } else {
                 log.info("MinIO bucket '{}' already exists.", bucketName);
             }
+
+            // TODO(#183): decisão temporária de PoC — o ingestion-worker (Rust) ainda
+            // não assina requisições S3, então precisa de leitura anônima para baixar os
+            // arquivos. Isso expõe todo o conteúdo do bucket (inclusive documentos reais de
+            // tenants) a qualquer um com acesso à porta do MinIO. Reverter para privado assim
+            // que o worker autenticar as requisições.
+            String publicReadPolicy = "{"
+                    + "\"Version\":\"2012-10-17\","
+                    + "\"Statement\":[{"
+                    + "\"Effect\":\"Allow\","
+                    + "\"Principal\":{\"AWS\":[\"*\"]},"
+                    + "\"Action\":[\"s3:GetObject\"],"
+                    + "\"Resource\":[\"arn:aws:s3:::" + bucketName + "/*\"]"
+                    + "}]}";
+            minioClient.setBucketPolicy(SetBucketPolicyArgs.builder()
+                    .bucket(bucketName)
+                    .config(publicReadPolicy)
+                    .build());
+            log.warn("MinIO bucket '{}' configurado com leitura anônima (decisão temporária de PoC).", bucketName);
         } catch (Exception e) {
             log.error("Failed to check/create MinIO bucket: {}", e.getMessage(), e);
         }
