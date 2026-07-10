@@ -151,7 +151,7 @@ public class AgentService {
                     String entryName = entry.getName();
 
                     // Check if MD is in root (does not contain slashes, or is at depth 0)
-                    if (entryName.endsWith(".md") && !entryName.contains("/") && !entryName.contains("\\")) {
+                    if (entryName.toLowerCase().endsWith(".md") && !entryName.contains("/") && !entryName.contains("\\")) {
                         hasRootMd = true;
 
                         // Read first root MD content as system instructions
