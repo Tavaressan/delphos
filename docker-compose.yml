@@ -273,7 +273,8 @@ services:
     depends_on:
       core:
         condition: service_healthy
-    command: deno task --cwd frontend dev
+    # O WORKDIR da imagem ja e /app/frontend
+    command: deno task dev
     healthcheck:
       test: [ "CMD", "deno", "eval", "-A", "const r = await fetch('http://localhost:3000'); if (!r.ok) Deno.exit(1)" ]
       interval: 30s
