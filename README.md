@@ -70,7 +70,7 @@ A organização do código segue um padrão modular:
 - **`rust-services/`**: Serviços de alta performance em Rust para processamento pesado de documentos, geração de embeddings e processamento de RAG.
 - **`python-services/`**: Serviços em Python contendo o container do `crew-worker` para orquestração de agentes.
 - **`infrastructure/`**: Configurações de Docker, Caddy, monitoramento e scripts de ambiente.
-- **`docs/`**: Documentação técnica detalhada, incluindo ADRs (Architectural Decision Records).
+- **`docs/`**: Documentação técnica detalhada, incluindo ADRs (Architectural Decision Records) e o [fluxo de deploy no Cloud Run](docs/deploy-cloud-run.md).
 
 ## 🚀 Destaques Tecnológicos
 
