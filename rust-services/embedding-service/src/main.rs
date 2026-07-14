@@ -1,3 +1,5 @@
+mod embedding_client;
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -6,14 +8,10 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Número máximo de tentativas de chamada à Vertex AI antes de desistir,
 /// configurável via EMBEDDING_MAX_RETRIES (padrão 3).
 const DEFAULT_MAX_RETRIES: u32 = 3;
-
-/// Delay base do backoff exponencial em milissegundos: base_ms * 2^tentativa.
-const BASE_BACKOFF_MS: u64 = 200;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -45,38 +43,6 @@ struct EmbeddingsResponse {
     data: Vec<EmbeddingData>,
     model: String,
     usage: Usage,
-}
-
-#[derive(Serialize)]
-struct VertexInstances {
-    content: String,
-}
-
-#[derive(Serialize)]
-struct VertexParameters {
-    #[serde(rename = "outputDimensionality")]
-    output_dimensionality: usize,
-}
-
-#[derive(Serialize)]
-struct VertexRequest {
-    instances: Vec<VertexInstances>,
-    parameters: VertexParameters,
-}
-
-#[derive(Deserialize)]
-struct VertexEmbeddingValues {
-    values: Vec<f32>,
-}
-
-#[derive(Deserialize)]
-struct VertexPrediction {
-    embeddings: VertexEmbeddingValues,
-}
-
-#[derive(Deserialize)]
-struct VertexResponse {
-    predictions: Vec<VertexPrediction>,
 }
 
 pub fn app(state: AppState) -> Router {
@@ -127,54 +93,42 @@ async fn handle_embeddings(
         return (StatusCode::OK, Json(response)).into_response();
     }
 
+    let ai_studio_api_key = std::env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
+
+    let vertex_token: Option<String> = match &state.authenticator {
+        Some(auth) => match auth
+            .get_token(&["https://www.googleapis.com/auth/cloud-platform"])
+            .await
+        {
+            Ok(t) => Some(t.as_str().to_string()),
+            Err(e) => {
+                println!(
+                    "WARNING: falha ao obter token GCP ({}). Tentando fallback para Google AI Studio, se configurado.",
+                    e
+                );
+                None
+            }
+        },
+        None => None,
+    };
+
+    if vertex_token.is_none() && ai_studio_api_key.is_none() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado e GOOGLE_AI_STUDIO_API_KEY ausente."
+                .to_string(),
+        )
+            .into_response();
+    }
+
     let project_id =
         std::env::var("GCP_PROJECT_ID").unwrap_or_else(|_| "alfabra-platform".to_string());
     let region = std::env::var("GCP_LOCATION").unwrap_or_else(|_| "us-central1".to_string());
 
-    let authenticator = match &state.authenticator {
-        Some(auth) => auth,
-        None => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado.".to_string(),
-            )
-                .into_response();
-        }
-    };
-
-    let token = match authenticator
-        .get_token(&["https://www.googleapis.com/auth/cloud-platform"])
-        .await
-    {
-        Ok(t) => t,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Erro ao obter token GCP: {}", e),
-            )
-                .into_response();
-        }
-    };
-
-    let url = format!(
-        "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{}:predict",
-        region, project_id, region, model
-    );
-
-    let instances: Vec<VertexInstances> = payload
-        .input
-        .iter()
-        .map(|text| VertexInstances {
-            content: text.clone(),
-        })
-        .collect();
-
-    let vertex_req = VertexRequest {
-        instances,
-        parameters: VertexParameters {
-            output_dimensionality: dimensions,
-        },
-    };
+    let vertex_url = embedding_client::vertex_ai_url(&region, &project_id, &model);
+    let ai_studio_url =
+        embedding_client::ai_studio_url(embedding_client::AI_STUDIO_DEFAULT_BASE_URL, &model);
+    let vertex_request = embedding_client::build_vertex_request(&payload.input, dimensions);
 
     let client = reqwest::Client::new();
     let max_retries: u32 = std::env::var("EMBEDDING_MAX_RETRIES")
@@ -182,32 +136,33 @@ async fn handle_embeddings(
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_MAX_RETRIES);
 
-    let res = match call_vertex_with_retry(&client, &url, &token, &vertex_req, max_retries).await {
-        Ok(r) => r,
+    let embeddings = match embedding_client::generate_embeddings(
+        &client,
+        &vertex_url,
+        vertex_token.as_deref(),
+        &vertex_request,
+        max_retries,
+        &ai_studio_url,
+        ai_studio_api_key.as_deref(),
+        &payload.input,
+        dimensions,
+        &model,
+    )
+    .await
+    {
+        Ok(e) => e,
         Err(e) => {
             return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
         }
     };
 
-    let vertex_res: VertexResponse = match res.json().await {
-        Ok(vr) => vr,
-        Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to parse response from Vertex AI: {}", e),
-            )
-                .into_response();
-        }
-    };
-
-    let data: Vec<EmbeddingData> = vertex_res
-        .predictions
+    let data: Vec<EmbeddingData> = embeddings
         .into_iter()
         .enumerate()
-        .map(|(idx, pred)| EmbeddingData {
+        .map(|(idx, values)| EmbeddingData {
             object: "embedding",
             index: idx,
-            embedding: pred.embeddings.values,
+            embedding: values,
         })
         .collect();
 
@@ -222,65 +177,6 @@ async fn handle_embeddings(
     };
 
     (StatusCode::OK, Json(response)).into_response()
-}
-
-/// Indica se um status HTTP de resposta da Vertex AI justifica uma nova
-/// tentativa: erros transitórios (429 rate limit e 5xx de servidor).
-fn is_retryable_status(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
-}
-
-/// Calcula o delay do backoff exponencial para uma tentativa (0-indexada):
-/// base_ms * 2^tentativa.
-fn compute_backoff_delay(attempt: u32, base_ms: u64) -> Duration {
-    Duration::from_millis(base_ms.saturating_mul(2u64.saturating_pow(attempt)))
-}
-
-/// Chama a API de predict da Vertex AI com retry e backoff exponencial para
-/// falhas transitórias (erro de rede ou status 429/5xx), até `max_retries`
-/// tentativas adicionais além da primeira.
-async fn call_vertex_with_retry(
-    client: &reqwest::Client,
-    url: &str,
-    token: &gcp_auth::Token,
-    body: &VertexRequest,
-    max_retries: u32,
-) -> Result<reqwest::Response, String> {
-    let mut attempt = 0;
-    loop {
-        let result = client
-            .post(url)
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", token.as_str()))
-            .json(body)
-            .send()
-            .await;
-
-        match result {
-            Ok(res) if res.status().is_success() => return Ok(res),
-            Ok(res) => {
-                let status = res.status();
-                if attempt >= max_retries || !is_retryable_status(status) {
-                    let body_text = res
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "Unknown error".to_string());
-                    return Err(format!(
-                        "Vertex AI returned error {}: {}",
-                        status, body_text
-                    ));
-                }
-            }
-            Err(e) => {
-                if attempt >= max_retries {
-                    return Err(format!("Failed to send request to Vertex AI: {}", e));
-                }
-            }
-        }
-
-        tokio::time::sleep(compute_backoff_delay(attempt, BASE_BACKOFF_MS)).await;
-        attempt += 1;
-    }
 }
 
 fn generate_mock_embedding(text: &str, dimension: usize) -> Vec<f32> {
@@ -364,33 +260,6 @@ mod tests {
     use tower::ServiceExt;
 
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
-
-    #[test]
-    fn test_is_retryable_status_for_transient_errors() {
-        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
-        assert!(is_retryable_status(
-            reqwest::StatusCode::INTERNAL_SERVER_ERROR
-        ));
-        assert!(is_retryable_status(
-            reqwest::StatusCode::SERVICE_UNAVAILABLE
-        ));
-    }
-
-    #[test]
-    fn test_is_retryable_status_for_non_transient_errors() {
-        assert!(!is_retryable_status(reqwest::StatusCode::BAD_REQUEST));
-        assert!(!is_retryable_status(reqwest::StatusCode::UNAUTHORIZED));
-        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND));
-        assert!(!is_retryable_status(reqwest::StatusCode::OK));
-    }
-
-    #[test]
-    fn test_compute_backoff_delay_grows_exponentially() {
-        assert_eq!(compute_backoff_delay(0, 200), Duration::from_millis(200));
-        assert_eq!(compute_backoff_delay(1, 200), Duration::from_millis(400));
-        assert_eq!(compute_backoff_delay(2, 200), Duration::from_millis(800));
-        assert_eq!(compute_backoff_delay(3, 200), Duration::from_millis(1600));
-    }
 
     #[tokio::test]
     async fn test_healthz() {
@@ -499,6 +368,7 @@ mod tests {
         let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("EMBEDDING_PROVIDER", "real");
         std::env::remove_var("GOOGLE_APPLICATION_CREDENTIALS");
+        std::env::remove_var("GOOGLE_AI_STUDIO_API_KEY");
 
         let state = AppState {
             authenticator: None,

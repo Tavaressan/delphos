@@ -832,6 +832,7 @@ dependencies = [
  "shared",
  "tokio",
  "tower",
+ "wiremock",
 ]
 
 [[package]]
