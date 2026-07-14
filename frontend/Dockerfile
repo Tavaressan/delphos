@@ -1,18 +1,22 @@
-FROM node:20-slim
+FROM denoland/deno:2.9.2
 
 WORKDIR /app
 
-# 1. Copia as configurações de pacotes da raiz E do frontend
-COPY package*.json ./
-COPY frontend/package*.json ./frontend/
+# 1. Configs de dependência da raiz e do frontend. O Deno resolve o lock a
+#    partir da raiz do workspace, por isso os dois níveis são necessários.
+COPY deno.json deno.lock package.json ./
+COPY frontend/deno.json frontend/package.json ./frontend/
 
-# 2. Instala as dependências usando a inteligência de Workspaces do NPM
-RUN npm install
+# 2. Instala as dependências npm no cache do Deno
+WORKDIR /app/frontend
+RUN deno install
 
-# 3. Copia o restante dos arquivos do código fonte
+# 3. Copia o restante do código fonte
+WORKDIR /app
 COPY . .
 
 EXPOSE 3000
 
-# 4. Inicia o ambiente de desenvolvimento apontando explicitamente para o frontend
-CMD ["npm", "run", "dev", "-w", "frontend"]
+# 4. Ambiente de desenvolvimento do frontend
+WORKDIR /app/frontend
+CMD ["deno", "task", "dev"]
