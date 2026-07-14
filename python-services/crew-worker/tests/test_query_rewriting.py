@@ -3,7 +3,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 
-def _make_adapter(enabled=True, timeout="3", agent_id=None, prompt="prompt bruto do usuário"):
+def _make_adapter(
+    enabled=True, timeout="3", agent_id=None, prompt="prompt bruto do usuário"
+):
     """Constrói um adapter com o LLM/psycopg2 mockados, controlando a flag de
     query rewriting (issue #149) via env antes da construção (a config é lida
     no __init__)."""
