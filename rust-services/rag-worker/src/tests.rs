@@ -16,6 +16,7 @@ mod tests {
         let old_project = env::var("GCP_PROJECT_ID").ok();
         let old_location = env::var("GCP_LOCATION").ok();
         let old_chat_model = env::var("GCP_CHAT_MODEL_ID").ok();
+        let old_ai_studio_key = env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
 
         env::remove_var("RABBITMQ_URL");
         env::remove_var("DATABASE_URL");
@@ -23,6 +24,7 @@ mod tests {
         env::remove_var("GCP_PROJECT_ID");
         env::remove_var("GCP_LOCATION");
         env::remove_var("GCP_CHAT_MODEL_ID");
+        env::remove_var("GOOGLE_AI_STUDIO_API_KEY");
 
         let config = Config::from_env();
         assert!(config.is_ok());
@@ -39,6 +41,7 @@ mod tests {
         assert_eq!(cfg.gcp_project_id, "alfabra-platform");
         assert_eq!(cfg.gcp_location, "us-central1");
         assert_eq!(cfg.gcp_chat_model_id, "gemini-2.5-flash");
+        assert_eq!(cfg.google_ai_studio_api_key, None);
 
         // Restore variables
         if let Some(val) = old_rabbitmq {
@@ -58,6 +61,31 @@ mod tests {
         }
         if let Some(val) = old_chat_model {
             env::set_var("GCP_CHAT_MODEL_ID", val);
+        }
+        if let Some(val) = old_ai_studio_key {
+            env::set_var("GOOGLE_AI_STUDIO_API_KEY", val);
+        }
+    }
+
+    #[test]
+    fn test_config_google_ai_studio_api_key_read_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let old_ai_studio_key = env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
+
+        env::set_var("GOOGLE_AI_STUDIO_API_KEY", "test-api-key");
+
+        let config = Config::from_env();
+        assert!(config.is_ok());
+        let cfg = config.unwrap();
+        assert_eq!(
+            cfg.google_ai_studio_api_key,
+            Some("test-api-key".to_string())
+        );
+
+        if let Some(val) = old_ai_studio_key {
+            env::set_var("GOOGLE_AI_STUDIO_API_KEY", val);
+        } else {
+            env::remove_var("GOOGLE_AI_STUDIO_API_KEY");
         }
     }
 

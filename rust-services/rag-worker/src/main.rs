@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod llm;
 mod rabbitmq;
 mod retrieval;
 mod security;
