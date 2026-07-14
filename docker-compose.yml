@@ -262,8 +262,10 @@ services:
     container_name: rag_frontend
     volumes:
       - .:/app
-      # O Deno resolve as deps em frontend/node_modules, não na raiz (o npm
-      # workspace é que fazia hoisting para /app/node_modules).
+      # O Deno materializa as deps em /app/node_modules (raiz do workspace, onde
+      # está o deno.json) e também em frontend/node_modules. Os dois precisam ficar
+      # fora do bind mount: copiar binários .node para dentro dele falha com EIO.
+      - /app/node_modules
       - /app/frontend/node_modules
       - /app/frontend/.next
     env_file:
@@ -276,7 +278,7 @@ services:
     # O WORKDIR da imagem ja e /app/frontend
     command: deno task dev
     healthcheck:
-      test: [ "CMD", "deno", "eval", "-A", "const r = await fetch('http://localhost:3000'); if (!r.ok) Deno.exit(1)" ]
+      test: [ "CMD", "deno", "eval", "const r = await fetch('http://localhost:3000'); if (!r.ok) Deno.exit(1)" ]
       interval: 30s
       timeout: 10s
       retries: 3
