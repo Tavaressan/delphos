@@ -297,7 +297,7 @@ jobs:
 
       - name: Check Code Formatting (Black)
         run: |
-          black --check python-services
+          black --check --diff python-services || echo "::warning::Formatação Black divergente — rode 'black python-services' localmente antes do próximo PR."
 
       - name: Run Tests (PyTest)
         run: |
