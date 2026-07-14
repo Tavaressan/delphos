@@ -62,6 +62,27 @@ class MockLLM(BaseLLM):
         return "calculate_sandbox_quota(tenant_id='546a36ee', action='sum_tokens', values=[120, 450, 30])"
 
 
+class FallbackLLM(BaseLLM):
+    """Tenta o LLM primário (Vertex AI) e cai para o secundário (Google AI Studio,
+    autenticado via API key) quando a chamada primária falhar, espelhando o padrão
+    de `generate_response` em rust-services/rag-worker/src/llm.rs."""
+
+    def __init__(self, primary: "LLM", fallback: "LLM", model: str):
+        super().__init__(model=model)
+        self._primary = primary
+        self._fallback = fallback
+
+    def call(self, messages: Any, **kwargs: Any) -> str:
+        try:
+            return self._primary.call(messages, **kwargs)
+        except Exception as e:
+            print(
+                f"WARNING: [CrewAiRuntimeAdapter] Vertex AI call failed ({e}). "
+                "Falling back to Google AI Studio."
+            )
+            return self._fallback.call(messages, **kwargs)
+
+
 class CrewAiRuntimeAdapter:
     def __init__(
         self,
@@ -85,11 +106,28 @@ class CrewAiRuntimeAdapter:
         project_id = os.environ.get("GCP_PROJECT_ID")
         region = os.environ.get("GCP_LOCATION", "us-central1")
         gcp_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        ai_studio_api_key = os.environ.get("GOOGLE_AI_STUDIO_API_KEY")
 
         has_creds = bool(gcp_creds and os.path.exists(gcp_creds))
         has_api_key = bool(
             api_key and "placeholder" not in api_key.lower() and len(api_key) > 20
         )
+        has_ai_studio_key = bool(
+            ai_studio_api_key
+            and "placeholder" not in ai_studio_api_key.lower()
+            and len(ai_studio_api_key) > 20
+        )
+
+        def build_ai_studio_llm() -> "LLM":
+            ai_studio_model_id = os.environ.get(
+                "GOOGLE_AI_STUDIO_CHAT_MODEL_ID", "gemini-1.5-flash"
+            )
+            # litellm (usado pelo CrewAI LLM) lê GEMINI_API_KEY para rotear ao Google
+            # AI Studio via o prefixo de modelo "gemini/" — nome de env var diferente
+            # do GOOGLE_AI_STUDIO_API_KEY usado neste projeto para consistência com
+            # embedding-service/rag-worker, daí a ponte abaixo.
+            os.environ["GEMINI_API_KEY"] = ai_studio_api_key
+            return LLM(model=f"gemini/{ai_studio_model_id}", temperature=0.2)
 
         if worker_mode == "mock":
             print(
@@ -113,13 +151,33 @@ class CrewAiRuntimeAdapter:
                 os.environ["VERTEX_API_KEY"] = api_key
             os.environ["VERTEX_PROJECT"] = project_id
             os.environ["VERTEX_LOCATION"] = region
-            self.llm = LLM(model=model_id, temperature=0.2)
+            vertex_llm = LLM(model=model_id, temperature=0.2)
+
+            if has_ai_studio_key:
+                print(
+                    "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY configurada: "
+                    "fallback para Google AI Studio habilitado caso o Vertex AI falhe."
+                )
+                self.llm = FallbackLLM(
+                    primary=vertex_llm,
+                    fallback=build_ai_studio_llm(),
+                    model=model_id,
+                )
+            else:
+                self.llm = vertex_llm
+        elif has_ai_studio_key:
+            print(
+                "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados). "
+                "Usando Google AI Studio diretamente."
+            )
+            self.llm = build_ai_studio_llm()
         else:
             raise RuntimeError(
-                "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas e CREW_WORKER_MODE != mock. "
-                "Configure GOOGLE_APPLICATION_CREDENTIALS (via ADC_PATH no .env) ou "
-                "defina CREW_WORKER_MODE=mock para desenvolvimento local. "
-                "Consulte .env.example para instruções."
+                "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas, "
+                "GOOGLE_AI_STUDIO_API_KEY ausente e CREW_WORKER_MODE != mock. "
+                "Configure GOOGLE_APPLICATION_CREDENTIALS (via ADC_PATH no .env), "
+                "GOOGLE_AI_STUDIO_API_KEY, ou defina CREW_WORKER_MODE=mock para "
+                "desenvolvimento local. Consulte .env.example para instruções."
             )
 
         # Load agent config from DB or use hardcoded legacy fallback
