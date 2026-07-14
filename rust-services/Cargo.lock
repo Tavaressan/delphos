@@ -2372,6 +2372,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

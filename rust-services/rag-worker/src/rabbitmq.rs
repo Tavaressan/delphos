@@ -58,58 +58,6 @@ struct AgentExecutionFailedEvent {
 }
 
 #[derive(Serialize, Debug)]
-struct GeminiPart {
-    text: String,
-}
-
-#[derive(Serialize, Debug)]
-struct GeminiContent {
-    role: String,
-    parts: Vec<GeminiPart>,
-}
-
-#[derive(Serialize, Debug)]
-struct GeminiSystemInstruction {
-    parts: Vec<GeminiPart>,
-}
-
-#[derive(Serialize, Debug)]
-struct GeminiGenerationConfig {
-    temperature: Option<f32>,
-    #[serde(rename = "maxOutputTokens")]
-    max_output_tokens: Option<usize>,
-}
-
-#[derive(Serialize, Debug)]
-struct GeminiRequest {
-    contents: Vec<GeminiContent>,
-    #[serde(rename = "systemInstruction")]
-    system_instruction: Option<GeminiSystemInstruction>,
-    #[serde(rename = "generationConfig")]
-    generation_config: Option<GeminiGenerationConfig>,
-}
-
-#[derive(Deserialize, Debug)]
-struct GeminiResponsePart {
-    text: Option<String>,
-}
-
-#[derive(Deserialize, Debug)]
-struct GeminiResponseContent {
-    parts: Vec<GeminiResponsePart>,
-}
-
-#[derive(Deserialize, Debug)]
-struct GeminiCandidate {
-    content: GeminiResponseContent,
-}
-
-#[derive(Deserialize, Debug)]
-struct GeminiResponse {
-    candidates: Option<Vec<GeminiCandidate>>,
-}
-
-#[derive(Serialize, Debug)]
 struct DelegatedChunkData {
     chunk_id: uuid::Uuid,
     text: String,
@@ -698,76 +646,57 @@ impl RabbitMQManager {
         }
 
         println!(
-            "Calling Vertex AI Gemini chat API (model: {})...",
-            self.config.gcp_chat_model_id
-        );
-        let auth = authenticator.as_ref().ok_or_else(|| {
-            WorkerError::Config("GCP Authenticator is not initialized".to_string())
-        })?;
-
-        let token = auth
-            .get_token(&["https://www.googleapis.com/auth/cloud-platform"])
-            .await
-            .map_err(|e| WorkerError::VertexAI(format!("Failed to retrieve OAuth token: {}", e)))?;
-
-        let url = format!(
-            "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{}:generateContent",
-            self.config.gcp_location,
-            self.config.gcp_project_id,
-            self.config.gcp_location,
+            "Calling Gemini chat API (model: {})...",
             self.config.gcp_chat_model_id
         );
 
-        let request_body = GeminiRequest {
-            contents: vec![GeminiContent {
-                role: "user".to_string(),
-                parts: vec![GeminiPart { text: user_content }],
-            }],
-            system_instruction: Some(GeminiSystemInstruction {
-                parts: vec![GeminiPart {
-                    text: system_instruction.to_string(),
-                }],
-            }),
-            generation_config: Some(GeminiGenerationConfig {
-                temperature: Some(0.2),
-                max_output_tokens: Some(2048),
-            }),
+        // Obtém o token OAuth do Vertex AI quando o GcpAuthenticator (ADC) está disponível.
+        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o
+        // llm::generate_response cai para o Google AI Studio (API key) quando não há token.
+        let vertex_token = match authenticator {
+            Some(auth) => {
+                match auth
+                    .get_token(&["https://www.googleapis.com/auth/cloud-platform"])
+                    .await
+                {
+                    Ok(token) => Some(token.as_str().to_string()),
+                    Err(e) => {
+                        println!(
+                            "WARNING: Failed to retrieve Vertex AI OAuth token: {}. \
+                             Attempting Google AI Studio fallback if configured.",
+                            e
+                        );
+                        None
+                    }
+                }
+            }
+            None => None,
         };
 
+        let vertex_url = crate::llm::vertex_ai_url(
+            &self.config.gcp_location,
+            &self.config.gcp_project_id,
+            &self.config.gcp_chat_model_id,
+        );
+        let ai_studio_url = crate::llm::ai_studio_url(
+            crate::llm::AI_STUDIO_DEFAULT_BASE_URL,
+            &self.config.gcp_chat_model_id,
+        );
+        let request_body =
+            crate::llm::build_gemini_request(&system_instruction, &user_content, 0.2, 2048);
+
         let start_llm = std::time::Instant::now();
-        let llm_res = client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", token.as_str()))
-            .json(&request_body)
-            .send()
-            .await
-            .map_err(|e| WorkerError::VertexAI(format!("HTTP error calling Vertex AI: {}", e)))?;
-
+        let response_text = crate::llm::generate_response(
+            &client,
+            &vertex_url,
+            vertex_token.as_deref(),
+            &ai_studio_url,
+            self.config.google_ai_studio_api_key.as_deref(),
+            &request_body,
+        )
+        .await?;
         let duration_llm = start_llm.elapsed();
-        println!("Vertex AI call completed in {:?}", duration_llm);
-
-        let status = llm_res.status();
-        if !status.is_success() {
-            let err_body = llm_res.text().await.unwrap_or_default();
-            return Err(WorkerError::VertexAI(format!(
-                "Vertex AI API returned error status {}: {}",
-                status, err_body
-            )));
-        }
-
-        let response_body: GeminiResponse = llm_res.json().await.map_err(|e| {
-            WorkerError::Serialization(format!("Failed to parse Vertex AI response body: {}", e))
-        })?;
-
-        let response_text = response_body
-            .candidates
-            .and_then(|c| c.into_iter().next())
-            .and_then(|cand| cand.content.parts.into_iter().next())
-            .and_then(|part| part.text)
-            .ok_or_else(|| {
-                WorkerError::VertexAI("Empty text response received from Gemini".to_string())
-            })?;
+        println!("LLM call completed in {:?}", duration_llm);
 
         Ok((response_text, chunks))
     }
