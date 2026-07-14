@@ -1,0 +1,285 @@
+name: CD Pipeline (Cloud Run)
+
+# Dispara em push para master/main *depois* do CI (`ci.yml`) passar, via
+# workflow_run. workflow_dispatch cobre o dry-run manual em staging exigido
+# pela issue #159 antes de habilitar o disparo automático em produção — ao
+# rodar manualmente, `dry_run=true` (default) builda e publica as imagens no
+# Artifact Registry e autentica via OIDC, mas pula o `gcloud run deploy` real.
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Dry-run: builda/publica as imagens e valida a autenticação OIDC,
+          mas não executa o deploy real no Cloud Run.
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Necessário para autenticação OIDC/Workload Identity Federation no GCP
+  # (google-github-actions/auth) — nenhuma chave de service account em texto
+  # plano é usada neste workflow.
+  id-token: write
+
+env:
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+
+jobs:
+  gate:
+    name: Verifica se o CI passou
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+    steps:
+      - name: Resolve o commit a implantar
+        id: resolve
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    needs: gate
+    outputs:
+      rust: ${{ steps.normalize.outputs.rust }}
+      java: ${{ steps.normalize.outputs.java }}
+      python: ${{ steps.normalize.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.ref }}
+          # Necessário para o dorny/paths-filter conseguir calcular o
+          # merge-base contra `base` (mesma convenção de ci.yml, issue #77).
+          fetch-depth: 0
+
+      # Mesmo filtro por módulo do job `changes` de ci.yml (issue #159 pede
+      # explicitamente reaproveitar esse path-filter para escopar o deploy).
+      - uses: dorny/paths-filter@v3
+        id: filter
+        continue-on-error: true
+        with:
+          base: master
+          filters: |
+            cd_workflow:
+              - '.github/workflows/cd.yml'
+            rust:
+              - 'rust-services/**'
+            java:
+              - 'java-core/**'
+            python:
+              - 'python-services/**'
+
+      - name: Normalize filter outputs (fail-safe)
+        id: normalize
+        if: always()
+        env:
+          OUTCOME: ${{ steps.filter.outcome }}
+          CD_WORKFLOW: ${{ steps.filter.outputs.cd_workflow }}
+          F_RUST: ${{ steps.filter.outputs.rust }}
+          F_JAVA: ${{ steps.filter.outputs.java }}
+          F_PYTHON: ${{ steps.filter.outputs.python }}
+        run: |
+          set -euo pipefail
+          # Fail-safe: se o paths-filter falhou, nunca pule deploys
+          # silenciosamente — mesma lógica fail-safe de ci.yml (issue #87).
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::warning::dorny/paths-filter falhou (outcome=$OUTCOME) - failing safe: deploy de TODOS os módulos"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "java=true" >> "$GITHUB_OUTPUT"
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$CD_WORKFLOW" = "true" ]; then
+            echo "::notice::cd.yml alterado - deploy de TODOS os módulos para validar o novo pipeline"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "java=true" >> "$GITHUB_OUTPUT"
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "rust=$F_RUST" >> "$GITHUB_OUTPUT"
+          echo "java=$F_JAVA" >> "$GITHUB_OUTPUT"
+          echo "python=$F_PYTHON" >> "$GITHUB_OUTPUT"
+
+  deploy-java:
+    name: Deploy java-core (Cloud Run)
+    runs-on: ubuntu-latest
+    needs: [gate, changes]
+    if: needs.changes.outputs.java == 'true'
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && 'staging' || 'production' }}
+    env:
+      SERVICE: java-core
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REGISTRY_REPO }}/java-core
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.ref }}
+
+      # OIDC/Workload Identity Federation — ver docs/deploy-cloud-run.md para
+      # o setup do provider e da service account no GCP. Nenhuma chave JSON é
+      # armazenada como secret.
+      - name: Autenticar no Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configurar Docker para o Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./java-core/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}:${{ needs.gate.outputs.ref }},${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=java-core
+          cache-to: type=gha,mode=max,scope=java-core
+
+      - name: Deploy no Cloud Run
+        if: env.DRY_RUN != 'true'
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ vars.CLOUD_RUN_SERVICE_JAVA_CORE || 'java-core' }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ env.IMAGE }}:${{ needs.gate.outputs.ref }}
+          # Segredos de runtime (URLs internas, credenciais de banco/Redis/
+          # RabbitMQ/MinIO) vêm do Secret Manager via `--set-secrets`,
+          # configurado uma única vez no serviço Cloud Run (ou aqui via
+          # `secrets:` do action) — nunca hardcoded neste workflow. Ver
+          # docs/deploy-cloud-run.md.
+
+      - name: Dry-run - deploy pulado
+        if: env.DRY_RUN == 'true'
+        run: echo "::notice::DRY_RUN ativo - imagem publicada em ${{ env.IMAGE }}, gcloud run deploy não executado"
+
+  deploy-rust:
+    name: Deploy ${{ matrix.service }} (Cloud Run)
+    runs-on: ubuntu-latest
+    needs: [gate, changes]
+    if: needs.changes.outputs.rust == 'true'
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && 'staging' || 'production' }}
+    strategy:
+      matrix:
+        service:
+          - embedding-service
+          - ingestion-worker
+          - rag-worker
+          - workflow-worker
+          - document-processing
+    env:
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REGISTRY_REPO }}/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.ref }}
+
+      - name: Autenticar no Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configurar Docker para o Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: ./rust-services
+          file: ./rust-services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}:${{ needs.gate.outputs.ref }},${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Deploy no Cloud Run
+        if: env.DRY_RUN != 'true'
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ matrix.service }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ env.IMAGE }}:${{ needs.gate.outputs.ref }}
+          # Serviços sem ingress HTTP (ex.: ingestion-worker, workflow-worker,
+          # que fazem polling no PostgreSQL/RabbitMQ) devem ser configurados
+          # no GCP como Cloud Run com `--no-cpu-throttling`/ingress interno
+          # ou migrados para Cloud Run Jobs, conforme o caso — ver
+          # docs/deploy-cloud-run.md.
+
+      - name: Dry-run - deploy pulado
+        if: env.DRY_RUN == 'true'
+        run: echo "::notice::DRY_RUN ativo - imagem publicada em ${{ env.IMAGE }}, gcloud run deploy não executado"
+
+  deploy-python:
+    name: Deploy crew-worker (Cloud Run)
+    runs-on: ubuntu-latest
+    needs: [gate, changes]
+    if: needs.changes.outputs.python == 'true'
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && 'staging' || 'production' }}
+    env:
+      SERVICE: crew-worker
+      IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REGISTRY_REPO }}/crew-worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.ref }}
+
+      - name: Autenticar no Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configurar Docker para o Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: ./python-services/crew-worker
+          file: ./python-services/crew-worker/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE }}:${{ needs.gate.outputs.ref }},${{ env.IMAGE }}:latest
+          cache-from: type=gha,scope=crew-worker
+          cache-to: type=gha,mode=max,scope=crew-worker
+
+      - name: Deploy no Cloud Run
+        if: env.DRY_RUN != 'true'
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ vars.CLOUD_RUN_SERVICE_CREW_WORKER || 'crew-worker' }}
+          region: ${{ vars.GCP_REGION }}
+          image: ${{ env.IMAGE }}:${{ needs.gate.outputs.ref }}
+
+      - name: Dry-run - deploy pulado
+        if: env.DRY_RUN == 'true'
+        run: echo "::notice::DRY_RUN ativo - imagem publicada em ${{ env.IMAGE }}, gcloud run deploy não executado"
