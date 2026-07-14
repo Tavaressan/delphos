@@ -41,6 +41,24 @@ export interface ListExecutionItemResponse {
   finishedAt: string | null;
 }
 
+export interface CreateScheduleRequest {
+  agentId: string;
+  cronExpression: string;
+  prompt: string;
+  tenantId?: string;
+}
+
+export interface ScheduleResponse {
+  scheduleId: string;
+  agentId: string;
+  agentName: string | null;
+  cronExpression: string;
+  prompt: string;
+  status: 'ACTIVE' | 'CANCELLED';
+  createdAt: string;
+  nextRunAt: string | null;
+}
+
 export interface GetMeResponse {
   id: string;
   username: string;

@@ -683,6 +683,20 @@ impl RabbitMQManager {
         );
 
         // 4. Chamada de chat para a API do Vertex AI
+        // LLM_PROVIDER=mock permite validar o pipeline completo (RabbitMQ + pgvector +
+        // embedding-service) em CI/dev sem depender de credenciais reais da Vertex AI,
+        // mesmo padrão de EMBEDDING_PROVIDER=mock no embedding-service.
+        let llm_provider = std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "real".to_string());
+        if llm_provider == "mock" {
+            println!("LLM_PROVIDER=mock: retornando resposta mockada sem chamar Vertex AI.");
+            let response_text = format!(
+                "[MOCK RESPONSE] Pergunta: \"{}\". {} chunk(s) recuperado(s) do contexto.",
+                sanitized_query,
+                chunks.len()
+            );
+            return Ok((response_text, chunks));
+        }
+
         println!(
             "Calling Vertex AI Gemini chat API (model: {})...",
             self.config.gcp_chat_model_id

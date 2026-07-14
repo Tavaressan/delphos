@@ -1,0 +1,9 @@
+/*
+ * Design-system stylesheet input for the claude.ai/design bundle.
+ * Loads the real brand font (Inter — the same family the app pulls via
+ * next/font/google) at runtime, then the app's real globals.css (tokens +
+ * @tailwind layers + custom component classes). globals.css is a pre-existing
+ * project file and is never modified; this wrapper only prepends the webfont.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
+@import '../src/styles/globals.css';

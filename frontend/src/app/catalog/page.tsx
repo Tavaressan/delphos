@@ -3,11 +3,12 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Header, Sidebar, Footer } from '../../components/layout';
 import { AgentUploadManager } from '../../features/admin/components/AgentUploadManager';
-import { Search, Pencil, Check, X, PowerOff, Power, Trash2 } from 'lucide-react';
+import { Search, Pencil, Check, X, PowerOff, Power, Trash2, Plug } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 import { canReactivate } from '../../features/catalog/agentStatus';
 import { validateAgentZipFileName } from '../../features/admin/agentUploadValidation';
+import { AgentIntegrationsPanel } from '../../features/agents/components/AgentIntegrationsPanel';
 
 interface Agent {
   id: string;
@@ -38,6 +39,7 @@ export default function CatalogPage() {
   const [editFile, setEditFile] = useState<File | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [integrationsAgent, setIntegrationsAgent] = useState<Agent | null>(null);
 
   const fetchAgents = useCallback(async () => {
     if (!tenantId) return;
@@ -387,6 +389,14 @@ export default function CatalogPage() {
                                   <Pencil className="w-3 h-3" /> Editar
                                 </button>
 
+                                <button
+                                  onClick={() => setIntegrationsAgent(agent)}
+                                  disabled={isActing}
+                                  className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-text-secondary text-[10px] font-bold py-1 px-2 rounded border border-border-color transition-colors disabled:opacity-50"
+                                >
+                                  <Plug className="w-3 h-3" /> Integrações
+                                </button>
+
                                 {agent.status !== 'INACTIVE' && (
                                   <button
                                     onClick={() => handleDeactivate(agent.id)}
@@ -424,6 +434,13 @@ export default function CatalogPage() {
         </main>
       </div>
       <Footer />
+
+      {integrationsAgent && (
+        <AgentIntegrationsPanel
+          agentName={integrationsAgent.name}
+          onClose={() => setIntegrationsAgent(null)}
+        />
+      )}
     </div>
   );
 }

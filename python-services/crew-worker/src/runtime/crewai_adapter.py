@@ -9,8 +9,31 @@ from typing import Any, List, Mapping, Optional
 from crewai import Agent, Task, Crew, Process, BaseLLM, LLM
 from crewai.tools import tool
 import yaml
+from pydantic import BaseModel, ValidationError, field_validator
 
 from runtime.instruction_parser import parse as parse_instructions
+
+
+class QuotaValue(BaseModel):
+    """Pydantic model for validating individual quota items."""
+
+    limit: int
+    resource: str
+
+    @field_validator("limit")
+    @classmethod
+    def limit_must_be_positive(cls, v):
+        if v < 0:
+            raise ValueError("limit must be non-negative")
+        return v
+
+    @field_validator("resource")
+    @classmethod
+    def resource_must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("resource must not be empty")
+        return v.strip()
+
 
 _HARDCODED_ROLE = "Elevator Specialist"
 _HARDCODED_GOAL = (
@@ -129,16 +152,20 @@ class CrewAiRuntimeAdapter:
         db_url = os.environ.get(
             "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/rag_db"
         )
+        conn = None
         try:
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
-            cur.execute(
-                "SELECT name, system_instructions, tag FROM agents WHERE id = %s",
-                (agent_id,),
-            )
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
+            try:
+                cur.execute(
+                    "SELECT name, system_instructions, tag FROM agents WHERE id = %s",
+                    (agent_id,),
+                )
+                row = cur.fetchone()
+            finally:
+                # Fecha o cursor mesmo se a query falhar (ex.: agent_id malformado),
+                # para não deixar conexões/cursores vazando (issue #124).
+                cur.close()
 
             if row is None:
                 self.publish_event(
@@ -160,6 +187,38 @@ class CrewAiRuntimeAdapter:
             self.publish_event(
                 "AgentExecutionFailed",
                 {"reason": f"DB lookup failed for agent_id '{agent_id}': {str(e)}"},
+            )
+            raise
+        finally:
+            # Garante que a conexão seja sempre fechada, mesmo em caso de erro,
+            # para não deixar o worker em estado inconsistente (issue #124).
+            if conn is not None:
+                conn.close()
+
+    def _load_custom_tools(self) -> list:
+        """Carrega as tools Python customizadas do agente (`tools/*.py` no ZIP,
+        issue #129), reaproveitando a validação AST de `sandboxed_script_tool`.
+
+        Uma tool que viola a allowlist rejeita o registro imediatamente (não é
+        adiada para a execução) e a execução do agente é abortada com
+        `AgentExecutionFailed`, na mesma linha de `_load_agent_config`.
+        """
+        from tools.custom_agent_tools import load_custom_tools
+        from tools.sandboxed_script_tool import ScriptValidationError
+
+        try:
+            return load_custom_tools(
+                self.agent_id,
+                channel=self.channel,
+                execution_id=self.execution_id,
+                tenant_id=self.tenant_id,
+            )
+        except ScriptValidationError as e:
+            self.publish_event(
+                "AgentExecutionFailed",
+                {
+                    "reason": f"Custom tool rejected for agent_id '{self.agent_id}': {str(e)}"
+                },
             )
             raise
 
@@ -276,31 +335,36 @@ class CrewAiRuntimeAdapter:
         print(
             f"[CrewAiRuntimeAdapter] Querying database at {db_url} for similarity search..."
         )
+        conn = None
         try:
             conn = psycopg2.connect(db_url)
             cur = conn.cursor()
+            try:
+                embedding_str = "[" + ",".join(map(str, embedding)) + "]"
+                effective_agent_id = (
+                    agent_id_override
+                    if agent_id_override is not None
+                    else self.agent_id
+                )
 
-            embedding_str = "[" + ",".join(map(str, embedding)) + "]"
-            effective_agent_id = (
-                agent_id_override if agent_id_override is not None else self.agent_id
-            )
-
-            cur.execute(
-                """
-                SELECT dc.id, dc.content, d.id, d.name,
-                       1 - (dc.embedding <=> %s::vector) as similarity
-                FROM document_chunks dc
-                JOIN documents d ON dc.document_id = d.id
-                WHERE dc.tenant_id = %s
-                  AND (d.agent_id = %s OR d.agent_id IS NULL)
-                ORDER BY similarity DESC
-                LIMIT 5
-                """,
-                (embedding_str, self.tenant_id, effective_agent_id),
-            )
-            rows = cur.fetchall()
-            cur.close()
-            conn.close()
+                cur.execute(
+                    """
+                    SELECT dc.id, dc.content, d.id, d.name,
+                           1 - (dc.embedding <=> %s::vector) as similarity
+                    FROM document_chunks dc
+                    JOIN documents d ON dc.document_id = d.id
+                    WHERE dc.tenant_id = %s
+                      AND (d.agent_id = %s OR d.agent_id IS NULL)
+                    ORDER BY similarity DESC
+                    LIMIT 5
+                    """,
+                    (embedding_str, self.tenant_id, effective_agent_id),
+                )
+                rows = cur.fetchall()
+            finally:
+                # Fecha o cursor mesmo se a query falhar, para não deixar
+                # conexões/cursores vazando (mesma classe de bug da issue #124).
+                cur.close()
 
             if not rows:
                 print("[CrewAiRuntimeAdapter] No document chunks found in database.")
@@ -332,6 +396,88 @@ class CrewAiRuntimeAdapter:
         except Exception as e:
             print(f"[CrewAiRuntimeAdapter] Database similarity search failed: {str(e)}")
             return f"Erro ao acessar a base de dados vetorial: {str(e)}", []
+        finally:
+            if conn is not None:
+                conn.close()
+
+    def calculate_sandbox_quota(self, tenant_id: str, action: str, values: list) -> str:
+        """
+        Calcula a cota de tokens do sandbox para um tenant específico.
+
+        Suporta dois formatos:
+        1. Lista de integers: [100, 200, 300] — soma direta
+        2. Lista de dicts: [{"limit": 100, "resource": "tokens"}, ...]
+           — valida e soma pelo campo 'limit'
+
+        Args:
+            tenant_id: Identificador do tenant
+            action: Ação a executar (add, sum, etc.)
+            values: Lista de números ou dicts com estrutura {"limit": <int>, "resource": <str>}
+
+        Returns:
+            JSON string com resultado {"quota_used": <total>, "status": "OK"}
+
+        Raises:
+            ValueError: Se algum item em values não atender ao schema esperado
+            TypeError: Se não conseguir interpretar os valores
+        """
+        tool_call_id = str(uuid.uuid4())
+        tool_start_payload = {
+            "toolCallId": tool_call_id,
+            "toolName": "calculate_sandbox_quota",
+            "inputPayload": {
+                "tenantId": tenant_id,
+                "action": action,
+                "values": values,
+            },
+        }
+        self.publish_event("ToolCallStarted", tool_start_payload)
+
+        try:
+            total = 0
+
+            if not values:
+                # Lista vazia — retorna 0
+                total = 0
+            elif isinstance(values[0], dict):
+                # Formato estruturado: lista de dicts
+                for item in values:
+                    try:
+                        validated = QuotaValue(**item)
+                        total += validated.limit
+                    except ValidationError as e:
+                        raise ValueError(
+                            f"Invalid quota value item {item}: {e.errors()[0]['msg']}"
+                        )
+            else:
+                # Formato legado: lista de números — soma direta
+                total = sum(values)
+
+            time.sleep(2)
+            response_payload = json.dumps({"quota_used": total, "status": "OK"})
+
+            tool_finish_payload = {
+                "toolCallId": tool_call_id,
+                "status": "COMPLETED",
+                "outputResponse": response_payload,
+                "executionTimeMs": 2000,
+                "errorLog": None,
+            }
+            self.publish_event("ToolCallFinished", tool_finish_payload)
+            return response_payload
+
+        except (ValueError, TypeError) as e:
+            # Tratamento de erro com mensagem clara
+            error_msg = f"Error calculating quota: {str(e)}"
+            tool_finish_payload = {
+                "toolCallId": tool_call_id,
+                "status": "FAILED",
+                "outputResponse": json.dumps({"error": str(e), "status": "ERROR"}),
+                "executionTimeMs": 0,
+                "errorLog": error_msg,
+            }
+            self.publish_event("ToolCallFinished", tool_finish_payload)
+            raise
 
     def execute(self) -> str:
         # 1. Validar e sanitizar input do usuário contra Prompt Injection
@@ -376,34 +522,11 @@ class CrewAiRuntimeAdapter:
 
         # 3. Definir as ferramentas
         @tool("calculate_sandbox_quota")
-        def calculate_sandbox_quota(tenant_id: str, action: str, values: list) -> str:
+        def calculate_sandbox_quota_tool(
+            tenant_id: str, action: str, values: list
+        ) -> str:
             """Calcula a cota de tokens do sandbox para um tenant específico."""
-            tool_call_id = str(uuid.uuid4())
-            tool_start_payload = {
-                "toolCallId": tool_call_id,
-                "toolName": "calculate_sandbox_quota",
-                "inputPayload": {
-                    "tenantId": tenant_id,
-                    "action": action,
-                    "values": values,
-                },
-            }
-            self.publish_event("ToolCallStarted", tool_start_payload)
-
-            # Perform tool operation
-            time.sleep(2)
-            total = sum(values)
-            response_payload = f'{{"quota_used": {total}, "status": "OK"}}'
-
-            tool_finish_payload = {
-                "toolCallId": tool_call_id,
-                "status": "COMPLETED",
-                "outputResponse": response_payload,
-                "executionTimeMs": 2000,
-                "errorLog": None,
-            }
-            self.publish_event("ToolCallFinished", tool_finish_payload)
-            return response_payload
+            return self.calculate_sandbox_quota(tenant_id, action, values)
 
         @tool("search_knowledge_base")
         def search_knowledge_base(query: str) -> str:
@@ -574,16 +697,20 @@ class CrewAiRuntimeAdapter:
             db_url = os.environ.get(
                 "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/rag_db"
             )
+            conn = None
             try:
                 conn = psycopg2.connect(db_url)
                 cur = conn.cursor()
-                cur.execute(
-                    "SELECT id, name, system_instructions FROM agents WHERE name = %s AND tenant_id = %s::uuid LIMIT 1",
-                    (agent_name, self.tenant_id),
-                )
-                row = cur.fetchone()
-                cur.close()
-                conn.close()
+                try:
+                    cur.execute(
+                        "SELECT id, name, system_instructions FROM agents WHERE name = %s AND tenant_id = %s::uuid LIMIT 1",
+                        (agent_name, self.tenant_id),
+                    )
+                    row = cur.fetchone()
+                finally:
+                    # Fecha o cursor mesmo se a query falhar, para não deixar
+                    # conexões/cursores vazando (mesma classe de bug da issue #124).
+                    cur.close()
             except Exception as e:
                 result = f"Erro ao buscar agente '{agent_name}': {str(e)}"
                 self.publish_event(
@@ -597,6 +724,9 @@ class CrewAiRuntimeAdapter:
                     },
                 )
                 return result
+            finally:
+                if conn is not None:
+                    conn.close()
 
             if row is None:
                 result = f"Agente '{agent_name}' não encontrado para este tenant."
@@ -662,7 +792,7 @@ class CrewAiRuntimeAdapter:
             f"agent_id={self.agent_id} | role={self._agent_role!r} | "
             f"backstory={self._agent_backstory[:80]!r}..."
         )
-        tools = [calculate_sandbox_quota, search_tool]
+        tools = [calculate_sandbox_quota_tool, search_tool]
         if self._agent_tag == "piso":
             tools.append(calculate_floor_specs)
         elif self._agent_tag == "orquestrador":
@@ -682,6 +812,9 @@ class CrewAiRuntimeAdapter:
                     tenant_id=self.tenant_id,
                 )
             )
+
+        if self.agent_id is not None:
+            tools.extend(self._load_custom_tools())
 
         agent = Agent(
             role=self._agent_role,

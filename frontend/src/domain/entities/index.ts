@@ -75,6 +75,8 @@ export interface Message {
   createdAt?: string;
   citation?: string;
   sources?: RetrievalSource[];
+  /** Payload de tool-call, quando a mensagem representa uma invocação de ferramenta pelo agente (issue #138). */
+  toolCall?: import('../../features/chat/tool-renderers/types').ToolCallPayload;
 }
 
 export interface AgentExecution {
@@ -91,6 +93,19 @@ export interface AgentExecution {
   sources?: RetrievalSource[];
 }
 
+export type ScheduleStatus = 'ACTIVE' | 'CANCELLED';
+
+export interface Schedule {
+  id: string; // UUID
+  agentId: string; // UUID
+  agentName: string | null;
+  cronExpression: string;
+  prompt: string;
+  status: ScheduleStatus;
+  createdAt: string; // ISO 8601 string
+  nextRunAt: string | null; // ISO 8601 string
+}
+
 export interface Role {
   id: string;
   name: string;
@@ -99,4 +114,35 @@ export interface Role {
 export interface Permission {
   id: string;
   name: string;
+}
+
+// Painel de integrações do agente (issue #136): servidores MCP e skills customizadas.
+export type McpTransport = 'stdio' | 'sse';
+
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  command: string; // comando (stdio) ou URL (sse) do servidor MCP
+  transport: McpTransport;
+}
+
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+}
+
+// Parâmetros de modelo e de base de conhecimento configuráveis via popover (issue #143).
+export type LlmModel = 'gemini-1.5-pro' | 'gemini-1.5-flash' | 'gemini-2.0-flash';
+export type EmbeddingModel = 'text-embedding-004' | 'text-multilingual-embedding-002';
+
+export interface AgentModelConfig {
+  llmModel: LlmModel;
+  temperature: number; // 0.0 a 1.0
+  topP: number; // 0.0 a 1.0
+}
+
+export interface AgentKnowledgeBaseConfig {
+  embeddingModel: EmbeddingModel;
+  dimension: number; // dimensão do vetor de embedding
 }

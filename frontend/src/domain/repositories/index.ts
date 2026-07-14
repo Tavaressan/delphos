@@ -1,5 +1,5 @@
-import { AgentExecution, Document } from '../entities';
-import { SubmitExecutionRequest } from '../dto';
+import { AgentExecution, Document, Schedule } from '../entities';
+import { SubmitExecutionRequest, CreateScheduleRequest } from '../dto';
 
 export interface IExecutionRepository {
   submitExecution(request: SubmitExecutionRequest): Promise<AgentExecution>;
@@ -10,4 +10,10 @@ export interface IExecutionRepository {
 export interface IDocumentRepository {
   listDocuments(): Promise<Document[]>;
   uploadDocument(file: File): Promise<Document>;
+}
+
+export interface IScheduleRepository {
+  createSchedule(request: CreateScheduleRequest): Promise<Schedule>;
+  listSchedules(tenantId: string): Promise<Schedule[]>;
+  cancelSchedule(id: string): Promise<void>;
 }

@@ -1,16 +1,39 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { useExecution } from '../../hooks/useExecution';
+import { useExecution, TimelineEvent } from '../../hooks/useExecution';
+import { useStreamingMessage } from '../../hooks/useStreamingMessage';
 import { ChatInput } from '../../components/forms/ChatInput';
+import { TaskPanel, Task } from '../../components/panel/TaskPanel';
 import { Message } from '../../domain/entities';
-import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus } from 'lucide-react';
+import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
 import { useConversations } from '../../providers/ConversationProvider';
 import { conversationRepository } from '../../infrastructure/repositories/ConversationRepository';
 import { filterSelectableAgents, NO_ACTIVE_AGENTS_MESSAGE } from './agentFilters';
+import { MessageContent } from './MessageContent';
+import { ToolCallRenderer } from './tool-renderers';
+import { ConfirmCard } from './hitl/ConfirmCard';
+import { SensitiveAction } from './hitl/types';
+import { ChatTourController, ChatTourControllerHandle } from './tour/ChatTourController';
+
+/**
+ * Adapter: converte TimelineEvent (do useExecution hook) para Task (formato TaskPanel).
+ */
+const timelineToTasks = (events: TimelineEvent[]): Task[] => {
+  return events.map(event => ({
+    id: event.id,
+    name: event.name,
+    status:
+      event.status === 'success' ? 'completed' :
+      event.status === 'warning' ? 'in_progress' :
+      event.status === 'danger' ? 'failed' :
+      'pending',
+    detail: event.details,
+  }));
+};
 
 export const ChatCanvas: React.FC = () => {
   const { tenantId, user } = useAuth();
@@ -22,10 +45,23 @@ export const ChatCanvas: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [inputMsg, setInputMsg] = useState<string>('');
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState<boolean>(false);
+  // HITL (human-in-the-loop): ação sensível pendente de aprovação humana.
+  // NOTA: o backend ainda não emite este evento em tempo real (issue #137) —
+  // este estado existe apenas para habilitar o ponto de renderização do
+  // ConfirmCard; a integração real (SSE/WebSocket) fica como próximo passo.
+  const [pendingAction, setPendingAction] = useState<SensitiveAction | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null);
+  // Onboarding guiado do chat (issue #140): exibido automaticamente no
+  // primeiro acesso e reaberto manualmente via botão "Tour" no header.
+  const tourControllerRef = useRef<ChatTourControllerHandle>(null);
+
+  const { text: streamingText, isStreaming, start: startStreaming, reset: resetStreaming } = useStreamingMessage();
+  const streamedExecutionIdRef = useRef<string | null>(null);
 
   const { submitPrompt, isLoading, timeline, error, activeExecution } = useExecution((output, sources) => {
+    resetStreaming();
+    streamedExecutionIdRef.current = null;
     setChatHistory(prev => [
       ...prev,
       {
@@ -36,6 +72,18 @@ export const ChatCanvas: React.FC = () => {
     ]);
     refreshConversations();
   });
+
+  // Assim que uma execução é submetida, conecta ao streaming (SSE) da
+  // resposta do agente para exibi-la progressivamente (issue #142). Se o
+  // backend não suportar o endpoint de streaming, a conexão falha
+  // silenciosamente (ver useStreamingMessage) e a resposta final chega
+  // normalmente pelo polling já existente em useExecution.
+  useEffect(() => {
+    if (activeExecution?.id && streamedExecutionIdRef.current !== activeExecution.id) {
+      streamedExecutionIdRef.current = activeExecution.id;
+      startStreaming(activeExecution.id);
+    }
+  }, [activeExecution?.id, startStreaming]);
 
   useEffect(() => {
     const fetchAgents = async () => {
@@ -88,7 +136,7 @@ export const ChatCanvas: React.FC = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputMsg.trim() || isLoading) return;
+    if (!inputMsg.trim() || isLoading || !selectedAgentId) return;
 
     const userPrompt = inputMsg.trim();
     setInputMsg('');
@@ -130,7 +178,7 @@ export const ChatCanvas: React.FC = () => {
           
           <div className="flex items-center gap-3">
             {agents.length > 0 ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" data-tour="agent-select">
                 <span className="text-xs font-semibold text-text-secondary">Agente:</span>
                 <select
                   value={selectedAgentId}
@@ -162,6 +210,16 @@ export const ChatCanvas: React.FC = () => {
             >
               <MessageSquarePlus className="w-3.5 h-3.5" />
               Novo Chat
+            </button>
+
+            <button
+              onClick={() => tourControllerRef.current?.openTour()}
+              className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-primary border border-border-color hover:border-primary rounded px-2.5 py-1 transition-colors"
+              title="Reabrir tour de boas-vindas"
+              aria-label="Reabrir tour de boas-vindas"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              Tour
             </button>
           </div>
         </div>
@@ -198,11 +256,14 @@ export const ChatCanvas: React.FC = () => {
                       ? 'bg-secondary/40 text-text-secondary border border-border-color italic font-mono text-[11px]'
                       : 'bg-secondary/20 dark:bg-slate-800/40 text-text-primary border border-border-color rounded-tl-none'
                   }`}>
-                    {msg.content}
+                    <MessageContent role={msg.role} content={msg.content} />
+
+                    {/* Renderer específico por tipo de ferramenta invocada pelo agente (issue #138) */}
+                    {msg.toolCall && <ToolCallRenderer toolCall={msg.toolCall} />}
 
                     {/* Fontes RAG — visível somente para admin */}
                     {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1">
+                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1" data-tour="knowledge-base">
                         <span className="text-[10px] text-accent font-bold uppercase tracking-wider flex items-center gap-1">
                           <FileText className="w-3 h-3" />
                           Fontes RAG
@@ -221,7 +282,35 @@ export const ChatCanvas: React.FC = () => {
             ))}
           </AnimatePresence>
 
-          {isLoading && (
+          {/* HITL — cartão bloqueante de aprovação de ação sensível (issue #137) */}
+          {pendingAction && (
+            <ConfirmCard
+              action={pendingAction}
+              onApprove={() => setPendingAction(null)}
+              onReject={() => setPendingAction(null)}
+            />
+          )}
+
+          {isLoading && isStreaming && streamingText && (
+            // Resposta do agente aparecendo progressivamente via streaming SSE (issue #142)
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex gap-3 mr-auto max-w-[85%] items-start"
+            >
+              <div className="w-8 h-8 rounded flex-shrink-0 bg-primary text-white font-bold flex items-center justify-center text-xs animate-pulse">
+                AG
+              </div>
+              <div
+                data-testid="streaming-message-bubble"
+                className="bg-secondary/20 dark:bg-slate-800/40 border border-border-color rounded-lg rounded-tl-none p-3.5 text-xs leading-relaxed text-text-primary"
+              >
+                {streamingText}
+              </div>
+            </motion.div>
+          )}
+
+          {isLoading && (!isStreaming || !streamingText) && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -249,17 +338,24 @@ export const ChatCanvas: React.FC = () => {
         </div>
 
         {/* Input area */}
-        <div className="p-4 border-t border-border-color bg-surface transition-colors duration-200">
+        <div className="p-4 border-t border-border-color bg-surface transition-colors duration-200" data-tour="chat-input">
           <ChatInput
             value={inputMsg}
             onChange={setInputMsg}
             onSubmit={handleSend}
-            disabled={isLoading}
+            disabled={isLoading || !selectedAgentId}
+            placeholder={
+              selectedAgentId
+                ? undefined
+                : agentsLoaded
+                ? NO_ACTIVE_AGENTS_MESSAGE
+                : 'Carregando agentes...'
+            }
           />
         </div>
       </div>
 
-      {/* Execution Timeline — desktop: right panel; mobile: bottom collapsible strip */}
+      {/* Task Panel — desktop: right panel; mobile: bottom collapsible strip */}
       <div className={`
         transition-all duration-300 flex-shrink-0 bg-surface border border-border-color rounded-lg shadow-sm flex flex-col overflow-hidden
         ${isTimelineCollapsed
@@ -267,68 +363,40 @@ export const ChatCanvas: React.FC = () => {
           : 'p-5 h-52 md:h-auto w-full md:w-80'}
       `}>
         {/* Panel header */}
-        <div className="flex items-center justify-between border-b border-border-color pb-2 flex-shrink-0">
+        <div className="flex items-center justify-between border-b border-border-color pb-3 flex-shrink-0">
           {!isTimelineCollapsed && (
-            <span className="text-xs font-bold text-text-secondary uppercase tracking-wider heading-font">Progresso de Execução</span>
-          )}
-          <div className={`flex items-center gap-2 ${isTimelineCollapsed ? 'w-full justify-center' : 'ml-auto'}`}>
-            {!isTimelineCollapsed && (
+            <div className="flex items-center gap-2">
               <Activity className={`w-4 h-4 text-accent ${isLoading ? 'animate-pulse' : ''}`} />
-            )}
-            <button
-              onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
-              className="text-text-secondary hover:text-text-primary p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
-              aria-label={isTimelineCollapsed ? 'Expandir Linha do Tempo' : 'Recolher Linha do Tempo'}
-            >
-              {/* Mobile: chevron vertical; desktop: chevron horizontal */}
-              <span className="md:hidden">
-                {isTimelineCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </span>
-              <span className="hidden md:block">
-                {isTimelineCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </span>
-            </button>
-          </div>
+              <span className="text-xs font-bold text-text-secondary uppercase tracking-wider heading-font">Tarefas</span>
+            </div>
+          )}
+          <button
+            onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+            className="text-text-secondary hover:text-text-primary p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center justify-center"
+            aria-label={isTimelineCollapsed ? 'Expandir Painel de Tarefas' : 'Recolher Painel de Tarefas'}
+          >
+            {/* Mobile: chevron vertical; desktop: chevron horizontal */}
+            <span className="md:hidden">
+              {isTimelineCollapsed ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </span>
+            <span className="hidden md:block">
+              {isTimelineCollapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </span>
+          </button>
         </div>
 
         {!isTimelineCollapsed && (
-          <div className="overflow-y-auto flex-1 flex flex-col gap-4 pr-1 mt-4">
-            {timeline.length > 0 ? (
-              timeline.map((event) => (
-                <div key={event.id} className="flex gap-3 text-xs">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-bold text-white transition-colors duration-300 ${
-                      event.status === 'success' ? 'bg-success' :
-                      event.status === 'warning' ? 'bg-warning' :
-                      event.status === 'danger' ? 'bg-danger' :
-                      'bg-slate-200 text-slate-500'
-                    }`}>
-                      {event.status === 'success' ? (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                      ) : (
-                        event.id
-                      )}
-                    </div>
-                    <div className="w-[1.5px] flex-1 bg-border-color mt-1" />
-                  </div>
-                  <div className="flex flex-col flex-1 pb-1">
-                    <div className="flex justify-between items-center gap-2">
-                      <span className="font-bold text-text-primary truncate">{event.name}</span>
-                      <span className="text-[9px] font-mono text-text-secondary flex-shrink-0">{event.time}</span>
-                    </div>
-                    <p className="text-text-secondary mt-0.5 text-[11px] leading-relaxed">{event.details}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-text-secondary text-center py-8 gap-2">
-                <Activity className="w-8 h-8 text-text-secondary opacity-60" />
-                <span className="text-xs">Envie uma mensagem para começar.</span>
-              </div>
-            )}
+          <div className="overflow-y-auto flex-1 flex flex-col gap-3 pr-1 mt-4">
+            <TaskPanel
+              tasks={timelineToTasks(timeline)}
+              title="Progresso de Execução"
+              emptyMessage="Envie uma mensagem para começar."
+            />
           </div>
         )}
       </div>
+
+      <ChatTourController ref={tourControllerRef} />
     </div>
   );
 };

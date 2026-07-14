@@ -27,3 +27,17 @@ Funcionalidade: Execução de Workflows Determinísticos pós-RAG
     Então o worker Rust deve interromper a execução usando tokio::select!
     E deve registrar o evento de falha "agent.workflow.failed" com o status "TIMEOUT" no broker
     E deve enviar o NACK da mensagem original
+
+  @integration
+  Cenário: Evento de conclusão do workflow-worker atualiza agent_executions (issue #123)
+    Dado que existe uma execução de workflow registrada com status "STARTED"
+    Quando o listener processa um evento "agent.workflow.completed" publicado pelo workflow-worker para essa execução
+    Então o registro em agent_executions deve ter o status "COMPLETED"
+    E o campo output_result deve conter o resultado do workflow
+
+  @integration
+  Cenário: Evento de falha do workflow-worker atualiza agent_executions com erro (issue #123)
+    Dado que existe uma execução de workflow registrada com status "STARTED"
+    Quando o listener processa um evento "agent.workflow.failed" publicado pelo workflow-worker para essa execução
+    Então o registro em agent_executions deve ter o status "FAILED"
+    E o campo error_message deve conter a mensagem de erro do workflow
