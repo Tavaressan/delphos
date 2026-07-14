@@ -122,6 +122,22 @@ class CrewAiRuntimeAdapter:
                 "Consulte .env.example para instruções."
             )
 
+        # Issue #149: query rewriting (opt-in) antes da busca vetorial em
+        # _search_db. Configurável via env para permitir A/B e rollback sem
+        # deploy de código. Default conservador (desligado): preserva o
+        # comportamento atual até ser explicitamente habilitado.
+        self._query_rewriting_enabled = os.environ.get(
+            "CREW_QUERY_REWRITING_ENABLED", "false"
+        ).strip().lower() in ("1", "true", "yes", "on")
+        try:
+            # Timeout curto e dedicado para o passo de rewriting, para que ele
+            # nunca domine a latência da recuperação (fallback ao prompt bruto).
+            self._query_rewriting_timeout = float(
+                os.environ.get("CREW_QUERY_REWRITING_TIMEOUT_SECONDS", "3")
+            )
+        except (TypeError, ValueError):
+            self._query_rewriting_timeout = 3.0
+
         # Load agent config from DB or use hardcoded legacy fallback
         self._agent_role = _HARDCODED_ROLE
         self._agent_goal = _HARDCODED_GOAL
@@ -223,6 +239,70 @@ class CrewAiRuntimeAdapter:
             ),
         )
         print(f"[CrewAiRuntimeAdapter] Published event: {event_type}")
+
+    def _rewrite_query(self, prompt: str) -> str:
+        """Reescreve o prompt bruto do usuário numa query de busca enxuta,
+        centrada no vocabulário técnico de transporte vertical (elevadores e
+        escadas rolantes), antes de gerar o embedding para a busca vetorial
+        (issue #149).
+
+        Reutiliza o LLM já configurado no adapter (`self.llm`). O passo é
+        opcional (ligado/desligado por `CREW_QUERY_REWRITING_ENABLED`) e nunca
+        pode degradar a recuperação: em erro, timeout curto ou resposta vazia,
+        faz *fallback* para o prompt original (com log). O timeout é dedicado e
+        curto para não dominar a latência da recuperação.
+        """
+        if not self._query_rewriting_enabled:
+            return prompt
+
+        system_prompt = (
+            "Você reescreve perguntas de usuários em consultas de busca curtas "
+            "para recuperação vetorial numa base técnica sobre transporte "
+            "vertical (elevadores e escadas rolantes). Condense a pergunta em "
+            "uma única consulta enxuta, preservando os termos técnicos e de "
+            "domínio relevantes. Responda APENAS com a consulta reescrita, sem "
+            "explicações, aspas ou rótulos."
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        import concurrent.futures
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self.llm.call, messages)
+        try:
+            rewritten = future.result(timeout=self._query_rewriting_timeout)
+        except concurrent.futures.TimeoutError:
+            print(
+                f"[CrewAiRuntimeAdapter] Query rewriting excedeu o timeout de "
+                f"{self._query_rewriting_timeout}s; usando o prompt original."
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
+            return prompt
+        except Exception as e:
+            print(
+                f"[CrewAiRuntimeAdapter] Query rewriting falhou ({e}); "
+                f"usando o prompt original."
+            )
+            executor.shutdown(wait=False, cancel_futures=True)
+            return prompt
+        executor.shutdown(wait=False)
+
+        if rewritten is None or not str(rewritten).strip():
+            print(
+                "[CrewAiRuntimeAdapter] Query rewriting retornou vazio; "
+                "usando o prompt original."
+            )
+            return prompt
+
+        rewritten = str(rewritten).strip()
+        print(
+            f"[CrewAiRuntimeAdapter] Query reescrita para busca vetorial: "
+            f"{rewritten!r}"
+        )
+        return rewritten
 
     def _search_db(self, query: str, agent_id_override: str = None) -> str:
         # 1. Obter embeddings do embedding-service
@@ -417,9 +497,14 @@ class CrewAiRuntimeAdapter:
         time.sleep(1)
 
         # 2. Executar RAG Retrieval Real
-        self.publish_event("RetrievalStarted", {})
+        # Issue #149: reescreve o prompt bruto numa query de busca enxuta antes
+        # de embeddar. Em erro/timeout/vazio, search_query == self.prompt (o
+        # filtro multi-tenant e a query SQL de similaridade ficam inalterados).
+        search_query = self._rewrite_query(self.prompt)
 
-        retrieved_text, retrieval_sources = self._search_db(self.prompt)
+        self.publish_event("RetrievalStarted", {"searchQuery": search_query})
+
+        retrieved_text, retrieval_sources = self._search_db(search_query)
 
         top_source = retrieval_sources[0] if retrieval_sources else {}
         retrieval_payload = {
@@ -429,6 +514,8 @@ class CrewAiRuntimeAdapter:
             "similarityScore": top_source.get("similarityScore", 0.0),
             "retrievedContent": retrieved_text,
             "allSources": retrieval_sources,
+            # Auditoria/observabilidade: registra a query efetivamente embeddada.
+            "searchQuery": search_query,
         }
         self.publish_event("RetrievalCompleted", retrieval_payload)
         time.sleep(1)
