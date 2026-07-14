@@ -6,7 +6,7 @@ import { useStreamingMessage } from '../../hooks/useStreamingMessage';
 import { ChatInput } from '../../components/forms/ChatInput';
 import { TaskPanel, Task } from '../../components/panel/TaskPanel';
 import { Message } from '../../domain/entities';
-import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus } from 'lucide-react';
+import { Terminal, Activity, ShieldCheck, FileText, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, MessageSquarePlus, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
@@ -17,6 +17,7 @@ import { MessageContent } from './MessageContent';
 import { ToolCallRenderer } from './tool-renderers';
 import { ConfirmCard } from './hitl/ConfirmCard';
 import { SensitiveAction } from './hitl/types';
+import { ChatTourController, ChatTourControllerHandle } from './tour/ChatTourController';
 
 /**
  * Adapter: converte TimelineEvent (do useExecution hook) para Task (formato TaskPanel).
@@ -51,6 +52,9 @@ export const ChatCanvas: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<SensitiveAction | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const currentConversationIdRef = useRef<string | null>(null);
+  // Onboarding guiado do chat (issue #140): exibido automaticamente no
+  // primeiro acesso e reaberto manualmente via botão "Tour" no header.
+  const tourControllerRef = useRef<ChatTourControllerHandle>(null);
 
   const { text: streamingText, isStreaming, start: startStreaming, reset: resetStreaming } = useStreamingMessage();
   const streamedExecutionIdRef = useRef<string | null>(null);
@@ -174,7 +178,7 @@ export const ChatCanvas: React.FC = () => {
           
           <div className="flex items-center gap-3">
             {agents.length > 0 ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" data-tour="agent-select">
                 <span className="text-xs font-semibold text-text-secondary">Agente:</span>
                 <select
                   value={selectedAgentId}
@@ -206,6 +210,16 @@ export const ChatCanvas: React.FC = () => {
             >
               <MessageSquarePlus className="w-3.5 h-3.5" />
               Novo Chat
+            </button>
+
+            <button
+              onClick={() => tourControllerRef.current?.openTour()}
+              className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary hover:text-primary border border-border-color hover:border-primary rounded px-2.5 py-1 transition-colors"
+              title="Reabrir tour de boas-vindas"
+              aria-label="Reabrir tour de boas-vindas"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              Tour
             </button>
           </div>
         </div>
@@ -249,7 +263,7 @@ export const ChatCanvas: React.FC = () => {
 
                     {/* Fontes RAG — visível somente para admin */}
                     {msg.role === 'ASSISTANT' && msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1">
+                      <div className="mt-3 pt-2.5 border-t border-border-color/40 flex flex-col gap-1" data-tour="knowledge-base">
                         <span className="text-[10px] text-accent font-bold uppercase tracking-wider flex items-center gap-1">
                           <FileText className="w-3 h-3" />
                           Fontes RAG
@@ -324,7 +338,7 @@ export const ChatCanvas: React.FC = () => {
         </div>
 
         {/* Input area */}
-        <div className="p-4 border-t border-border-color bg-surface transition-colors duration-200">
+        <div className="p-4 border-t border-border-color bg-surface transition-colors duration-200" data-tour="chat-input">
           <ChatInput
             value={inputMsg}
             onChange={setInputMsg}
@@ -381,6 +395,8 @@ export const ChatCanvas: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ChatTourController ref={tourControllerRef} />
     </div>
   );
 };

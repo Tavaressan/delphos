@@ -1,0 +1,37 @@
+{
+  "projectId": "2257182a-cae3-4fba-a4a7-0cdc9456eebd",
+  "shape": "package",
+  "pkg": "enterprise-rag-frontend",
+  "globalName": "AlfabraDS",
+  "srcDir": "src",
+  "componentSrcMap": {
+    "Button": "src/components/ui/Button.tsx",
+    "Badge": "src/components/ui/Badge.tsx",
+    "Input": "src/components/ui/Input.tsx",
+    "Footer": "src/components/layout/Footer.tsx",
+    "ChatInput": "src/components/forms/ChatInput.tsx",
+    "FileUploadArea": "src/components/forms/FileUploadArea.tsx",
+    "TaskPanel": "src/components/panel/TaskPanel.tsx"
+  },
+  "cssEntry": ".design-sync/compiled.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "docsDir": ".design-sync/docs",
+  "docsMap": {
+    "Button": ".design-sync/docs/Button.md",
+    "Badge": ".design-sync/docs/Badge.md",
+    "Input": ".design-sync/docs/Input.md",
+    "ChatInput": ".design-sync/docs/ChatInput.md",
+    "FileUploadArea": ".design-sync/docs/FileUploadArea.md",
+    "Footer": ".design-sync/docs/Footer.md",
+    "TaskPanel": ".design-sync/docs/TaskPanel.md"
+  },
+  "dtsPropsFor": {
+    "Button": "/** Visual variant. */\n  variant?: 'primary' | 'secondary' | 'accent' | 'danger' | 'ghost';\n  children?: React.ReactNode;\n  className?: string;\n  disabled?: boolean;\n  type?: 'button' | 'submit' | 'reset';\n  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;\n  /** Also accepts all native <button> attributes. */",
+    "Badge": "children: React.ReactNode;\n  /** Semantic color variant. */\n  variant?: 'primary' | 'secondary' | 'accent' | 'success' | 'warning' | 'danger' | 'info';\n  className?: string;",
+    "Input": "className?: string;\n  value?: string | number;\n  defaultValue?: string | number;\n  placeholder?: string;\n  type?: string;\n  disabled?: boolean;\n  onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;\n  /** Also accepts all native <input> attributes. */",
+    "Footer": "/** Footer takes no props. */",
+    "ChatInput": "/** Controlled input value. */\n  value: string;\n  /** Called with the new text on each keystroke. */\n  onChange: (value: string) => void;\n  /** Called when the form is submitted (send). */\n  onSubmit: (event: React.FormEvent) => void;\n  placeholder?: string;\n  disabled?: boolean;",
+    "FileUploadArea": "/** Called with the selected/dropped file (<=50MB, .pdf/.docx/.txt/.csv). */\n  onFileSelect: (file: File) => void;\n  isLoading?: boolean;",
+    "TaskPanel": "tasks: {\n    id: string | number;\n    name: string;\n    status: 'pending' | 'in_progress' | 'completed' | 'failed';\n    detail?: string;\n  }[];\n  title?: string;\n  emptyMessage?: string;"
+  }
+}

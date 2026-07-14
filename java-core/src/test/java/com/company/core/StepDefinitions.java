@@ -19,6 +19,7 @@ import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -71,7 +72,7 @@ public class StepDefinitions {
     private ToolCallRepository toolCallRepository;
 
     // Estado por cenário
-    private ResponseEntity<Map> lastResponse;
+    private ResponseEntity<Map<String, Object>> lastResponse;
     private UUID lastExecutionId;
     private UUID lastToolCallId;
     private Exception capturedListenerException;
@@ -448,15 +449,14 @@ public class StepDefinitions {
 
     // ===== Helpers =====
 
-    @SuppressWarnings("unchecked")
-    private ResponseEntity<Map> post(String uri, Object body) {
+    private ResponseEntity<Map<String, Object>> post(String uri, Object body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         return restTemplate.exchange(
             "http://localhost:" + serverPort + uri,
             HttpMethod.POST,
             new HttpEntity<>(body, headers),
-            Map.class
+            new ParameterizedTypeReference<Map<String, Object>>() {}
         );
     }
 

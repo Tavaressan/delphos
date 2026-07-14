@@ -201,13 +201,59 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - GOOGLE_APPLICATION_CREDENTIALS=/gcloud/adc.json
+      # Roteia a execução de scripts gerados por LLM para o sidecar endurecido
+      # `script-executor` (issue #148). Sem esta env var, o crew-worker cai no
+      # fallback in-process (usado só em dev/testes unitários sem Docker).
+      - SCRIPT_EXECUTOR_URL=http://script-executor:8000/run
     volumes:
       - ${ADC_PATH}:/gcloud/adc.json:ro
+    networks:
+      # Rede default: alcança core, rabbitmq, embedding-service etc.
+      - default
+      # Rede internal dedicada: única rota até o sidecar script-executor.
+      - sandbox_net
     depends_on:
       core:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      script-executor:
+        condition: service_healthy
+
+  # Sidecar dedicado à execução isolada de scripts Python gerados por LLM
+  # (issue #148). Endurecido: SEM credenciais GCP (nenhum adc.json montado, sem
+  # GOOGLE_APPLICATION_CREDENTIALS), SEM egress de rede (só na rede `sandbox_net`,
+  # marcada como `internal`), rootfs read-only, tmpfs efêmero (zerado por execução)
+  # como único ponto gravável, todas as capabilities dropadas e escalonamento de
+  # privilégio bloqueado. gVisor (`runtime: runsc`) é OPCIONAL e documentado na
+  # decisão SDD, NÃO habilitado por default.
+  script-executor:
+    build:
+      context: ./python-services/crew-worker
+      dockerfile: Dockerfile.executor
+    container_name: script_executor
+    restart: on-failure
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SCRIPT_EXECUTOR_PORT=8000
+    read_only: true
+    tmpfs:
+      # Único ponto de escrita: workdir efêmero das execuções (TemporaryDirectory).
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    pids_limit: 128
+    mem_limit: 256m
+    networks:
+      - sandbox_net
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=2).status == 200 else 1)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   frontend:
     build:
@@ -250,6 +296,14 @@ services:
     depends_on:
       frontend:
         condition: service_healthy
+
+networks:
+  # Rede isolada do sidecar de execução de scripts (issue #148). `internal: true`
+  # remove o gateway default (sem NAT/egress): o script-executor não alcança a
+  # internet nem os demais serviços da rede default, e nenhum serviço fora desta
+  # rede o alcança — só o crew-worker, que participa das duas redes.
+  sandbox_net:
+    internal: true
 
 volumes:
   caddy_data:
