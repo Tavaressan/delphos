@@ -8,12 +8,14 @@ repos:
         entry: cargo fmt --manifest-path rust-services/Cargo.toml --all -- --check
         language: system
         pass_filenames: false
+        files: '^rust-services/'
 
       - id: rust-clippy
         name: Rust Clippy
         entry: cargo clippy --manifest-path rust-services/Cargo.toml -- -D warnings
         language: system
         pass_filenames: false
+        files: '^rust-services/'
 
       - id: frontend-lint
         name: Frontend Lint
@@ -49,6 +51,7 @@ repos:
         entry: sh -c "test ! -f java-core/gradle/wrapper/gradle-wrapper.properties || test -f java-core/gradle/wrapper/gradle-wrapper.jar"
         language: system
         pass_filenames: false
+        files: '^java-core/'
 
       - id: flyway-migration-check
         name: Flyway Migration Checks

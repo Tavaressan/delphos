@@ -131,3 +131,18 @@ export interface AgentSkill {
   name: string;
   description: string;
 }
+
+// Parâmetros de modelo e de base de conhecimento configuráveis via popover (issue #143).
+export type LlmModel = 'gemini-1.5-pro' | 'gemini-1.5-flash' | 'gemini-2.0-flash';
+export type EmbeddingModel = 'text-embedding-004' | 'text-multilingual-embedding-002';
+
+export interface AgentModelConfig {
+  llmModel: LlmModel;
+  temperature: number; // 0.0 a 1.0
+  topP: number; // 0.0 a 1.0
+}
+
+export interface AgentKnowledgeBaseConfig {
+  embeddingModel: EmbeddingModel;
+  dimension: number; // dimensão do vetor de embedding
+}

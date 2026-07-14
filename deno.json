@@ -1,0 +1,4 @@
+{
+  "unstable": ["detect-cjs", "node-globals", "unsafe-proto", "sloppy-imports"],
+  "nodeModulesDir": "auto"
+}
