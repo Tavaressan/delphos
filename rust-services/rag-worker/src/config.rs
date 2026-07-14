@@ -8,6 +8,9 @@ pub struct Config {
     pub gcp_project_id: String,
     pub gcp_location: String,
     pub gcp_chat_model_id: String,
+    /// API key do Google AI Studio, usada como fallback quando o Vertex AI
+    /// (autenticado via ADC) estiver indisponível ou não configurado.
+    pub google_ai_studio_api_key: Option<String>,
 }
 
 impl Config {
@@ -29,6 +32,8 @@ impl Config {
         let gcp_chat_model_id =
             env::var("GCP_CHAT_MODEL_ID").unwrap_or_else(|_| "gemini-2.5-flash".to_string());
 
+        let google_ai_studio_api_key = env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
+
         Ok(Config {
             rabbitmq_url,
             database_url,
@@ -36,6 +41,7 @@ impl Config {
             gcp_project_id,
             gcp_location,
             gcp_chat_model_id,
+            google_ai_studio_api_key,
         })
     }
 }

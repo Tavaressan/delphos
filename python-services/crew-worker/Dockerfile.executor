@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+#
+# Imagem do sidecar `script-executor` (issue #148).
+#
+# Serviço endurecido e dedicado à execução isolada de scripts Python gerados por LLM,
+# separado do crew-worker. NÃO instala crewai/litellm/google-cloud — apenas stdlib:
+# o motor de execução (`sandbox/executor_core.py`) e o servidor (`sandbox/server.py`)
+# reusam de `tools/sandboxed_script_tool.py` só a validação de AST e os limites de
+# recurso, que degradam para stdlib quando crewai/pydantic estão ausentes.
+#
+# Endurecimento adicional (rede internal, read_only, tmpfs, cap_drop, no-new-privileges,
+# pids_limit, mem_limit) é aplicado no serviço `script-executor` do docker-compose.yml.
+# gVisor (`runtime: runsc`) é OPCIONAL e documentado, não default.
+FROM python:3.11-slim
+
+# Usuário não-root dedicado — o sidecar nunca precisa de privilégios.
+RUN useradd --create-home --uid 10001 sandbox
+
+WORKDIR /app
+
+# Copia apenas o mínimo para importar e rodar o executor: o pacote sandbox/ e o
+# módulo de validação de AST reusado. Nada de credenciais, requirements ou o restante
+# do crew-worker.
+COPY src/sandbox/ ./src/sandbox/
+COPY src/tools/__init__.py ./src/tools/__init__.py
+COPY src/tools/sandboxed_script_tool.py ./src/tools/sandboxed_script_tool.py
+
+ENV PYTHONUNBUFFERED=1 \
+    SCRIPT_EXECUTOR_HOST=0.0.0.0 \
+    SCRIPT_EXECUTOR_PORT=8000
+
+USER sandbox
+
+# server.py insere `src` no sys.path e reusa tools/ + sandbox/.
+CMD ["python", "src/sandbox/server.py"]

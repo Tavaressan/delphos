@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext", "deno.ns"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  },
+  "tasks": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "deno test -A tests/"
+  }
+}

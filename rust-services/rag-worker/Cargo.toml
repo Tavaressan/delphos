@@ -17,3 +17,6 @@ anyhow = "1.0"
 futures-lite = "1.13"
 axum = "0.7"
 regex = "1.10"
+
+[dev-dependencies]
+wiremock = "0.6"

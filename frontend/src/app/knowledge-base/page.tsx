@@ -3,6 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Header, Sidebar, Footer } from '../../components/layout';
 import { FileUploadArea } from '../../components/forms/FileUploadArea';
+import { KnowledgeSearchDrawer, SearchResultItem } from '../../components/drawer/KnowledgeSearchDrawer';
+import { Button } from '../../components/ui/Button';
 import { Search, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../providers/AuthProvider';
 import { apiClient } from '../../infrastructure/api/apiClient';
@@ -32,6 +34,29 @@ export default function KnowledgeBasePage() {
   const [kbSortField, setKbSortField] = useState('date');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const [isSearchDrawerOpen, setIsSearchDrawerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  const handleSemanticSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setIsSearching(true);
+    setSearchError(null);
+    try {
+      const response = await apiClient.post<SearchResultItem[]>('/api/search', {
+        query: searchQuery,
+        tenantId,
+      });
+      setSearchResults(response ?? []);
+    } catch (err: any) {
+      setSearchError(err.message || 'Falha ao buscar trechos relevantes.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
 
   const fetchDocs = async () => {
     try {
@@ -113,7 +138,7 @@ export default function KnowledgeBasePage() {
               <p className="text-slate-400 text-xs mt-1">Carregue suas fontes para processamento</p>
             </div>
 
-            <div className="flex gap-4 text-xs">
+            <div className="flex items-center gap-4 text-xs">
               <div className="bg-white dark:bg-surface border border-slate-200 dark:border-border-color rounded p-3 flex flex-col shadow-discrete text-left">
                 <span className="text-[10px] text-text-secondary uppercase font-bold">Docs Indexados</span>
                 <span className="font-bold text-primary text-base">{indexedDocs.length} docs</span>
@@ -122,6 +147,15 @@ export default function KnowledgeBasePage() {
                 <span className="text-[10px] text-text-secondary uppercase font-bold">Armazenamento</span>
                 <span className="font-bold text-text-primary text-base">{formatSize(totalBytes)}</span>
               </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsSearchDrawerOpen(true)}
+                className="flex items-center gap-1.5"
+              >
+                <Search className="w-3.5 h-3.5" />
+                Busca Semântica
+              </Button>
             </div>
           </div>
 
@@ -216,6 +250,17 @@ export default function KnowledgeBasePage() {
         </main>
       </div>
       <Footer />
+
+      <KnowledgeSearchDrawer
+        isOpen={isSearchDrawerOpen}
+        query={searchQuery}
+        results={searchResults}
+        isLoading={isSearching}
+        error={searchError}
+        onQueryChange={setSearchQuery}
+        onSearch={handleSemanticSearch}
+        onClose={() => setIsSearchDrawerOpen(false)}
+      />
     </div>
   );
 }
