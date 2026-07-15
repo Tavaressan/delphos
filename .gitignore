@@ -73,3 +73,6 @@ test_models.py
 # nunca deve ser versionado, sob risco de sobrescrever o status de outros
 # workers ao fazer merge/rebase de master
 AGENT_STATUS.md
+
+# Status files dos workers do Vetor (efêmeros, nunca versionados)
+.claude/vetor/status/

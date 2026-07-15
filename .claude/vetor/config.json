@@ -1,0 +1,6 @@
+{
+  "maxConcurrentWorkers": 5,
+  "runtime": "node",
+  "packageManager": "npm",
+  "testCommand": "npm test"
+}
