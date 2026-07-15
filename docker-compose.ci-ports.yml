@@ -19,10 +19,14 @@
 # existe localmente/foi puxada). O fallback `:latest` cobre execução local
 # manual deste arquivo sem as env vars de tag setadas pelo CI.
 #
-# `script-executor` fica fora deste arquivo (mantém `build:` de
-# docker-compose.yml): não faz parte do escopo da #203 (que cobre
-# especificamente os 4 jobs `docker-build-*` existentes — rust/java/frontend/
-# python — não o job `docker-build-python-executor`, que builda o sidecar).
+# `script-executor` não é publicado no GHCR (não faz parte do escopo da
+# #203 — só os 4 jobs `docker-build-*` existentes, rust/java/frontend/
+# python, não `docker-build-python-executor`). A tag `local/script-executor:ci`
+# abaixo é buildada localmente pelo próprio job `e2e-integration` via
+# buildx + cache GHA (issue #200, step "Build script-executor image (cache
+# GHA)") e carregada no daemon (`load: true`) antes do `docker compose up`
+# — sem fallback `:latest`, já que essa tag nunca é publicada em registro
+# nenhum, só existe no daemon local do runner.
 version: "3.9"
 
 services:
@@ -56,3 +60,6 @@ services:
     image: ${FRONTEND_IMAGE:-ghcr.io/tavaressan/alfabra-vector/frontend:latest}
     ports:
       - "3000:3000"
+
+  script-executor:
+    image: local/script-executor:ci

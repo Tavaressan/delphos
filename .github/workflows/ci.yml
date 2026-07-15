@@ -247,6 +247,23 @@ jobs:
           chmod +x gradlew
           ./gradlew integrationTest
 
+      # Convenção padrão do Gradle para a task `integrationTest` (Test task
+      # nomeada, sem override de `reporting`/`reports.html.outputLocation`
+      # em build.gradle.kts): build/reports/tests/integrationTest/ (HTML) e
+      # build/test-results/integrationTest/ (XML). Sobe as duas árvores de
+      # relatório (não só o HTML) para cobrir o formato mais fácil de
+      # inspecionar depois que o job expira (issue #200).
+      - name: Upload integration test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-integration-test-report
+          path: |
+            java-core/build/reports/tests/
+            java-core/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
   frontend-check:
     name: Frontend Lint, Test & Build
     runs-on: ubuntu-latest
@@ -682,30 +699,41 @@ jobs:
             postgres redis minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker frontend
 
-      # `script-executor` fica fora do pull (fora de escopo da #203, ver
-      # docker-compose.ci-ports.yml): `up -d` builda-o localmente na primeira
-      # execução deste job, como já acontecia antes.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # `script-executor` fica fora do GHCR (não é um dos 4 jobs
+      # docker-build-* publicados pela #203). Continua buildado localmente
+      # aqui, mas via buildx + cache GHA (mesmo scope=script-executor do job
+      # docker-build-python-executor — reaproveita o cache já aquecido por
+      # ele) em vez do build clássico implícito do `docker compose up`, que
+      # não suporta cache type=gha (issue #200). `load: true` materializa a
+      # imagem no daemon local sob a tag que docker-compose.ci-ports.yml
+      # espera, para que o `up` seguinte não precise buildar de novo.
+      - name: Build script-executor image (cache GHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./python-services/crew-worker
+          file: ./python-services/crew-worker/Dockerfile.executor
+          tags: local/script-executor:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=script-executor
+          cache-to: type=gha,mode=max,scope=script-executor
+
+      # --wait: espera os serviços com healthcheck ficarem "healthy" (não só
+      # "running") e os sem healthcheck alcançarem "running" — substitui o
+      # sleep fixo + loop manual de `docker inspect` (issue #200). Se algum
+      # container sair/crashar durante a espera, `up --wait` falha o step
+      # imediatamente, cobrindo o mesmo caso de crash-loop que o loop manual
+      # verificava.
       - name: Start full stack (imagens publicadas + script-executor local, sem rebuild dos demais)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d \
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d --wait --wait-timeout 300 \
             postgres redis minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker \
             script-executor \
             frontend
-
-      - name: Verificar que os workers assíncronos subiram e não entraram em crash-loop
-        run: |
-          set -euo pipefail
-          sleep 15
-          for name in ingestion_worker rag_worker workflow_worker crew_worker script_executor; do
-            status=$(docker inspect --format '{{.State.Status}}' "$name")
-            echo "Container $name: status=$status"
-            if [ "$status" != "running" ]; then
-              echo "::error::Container $name não está 'running' (status=$status)"
-              docker logs "$name" --tail 100 || true
-              exit 1
-            fi
-          done
 
       - name: Sidecar script-executor — isolamento de kernel (issue #148)
         run: |
@@ -756,7 +784,20 @@ jobs:
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --tail=200
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --tail=200
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --no-color > /tmp/e2e-compose-logs.txt
+
+      # Log completo (não só os últimos 200 do console, que somem quando o
+      # job expira) como artefato baixável e pesquisável (issue #200).
+      - name: Upload compose logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-integration-compose-logs
+          path: /tmp/e2e-compose-logs.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Tear down stack
         if: always()
