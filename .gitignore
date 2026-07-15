@@ -72,4 +72,4 @@ test_models.py
 # Arquivo de status de scratch usado por sub-agentes do coordinator (Vetor) —
 # nunca deve ser versionado, sob risco de sobrescrever o status de outros
 # workers ao fazer merge/rebase de master
-AGENT_STATUS.md
+AGENT_STATUS.md.claude/vetor/status/
