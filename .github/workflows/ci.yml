@@ -469,14 +469,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # Suíte migrada de node:test/npm para deno test (issue #199) — sem
+      # depender de `npm ci`/node_modules na raiz para rodar a suíte E2E.
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install root dependencies (E2E test runner)
-        run: npm ci
+          deno-version: v2.x
 
       - name: Prepare .env for CI (mock LLM providers, no GCP credentials required)
         run: |
@@ -557,7 +555,7 @@ jobs:
           # prioridade sobre a linha (incorreta) do .env.example sem precisar
           # editar esse arquivo compartilhado.
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
-        run: npm run test:e2e
+        run: deno test -A --node-modules-dir=none tests/e2e/
 
       - name: Dump container logs on failure
         if: failure()

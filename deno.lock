@@ -4357,6 +4357,9 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "npm:pg@^8.11.5"
+    ],
     "packageJson": {
       "dependencies": [
         "npm:eslint-config-next@^16.2.9",
