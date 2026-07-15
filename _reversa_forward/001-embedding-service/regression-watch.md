@@ -18,3 +18,13 @@ Este arquivo define as regras de regressão que devem continuar válidas em futu
 ## 3. Arquivadas
 
 *(Seção vazia)*
+
+## Histórico de re-extrações
+
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+

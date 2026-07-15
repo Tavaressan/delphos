@@ -22,3 +22,12 @@ Nenhum item arquivado.
 ## 4. Observações
 
 * Os itens de watch desta feature são de alto nível de governança e documentação, porque o escopo da feature 011 é planejamento e sequenciamento de backlog.
+
+## Histórico de re-extrações
+
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+

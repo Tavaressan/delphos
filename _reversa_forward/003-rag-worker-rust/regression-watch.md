@@ -21,3 +21,16 @@ Este documento lista as regras e comportamentos críticos introduzidos ou modifi
 ## 4. Observações
 *   O worker permanece stateless em relação ao PostgreSQL.
 *   Credenciais sensíveis (chaves de API) não devem ser exibidas em logs estruturados de execução do worker.
+
+## Histórico de re-extrações
+
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W003 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W004 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W005 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+

@@ -20,3 +20,14 @@ Este documento lista as regras e asserções críticas que devem continuar verda
 ## 3. Arquivadas
 
 *(Itens arquivados/inativos no futuro)*
+
+## Histórico de re-extrações
+
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W003 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+
