@@ -22,3 +22,10 @@ Este arquivo define itens de monitoramento obrigatórios para impedir regressõe
 ## 4. Observações
 
 *Nenhuma observação de baixa confidência registrada.*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |

@@ -19,3 +19,9 @@
 ## 4. Observações
 
 *Nenhuma observação de confidência 🟡 ou 🔴 associada.*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |

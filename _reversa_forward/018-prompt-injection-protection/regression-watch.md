@@ -21,3 +21,12 @@ Este documento lista as regras de negócio e asserções que devem continuar vá
 
 ## 4. Arquivadas
 *(Lista de watches inativados em iterações de evolução futuras).*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
+|  W003  | 🟢 verde | preservado |
+|  W004  | 🟢 verde | preservado |

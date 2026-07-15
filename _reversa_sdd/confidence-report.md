@@ -53,3 +53,7 @@ Nenhuma lacuna crítica pendente. Todas as lacunas técnicas identificadas inici
 | 🟡 | 🟢 | Armazenamento de sessão JWT do Next.js no cliente frontend | Armazenamento restrito a cookies HTTPOnly seguros via Auth.js (NextAuth.js) |
 | 🟡 | 🟢 | Escopo e deploy produtivo da ferramenta Structurizr | Restrição de uso estrito a desenvolvimento local e documentação (`dev` compose profile) |
 | 🔴 | 🟢 | Imagem Docker Caddy Customizada | Confirmado no Dockerfile local que xcaddy compila com plugin caddy-dns/duckdns |
+| 🔴 | 🟢 | Camada de autenticação | Não implementado ainda, mapeado como pendência/roadmap (Fora de Escopo atual) |
+| 🔴 | 🟡 | Cleanup de SseEmitter se worker morrer | Desconhecido (aguardando investigação / teste real) |
+| 🔴 | 🟢 | Escalabilidade do workflow-worker e rag-worker | Confirmado que rodam em containers instanciados isoladamente |
+| 🔴 | 🟢 | Scripts demo_agents.py e test_models.py | Confirmado como scripts locais de validação (Fora de Escopo) |

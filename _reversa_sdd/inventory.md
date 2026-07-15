@@ -1,145 +1,45 @@
-# Inventário do Projeto — Alfabra-Vector
+# Inventário do Sistema (Scout)
 
-Este documento foi gerado automaticamente pelo **Scout** e contém o inventário completo da superfície do projeto.
+> Gerado automaticamente por `reversa-scout`
+> Data de geração: 2026-07-15
 
----
+## 1. Visão Geral da Arquitetura
 
-## 1. Estrutura de Diretórios do Projeto
+O projeto **Alfabra-Vector** está organizado sob um modelo de monorepo poliglota e orientado a serviços, suportado por Docker Compose (`docker-compose.yml`) e infraestrutura dedicada.
 
-Abaixo está a representação da árvore de diretórios do projeto (excluindo pastas temporárias, dependências externas e build artifacts como `node_modules/`, `target/`, `.git/`, `.reversa/` e `_reversa_sdd/`):
+Os componentes principais dividem-se logicamente e fisicamente em:
+* **Frontend:** Aplicação em React baseada no Next.js (TypeScript).
+* **Core:** Aplicação principal Spring Boot (Java) gerenciada com Gradle.
+* **Workers Cognitivos/Python:** Serviços em Python construídos ao redor do framework CrewAI e LiteLLM.
+* **Rust Services:** Ecossistema de alta performance (Cargo Workspace) operando pipelines de RAG, ingestão de dados, processamento de documentos e gestão de workflows.
+* **Infraestrutura:** PostgreSQL com pgvector, MinIO (S3), Redis, RabbitMQ e Caddy (reverso Proxy).
 
-```
-.
-├── docker-compose.override.yml
-├── docker-compose.yml
-├── package.json
-├── package-lock.json
-├── README.md
-├── AGENTS.md
-├── frontend/
-│   ├── Dockerfile
-│   ├── next.config.js
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── postcss.config.js
-│   ├── tailwind.config.js
-│   ├── tsconfig.json
-│   ├── public/
-│   ├── src/
-│   │   ├── app/ (auth, catalog, knowledge-base, design-system)
-│   │   ├── components/ (ui, forms, layout, shared)
-│   │   ├── domain/ (entities, use-cases, repositories, dto)
-│   │   ├── features/ (chat, auth, admin, rag, users, documents)
-│   │   ├── hooks/
-│   │   ├── infrastructure/ (api, auth, storage, repositories, adapters)
-│   │   ├── lib/
-│   │   ├── providers/
-│   │   └── styles/
-│   └── tests/ (unit, layout, smoke, e2e)
-├── java-core/
-│   ├── build.gradle.kts
-│   ├── Dockerfile
-│   ├── gradlew
-│   ├── settings.gradle.kts
-│   └── src/
-│       ├── main/
-│       │   ├── java/com/company/core/ (Application.java, application, domain, infrastructure, interfaces, shared)
-│       │   └── resources/ (application.yml, db/migration/)
-│       └── test/
-├── rust-services/
-│   ├── Cargo.toml
-│   ├── Cargo.lock
-│   ├── Dockerfile
-│   ├── document-processing/
-│   ├── embedding-service/
-│   ├── ingestion-worker/
-│   ├── rag-worker/
-│   ├── shared/
-│   └── workflow-worker/
-├── python-services/
-│   └── crew-worker/
-│       ├── Dockerfile
-│       ├── requirements.txt
-│       └── src/ (main.py, seed_rag.py, runtime, tools)
-├── infrastructure/
-│   ├── caddy/ (Dockerfile, Caddyfile)
-│   ├── docker/
-│   ├── kubernetes/
-│   ├── postgres/ (init.sql)
-│   └── setup_firewall.sh
-├── scripts/
-│   ├── dev.sh
-│   ├── logs.sh
-│   ├── reset.sh
-│   ├── setup.sh
-│   └── stop.sh
-└── tests/
-    └── e2e/ (runner.test.js, config.js)
-```
+## 2. Tecnologias Base
 
----
+* **Frontend:** TypeScript, Next.js (14.2), React (18), TailwindCSS, Framer Motion.
+* **Java Core:** Java 21, Spring Boot (4.1.0) com Actuator, Data JPA, Security, Amqp, Flyway. Testes baseados em Cucumber (BDD) e Testcontainers.
+* **Python Services:** Python 3, CrewAI (>=1.0.0), SQLAlchemy, Pydantic, Pika.
+* **Rust Services:** Rust, Tokio (1.0), Reqwest (0.11), gcp-auth (OAuth GCP).
 
-## 2. Módulos e Componentes Identificados
+## 3. Diretórios Top-Level
 
-### 2.1. Frontend (`frontend/`)
-- **Tecnologia**: Next.js (React) com TypeScript.
-- **Estilo**: TailwindCSS.
-- **Função**: Interface com o usuário (chats, base de conhecimento, catálogo, painel administrativo, design system).
-- **Testes**: Possui testes unitários, de layout, smoke e e2e estruturados na pasta `tests/`.
+* `/frontend` - Interface web (Next.js)
+* `/java-core` - API de coordenação (Spring Boot)
+* `/python-services` - Workers de agentes de IA baseados em Python (`crew-worker`)
+* `/rust-services` - Coleção de serviços Rust focados em dados, embeddings e pipelines pesados (`ingestion-worker`, `rag-worker`, `workflow-worker`, etc.)
+* `/infrastructure` - Configurações de serviços de apoio (init do Postgres, Caddyfile, etc.)
+* `/docs` - Documentação e diagramas
+* `/.github/workflows` - Definições de CI/CD (GitHub Actions)
 
-### 2.2. Java Core (`java-core/`)
-- **Tecnologia**: Spring Boot 3.2.5 com Java 21 e Gradle.
-- **Função**: API principal e orquestrador central de regras de negócio, persistência (JPA/Hibernate) e mensageria (RabbitMQ).
-- **Banco de Dados**: Migrations gerenciadas via Flyway.
+## 4. Entry Points Principais
 
-### 2.3. Rust Services (`rust-services/`)
-- **Tecnologia**: Cargo Workspace com Rust stable.
-- **Função**: Processamento de dados de alta performance e workers:
-  - `embedding-service`: Geração de embeddings (integrado ao GCP Vertex AI).
-  - `ingestion-worker`: Processa a fila de ingestão de documentos.
-  - `rag-worker`: Gerencia operações de Retrieval-Augmented Generation conectadas ao Postgres (pgvector).
-  - `workflow-worker`: Máquina de execução de workflows persistida e integrada ao RabbitMQ.
-  - `document-processing`: Processamento preliminar de documentos.
-  - `shared`: Biblioteca compartilhada de utilitários (ex: gcp).
+* **Frontend:** Inicializado através de scripts no `package.json` (`next dev`, `next build`, `next start`) ou via `frontend/Dockerfile`.
+* **Java Core:** Compilado e gerido por `java-core/build.gradle.kts`. Configuração de entrada via classes SpringApplication.
+* **Rust:** Configurado através do workspace Cargo `rust-services/Cargo.toml` e seus sub-crates.
+* **Python (Crew Worker):** Gerido pelo `python-services/crew-worker/requirements.txt` e scripts no src interno.
+* **Orquestração:** O ambiente completo é provisionado via `docker-compose.yml` raiz que liga as redes de microsserviços.
 
-### 2.4. Python Services (`python-services/`)
-- **Tecnologia**: Python 3 com CrewAI.
-- **Função**:
-  - `crew-worker`: Orquestração de agentes de IA usando CrewAI e litellm para execução de tarefas complexas e baseadas em papel.
+## 5. Testes Identificados
 
-### 2.5. Infraestrutura (`infrastructure/`)
-- **Gateway/LB**: Caddy Server (`infrastructure/caddy/`).
-- **Orquestração local**: Docker Compose com Postgres + pgvector, Redis, MinIO, RabbitMQ.
-- **Orquestração cloud**: Manifestos do Kubernetes.
-
----
-
-## 3. Pontos de Entrada e Inicialização
-
-- **Serviço HTTP Core**: [Application.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/Application.java) (porta interna: `8080`).
-- **Interface Web**: [layout.tsx](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/app/layout.tsx) (porta interna: `3000`).
-- **Load Balancer**: [Caddyfile](file:///Users/vitortavares/Desktop/Alfabra-Vector/infrastructure/caddy/Caddyfile) (portas expostas: `80`, `443`).
-- **Workers assíncronos**:
-  - Rust: `main.rs` em `rag-worker`, `ingestion-worker`, `workflow-worker`, etc.
-  - Python: `main.py` em `crew-worker`.
-
----
-
-## 4. Banco de Dados e Migrations
-
-- **Banco Principal**: PostgreSQL com extensão `pgvector`.
-- **Script de Iniciação**: [init.sql](file:///Users/vitortavares/Desktop/Alfabra-Vector/infrastructure/postgres/init.sql)
-- **Migrations (Flyway)**: Localizadas em [db/migration/](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/resources/db/migration/)
-  - `V1__init_schema.sql`
-  - `V2__reversa_target_schema.sql`
-  - `V3__workflow_schema.sql`
-  - `V4__seed_workflow_data.sql`
-  - `V5__add_agents_and_rag_isolation.sql`
-
----
-
-## 5. Cobertura e Estrutura de Testes
-
-- **Testes Backend (Java)**: Cucumber para testes BDD/E2E em [src/test/java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/test/).
-- **Testes Frontend (Node/TS)**: Testes de layout, smoke, unit e e2e em [frontend/tests/](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/tests/).
-- **Testes Globais**: Runner E2E em [tests/e2e/runner.test.js](file:///Users/vitortavares/Desktop/Alfabra-Vector/tests/e2e/runner.test.js).
+* O ambiente Java utiliza massivamente BDD usando **Cucumber** com suporte a **Testcontainers** (PostgreSQL pgvector) focado em testes de integração (`@integration`). 
+* O frontend utiliza o test runner nativo do Node.js (`node --test`) sobre arquivos compilados com `tsx`, verificando vários fluxos (como `smoke.test.js`, `agent-chat-upload`, painéis e HITL).

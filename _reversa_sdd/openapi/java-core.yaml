@@ -1,0 +1,48 @@
+openapi: 3.0.3
+info:
+  title: Alfabra Vector API
+  description: Endpoints essenciais expostos pelo gateway java-core.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/executions:
+    post:
+      summary: Cria uma execução de agente LLM e inicia stream SSE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                agentId:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '200':
+          description: Event stream SSE (text/event-stream)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Payload inválido
+  /api/executions/{id}:
+    get:
+      summary: Recupera status de uma execução
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Sucesso

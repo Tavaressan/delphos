@@ -1,73 +1,68 @@
-# Frontend, Requisitos
+# Frontend
+
+> Template do arquivo `requirements.md`. Foca no QUE a unit faz, não no como.
 
 ## Visão Geral
-O módulo Frontend é a interface gráfica web da plataforma, construída em Next.js com App Router e estilizada com Tailwind CSS. Ele permite que usuários finais façam login, realizem uploads de documentos, vejam o progresso de processamento e utilizem uma interface de chat interativo com o assistente IA.
-
----
+O Frontend é uma Single Page Application construída com Next.js servindo a interface do usuário da plataforma Alfabra Vector. Provê interfaces ricas para chat (com streaming SSE), gerenciamento de agentes, tarefas agendadas (Cron) e aprovação humana (HITL).
 
 ## Responsabilidades
-* **Autenticação Visual:** Fornecer telas de login e layouts específicos para autenticação.
-* **Envio de Documentos (Ingestão):** Disponibilizar interface intuitiva de upload de arquivos (PDF, TXT, etc.).
-* **Interface de Chat:** Oferecer uma área de conversa por chat em tempo real com o assistente RAG.
-* **Controle de Acesso Visual:** Ocultar ou desabilitar funcionalidades administrativas (ex: logs de auditoria) com base no papel do usuário.
-
----
+- Renderização do chat interativo para interações com Agentes (via SSE).
+- Apresentação e captura de comandos na área "ConfirmCard" (Human-in-the-Loop).
+- Gerenciamento de painéis administrativos (Integrações MCP, Skills Customizadas, Agentes).
+- Visualização de metadados das tarefas em andamento.
 
 ## Regras de Negócio
-* **[BR01] Tema Visual Responsivo:** O layout do sistema deve se adaptar automaticamente a temas claro e escuro (`bg-white` / `bg-gray-950`).
-  * *Status:* 🟢 CONFIRMADO (extraído de `frontend/src/app/layout.tsx`).
-* **[BR02] Autenticação Obrigatória:** Rotas internas (chat, upload) exigem autenticação do usuário. Apenas a tela de login (/auth) deve estar disponível publicamente.
-  * *Status:* 🟡 INFERIDO.
-
----
+- [Chat Genérico] A UI permite envio de mensagens sem especificar o `agentId` (chat genérico), suportado pelo backend. 🟢
+- [Renderização Rica] O chat deve suportar formatação Markdown estrita e streaming SSE em tempo real, renderizando saídas de tools. 🟢
+- [Segurança / Acessos] A visualização do Painel MCP e upload de agentes customizados restringe-se a usuários `ROLE_ADMIN` (tratado no backend, e mascarado na UI). 🟡
+- [State Management] A arquitetura do código adere ao Clean Architecture na pasta `src/domain/`, onde entidades de negócio UI habitam (ex: `AgentExecution`, `Schedule`). 🟢
 
 ## Requisitos Funcionais
 
 | ID | Requisito | Prioridade | Critério de Aceite |
-|----|-----------|------------|-------------------|
-| RF-01 | Interface de Autenticação Centralizada | Must | Tela flexível e centralizada em fundo gradiente/padrão para login. |
-| RF-02 | Painel de Conversação (Chat) | Must | Exibir mensagens sequenciais divididas por remetente (User vs Assistente). |
-| RF-03 | Upload de Arquivos | Must | Permitir arrastar e soltar ou selecionar arquivos para upload. |
-| RF-04 | Exibição de Status de Documentos | Should | Mostrar se o documento está indexado ou processando na listagem. |
-
----
+|----|-----------|-----------|-------------------|
+| RF-01 | Enviar Mensagens ao LLM | Must | A UI transmite o payload para POST /api/executions e entra em modo leitura via EventSource (SSE). |
+| RF-02 | Human in the loop (HITL) | Must | Se status da execução for `WAITING_TOOL`, a UI exibe "ConfirmCard" travando outras ações. |
+| RF-03 | Gestão de Agendamento (Cron) | Should | Usuário consegue criar e listar schedules periódicos de acionamento. |
+| RF-04 | Upload de Zip do Agente | Must | A UI possui um formulário multipart para submeter o `.zip` da skill customizada. |
 
 ## Requisitos Não Funcionais
 
 | Tipo | Requisito inferido | Evidência no código | Confiança |
 |------|--------------------|---------------------|-----------|
-| Usabilidade | Suporte nativo a Dark Mode e acessibilidade visual | `frontend/src/app/layout.tsx:7` | 🟢 |
-| Segurança | Centralização de layout para fluxos de autenticação | `frontend/src/app/auth/layout.tsx:4` | 🟢 |
+| Performance | Renderização SSR com Next.js e Streaming | `frontend/package.json` | 🟢 |
+| Segurança | Omissão de UI baseada em Role (Inferida na lógica da UI) | `frontend/src/use-cases/` (suposição) | 🟡 |
+| Responsividade | Header com altura fixa (h-14) e cores de dark mode | Histórico Git (#113, #102) | 🟢 |
 
----
+> Inferido a partir do código. Validar com equipe de operações.
 
 ## Critérios de Aceitação
 
 ```gherkin
-Dado que um usuário não autenticado tenta acessar o painel de chat
-Quando o roteamento carrega a página
-Então ele deve ser redirecionado visualmente para a tela de login (/auth)
+Dado um usuário na tela principal do Chat
+Quando ele envia uma mensagem sem informar o agent_id
+Então o backend recebe a requisição e a UI entra em modo de escuta (Loading/SSE) exibindo a resposta formatada em Markdown
 
-Dado que o usuário está na tela de login
-Quando digita credenciais válidas e clica em Entrar
-Então ele deve ser autenticado e direcionado para a interface principal de chat
+Dado que uma execução em background travou no status WAITING_TOOL
+Quando o frontend lê essa atualização
+Então o chat apresenta o ConfirmCard bloqueando novos prompts até a decisão
 ```
-
----
 
 ## Prioridade (MoSCoW)
 
 | Requisito | MoSCoW | Justificativa |
 |-----------|--------|---------------|
-| Interface de login e fluxo de Auth Layout | Must | Ponto de entrada obrigatório para proteger acessos do sistema |
-| Componentização de layouts (Root e Auth Layout) | Must | Define a estrutura visual de carregamento de páginas da aplicação |
-| Suporte a Dark Mode (Tailwind) | Should | Melhora usabilidade em ambientes de escritório corporativo |
+| Componentes do Chat (SSE e Markdown) | Must | Caminho crítico e core do produto. |
+| Fluxo de Aprovação Humana (HITL) | Must | Regra de negócio mandatória de segurança da API. |
+| Painel de Agendamento | Should | Importante para automação, porém secundário em relação à navegação. |
+| Edição visual de Tools MCP | Could | Usado raramente apenas por administradores. |
 
----
+> Prioridade inferida por frequência de chamada e posição na cadeia de dependências.
 
 ## Rastreabilidade de Código
 
 | Arquivo | Função / Classe | Cobertura |
 |---------|-----------------|-----------|
-| `frontend/src/app/layout.tsx` | `RootLayout` | 🟢 |
-| `frontend/src/app/auth/layout.tsx` | `AuthLayout` | 🟢 |
+| `frontend/src/domain/entities/index.ts` | Modelos centrais (AgentExecution) | 🟢 |
+| `frontend/src/components/chat/*` | UI do Chat | 🟡 |
+| `frontend/package.json` | Dependências (React/Next) | 🟢 |

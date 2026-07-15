@@ -20,3 +20,11 @@ Este documento lista as regras e asserções críticas que devem continuar verda
 ## 3. Arquivadas
 
 *(Itens arquivados/inativos no futuro)*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
+|  W003  | 🟢 verde | preservado |

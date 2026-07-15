@@ -1,27 +1,19 @@
-# Fluxograma de Controle: infrastructure 🟢 **CONFIRMADO**
+# Fluxogramas do Módulo: infrastructure
 
-Este fluxograma ilustra o fluxo de roteamento de rede externa e provisionamento de DNS e segurança orquestrado pelo proxy reverso Caddy e as configurações de host.
+## Topologia de Rede e Roteamento (Caddy Proxy)
 
 ```mermaid
-flowchart TD
-    Request([Requisição HTTPS Externa]) --> CaddyProxy{Caddy Reverse Proxy}
+graph TD
+    Client((Usuário Web)) --> |HTTPS| Caddy[Caddy Reverse Proxy]
+    Caddy --> |/api/*| Java[java-core :8080]
+    Caddy --> |/*| FE[frontend :3000]
     
-    subgraph Caddy TLS & Routing
-        CaddyProxy --> CheckTLS{Certificado SSL Ativo?}
-        CheckTLS -->|Não| DNSChallenge[Acionar DuckDNS API Challenge]
-        DNSChallenge --> Propagate[Aguardar propagação 60s]
-        Propagate --> AcquireCert[Gerar Certificado via Let's Encrypt]
-        AcquireCert --> RouteForward
-        
-        CheckTLS -->|Sim| RouteForward[Encaminhar tráfego pelo proxy]
-        RouteForward --> ForwardRule[reverse_proxy frontend:3000]
-    end
+    Java --> |AMQP| Rabbit[(RabbitMQ)]
+    Java --> |JDBC| PG[(PostgreSQL)]
     
-    ForwardRule --> NextJS[Container Next.js Frontend]
+    Rabbit --> |agent.execution.jobs| Py[python-services]
+    Rabbit --> |agent.retrieval.delegated.jobs| Rust[rust-services]
     
-    subgraph Postgres Init
-        PostgresContainer[Start Postgres Container] --> RunInitSQL[Executar init.sql]
-        RunInitSQL --> EnableVector[Instalar EXTENSION vector]
-        EnableVector --> EnableUUID[Instalar EXTENSION uuid-ossp]
-    end
+    Py --> |SQL| PG
+    Rust --> |SQL pgvector| PG
 ```

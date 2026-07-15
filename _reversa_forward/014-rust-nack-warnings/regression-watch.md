@@ -25,3 +25,9 @@
 ## 4. Observações
 
 *   Esta feature apenas simplificou e limpou a compilação do monorepo Rust, explicitando os parâmetros na inicialização da struct `BasicNackOptions`. Não foram introduzidas novas regras de persistência ou modificações em regras funcionais do legado.
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |

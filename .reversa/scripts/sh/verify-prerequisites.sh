@@ -85,7 +85,7 @@ check_one() {
   esac
 }
 
-for r in "${REQUIRES[@]}"; do
+for r in ${REQUIRES[@]+"${REQUIRES[@]}"}; do
   [ -n "$r" ] && check_one "$r"
 done
 

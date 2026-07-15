@@ -16,29 +16,27 @@
 
 > Entre o Scout e o Arqueólogo, o Reversa pergunta como você quer organizar as specs (por módulo, caso de uso, endpoint, híbrida, por features ou customizada). A escolha fica persistida em `.reversa/config.toml` na seção `[specs]` e não será reperguntada em execuções futures. Para reapresentar o menu, remova manualmente a seção.
 
-## Fase 2: Escavação 🏗️
+## Fase 4: Geração 📝
 
-- [x] **Arqueólogo** — Análise do módulo `frontend`
-- [x] **Arqueólogo** — Análise do módulo `java-core`
-- [x] **Arqueólogo** — Análise do módulo `rust-services`
-- [x] **Arqueólogo** — Análise do módulo `python-services`
+- [x] **Writer** — Geração de `requirements.md` e `design.md` para o módulo `frontend`
+- [x] **Writer** — Geração de `requirements.md` e `design.md` para o módulo `java-core`
+- [x] **Writer** — Geração de `requirements.md` e `design.md` para o módulo `rust-services`
+- [x] **Writer** — Geração de `requirements.md` e `design.md` para o módulo `python-services`
+- [x] **Writer** — Geração de specs para o módulo `infrastructure`
 - [x] **Arqueólogo** — Análise do módulo `infrastructure`
 
 ## Fase 3: Interpretação 🧠
 
-- [x] **Detetive** — Arqueologia Git e ADRs retroativos
-- [x] **Detetive** — Regras de negócio implícitas e máquinas de estado
-- [x] **Detetive** — Matriz de permissões (RBAC/ACL)
-- [x] **Arquiteto** — Diagramas C4 (Contexto, Containers, Componentes)
+- [x] **Detetive** — Extração de regras de negócio, ADRs retroativos e matriz de permissões
+- [x] **Arquiteto** — Sintetização da arquitetura, C4 model e Spec Impact Matrix
 - [x] **Arquiteto** — ERD completo e integrações externas
-- [x] **Arquiteto** — Spec Impact Matrix
 
 ## Fase 4: Geração 📝
 
-- [x] **Redator** — Specs SDD por componente
-- [x] **Redator** — OpenAPI (se aplicável)
-- [x] **Redator** — User Stories (se aplicável)
-- [x] **Redator** — Code/Spec Matrix
+- [ ] **Redator** — Specs SDD por componente
+- [ ] **Redator** — OpenAPI (se aplicável)
+- [ ] **Redator** — User Stories (se aplicável)
+- [ ] **Redator** — Code/Spec Matrix
 
 ## Fase 5: Revisão ✅
 

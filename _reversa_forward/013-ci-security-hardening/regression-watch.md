@@ -26,3 +26,10 @@
 ## 4. Observações
 
 *   A autenticação JWT de acesso e refresh tokens rotativos no Redis foram marcados como **postergados** nesta fase por decisão do usuário, e não farão parte da verificação de regressão ativa até sua futura implementação.
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |

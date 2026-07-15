@@ -17,3 +17,8 @@ Nenhum watch item de regressão de regras de domínio foi criado nesta rodada, p
 ## Arquivadas
 
 *(Vazio)*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|

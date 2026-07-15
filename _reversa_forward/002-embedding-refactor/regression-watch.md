@@ -15,3 +15,8 @@ Esta feature não alterou nem removeu nenhuma das regras de domínio ou arquitet
 
 ## Observações
 - As lógicas de monitoramento (`/healthz` na porta 8000) e geração de embeddings com dimensionalidade parametrizável foram preservadas intactas e confirmadas em testes unitários.
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|

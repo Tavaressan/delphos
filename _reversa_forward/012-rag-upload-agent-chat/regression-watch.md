@@ -21,3 +21,9 @@ Este documento lista itens específicos de regras de negócio modificadas que de
 ## Observações
 
 * (Nenhuma observação de confidência baixa/média relevante para regressão)
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |

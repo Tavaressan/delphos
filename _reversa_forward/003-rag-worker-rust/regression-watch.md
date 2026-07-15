@@ -21,3 +21,13 @@ Este documento lista as regras e comportamentos críticos introduzidos ou modifi
 ## 4. Observações
 *   O worker permanece stateless em relação ao PostgreSQL.
 *   Credenciais sensíveis (chaves de API) não devem ser exibidas em logs estruturados de execução do worker.
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
+|  W003  | 🟢 verde | preservado |
+|  W004  | 🟢 verde | preservado |
+|  W005  | 🟢 verde | preservado |

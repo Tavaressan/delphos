@@ -16,3 +16,8 @@ Este documento rastreia e monitora as regras que devem continuar verdadeiras nas
 ## 3. Arquivadas
 
 *Nenhum item arquivado.*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|

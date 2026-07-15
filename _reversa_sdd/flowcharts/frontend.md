@@ -1,20 +1,27 @@
-# Fluxograma de Controle: frontend 🟢 **CONFIRMADO**
+# Fluxogramas do Módulo: frontend
 
-Este fluxograma ilustra a hierarquia estrutural e o fluxo de renderização das rotas no Next.js App Router para o esqueleto do módulo `frontend`.
+## Arquitetura de Componentes Front-End
+
+```mermaid
+graph TD
+    A[UI Components / Pages] -->|User Actions| B[Hooks]
+    B -->|Invoca| C[Use Cases]
+    C -->|Delega| D[Repositories Interfaces]
+    E[Adapters / API Infra] -.->|Implementa| D
+    E --> F[(Backend API)]
+```
+
+## Fluxo de Submissão de Execução de Agente
 
 ```mermaid
 flowchart TD
-    Start([Inicialização da Rota]) --> RouteCheck{Tipo de Rota}
-    
-    RouteCheck -->|Rota Geral / Privada| RootLayout[Carregar src/app/layout.tsx]
-    RouteCheck -->|Rota de Autenticação /auth/*| AuthLayout[Carregar src/app/auth/layout.tsx]
-    
-    RootLayout --> BodyRender[Renderizar tag body & Configurar Tema Claro/Escuro]
-    BodyRender --> InjectChildren[Injetar Páginas filhas {children}]
-    
-    AuthLayout --> FlexBoxContainer[Alinhar ao centro da tela com Flexbox]
-    FlexBoxContainer --> InjectAuthPages[Injetar Formulários de Autenticação {children}]
-    InjectAuthPages --> RootLayout
-    
-    InjectChildren --> End([Página Renderizada])
+    Start((Usuário)) --> Submit[Preenche Prompt no Chat]
+    Submit --> Usecase[SubmitExecutionUseCase.execute]
+    Usecase --> Repo[ExecutionRepository.submitExecution]
+    Repo --> API[HTTP POST /api/executions]
+    API --> Wait{Aguardar Resultado}
+    Wait -->|Sucesso| UpdateState[Atualiza UI com AgentExecution]
+    Wait -->|Falha| ShowError[Mostra Erro]
+    UpdateState --> End((Fim))
+    ShowError --> End
 ```

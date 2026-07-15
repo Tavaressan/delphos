@@ -1,31 +1,30 @@
-# Fluxograma de Controle: java-core 🟢 **CONFIRMADO**
+# Fluxogramas do Módulo: java-core
 
-Este fluxograma ilustra o ciclo de inicialização do Spring Boot e o processo automático de migração/validação do esquema do banco de dados (Flyway & Hibernate).
+## Fluxo Assíncrono de Submissão de Execução Cognitiva (RAG / AI)
 
 ```mermaid
-flowchart TD
-    Start([Execução do java-core Application.java]) --> MainCall[Chamar Application.mainArgs]
-    MainCall --> SpringRun[SpringApplication.run]
+sequenceDiagram
+    participant FE as Frontend
+    participant EC as ExecutionController
+    participant DB as PostgreSQL (JPA)
+    participant MQ as RabbitMQ
     
-    SpringRun --> LoadProperties[Carregar application.yml]
-    LoadProperties --> ConnectDB[Inicializar Datasource PostgreSQL]
+    FE->>EC: POST /api/executions (prompt, tenantId)
     
-    ConnectDB --> FlywayCheck{spring.flyway.enabled == true?}
-    FlywayCheck -->|Sim| RunFlyway[Executar Flyway Migrations db/migration/*]
-    FlywayCheck -->|Não| HibernateCheck
+    rect rgb(200, 220, 240)
+        Note right of EC: Transação Local
+        EC->>DB: Salva Conversation (se não existir)
+        EC->>DB: Salva Message (Author=USER)
+        EC->>DB: Salva AgentExecution (status=REQUESTED)
+    end
     
-    RunFlyway --> DatabaseMutations[Aplicar Tabelas, Índices e Seeds SQL]
-    DatabaseMutations --> HibernateCheck
+    EC->>MQ: publish("agent.execution.exchange", "agent.execution.jobs", payload)
     
-    HibernateCheck --> JPALoad[Carregar Hibernate JPA Context]
-    JPALoad --> HibernateDDL{spring.jpa.hibernate.ddl-auto == validate?}
-    
-    HibernateDDL -->|Sim| ValidateSchema[Validar conformidade das Entidades com Banco]
-    HibernateDDL -->|Não| AppReady
-    
-    ValidateSchema --> SchemaMatch{Schema coincide?}
-    SchemaMatch -->|Sim| AppReady[Servidor Spring Boot Pronto - Porta 8080]
-    SchemaMatch -->|Não| SchemaError[Lançar SchemaValidationException] --> Fail([Falha na Inicialização])
-    
-    AppReady --> End([Aguardando conexões HTTP REST])
+    alt Broker Indisponível (Exception)
+        EC->>DB: Atualiza AgentExecution (status=FAILED)
+        EC-->>FE: HTTP 500 (Message broker unavailable)
+    else Sucesso na Publicação
+        EC->>DB: Atualiza AgentExecution (status=QUEUED)
+        EC-->>FE: HTTP 200 OK (executionId, status=QUEUED)
+    end
 ```

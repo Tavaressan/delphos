@@ -47,3 +47,16 @@
 ## Arquivadas
 
 <!-- Watch items encerrados (feature removida, regra substituída, ou não aplicável). -->
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
+|  W003  | 🟢 verde | preservado |
+|  W004  | 🟢 verde | preservado |
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
+|  W003  | 🟢 verde | preservado |
+|  W004  | 🟢 verde | preservado |

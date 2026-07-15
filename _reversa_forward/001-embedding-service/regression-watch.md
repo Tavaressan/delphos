@@ -18,3 +18,10 @@ Este arquivo define as regras de regressão que devem continuar válidas em futu
 ## 3. Arquivadas
 
 *(Seção vazia)*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |

@@ -1,26 +1,16 @@
-# Fluxograma de Controle: rust-services 🟢 **CONFIRMADO**
+# Fluxogramas do Módulo: rust-services
 
-Este fluxograma ilustra o controle de execução em paralelo de dois fluxos principais de microsserviços em Rust: os servidores HTTP (Axum) e o processo em background (Ingestion Worker).
+## Worker de RAG (rag-worker) - Fluxo de Retrieval (Postgres pgvector)
 
 ```mermaid
 flowchart TD
-    subgraph Servidores HTTP (document-processing & embedding-service)
-        StartHTTP([Início main.rs]) --> InitAxum[Instanciar Router Axum]
-        InitAxum --> MapHealthz[Mapear Rota GET /healthz]
-        MapHealthz --> BindPort[Vincular TcpListener 0.0.0.0:8000]
-        BindPort --> Serve[axum::serve]
-        Serve --> ListenLoop{Recebeu Request?}
-        
-        ListenLoop -->|Sim| RouteRequest{Caminho}
-        RouteRequest -->|/healthz| ResponseOK[Retornar 'OK' 200] --> ListenLoop
-        RouteRequest -->|Outro| ResponseNotFound[Retornar 404] --> ListenLoop
-    end
-
-    subgraph Daemon Ingestão (ingestion-worker)
-        StartWorker([Início main.rs]) --> WorkerLog[Print 'Ingestion Worker starting...']
-        WorkerLog --> WorkerLoop[Loop de Ingestão]
-        WorkerLoop --> Sleep[tokio::time::sleep 60 segundos]
-        Sleep --> Heartbeat[Print 'Ingestion Worker heartbeat']
-        Heartbeat --> WorkerLoop
-    end
+    MQ[(RabbitMQ)] -->|Consome Evento| W[rag-worker (Tokio Task)]
+    W --> |Monta Query| Q[vector_search_query]
+    Q --> |Executa SQL pgvector (sqlx)| DB[(PostgreSQL)]
+    DB --> |Retorna Chunks + Similaridade| W
+    W --> Sanitize[escape_chunk_content]
+    Sanitize --> Format[format_context_entry]
+    Format --> Prompt[Injeção no Contexto do Prompt]
+    Prompt --> Vertex[Chamada Vertex AI / LLM]
+    Vertex -->|Resposta LLM| ResultQueue[(RabbitMQ: agent.execution.replies)]
 ```

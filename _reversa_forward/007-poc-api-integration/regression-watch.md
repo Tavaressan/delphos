@@ -35,3 +35,11 @@ Este documento lista as regras e contratos semânticos críticos estabelecidos p
 ## 4. Arquivadas
 
 *(Itens depreciados ou desativados em evoluções futuras)*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
+|  W003  | 🟢 verde | preservado |

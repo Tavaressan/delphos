@@ -22,3 +22,10 @@ Este documento lista as regras e asserções que devem continuar válidas em fut
 ## 4. Observações
 
 *(Esta seção está vazia)*
+
+### Re-extração 2026-07-15 11:00
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+|  W001  | 🟢 verde | preservado |
+|  W002  | 🟢 verde | preservado |
