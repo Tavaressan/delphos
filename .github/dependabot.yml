@@ -8,8 +8,10 @@ updates:
       interval: "weekly"         # Verifica novas versões toda semana
     open-pull-requests-limit: 3
 
-  # BÔNUS: Mantém as dependências do ecossistema Node/Next.js também atualizadas
-  - package-ecosystem: "npm"
-    directory: "/frontend"
-    schedule:
-      interval: "weekly"
+  # Removido o ecossistema "npm" para /frontend: o runtime do frontend migrou
+  # para Deno (#187/#189/#190) e o pipeline real não lê mais
+  # frontend/package-lock.json (lockfile fica em deno.lock, na raiz).
+  # Dependabot não tem package-ecosystem nativo para Deno ainda
+  # (docs.github.com/en/code-security/dependabot/ecosystems-supported-by-dependabot,
+  # consultado em 2026-07-15) — sem cobertura automática de deps do frontend
+  # até que isso mude ou uma alternativa (ex.: Renovate) seja adotada.
