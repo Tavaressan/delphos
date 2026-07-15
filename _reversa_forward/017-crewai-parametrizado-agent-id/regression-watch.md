@@ -28,6 +28,21 @@
 
 ## Histórico de re-extrações
 
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W003 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W004 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W003 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W004 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| Data | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+
+
 ### Re-extração 2026-06-24 (mesma sessão de codificação)
 
 | ID | Veredito | Observação |
