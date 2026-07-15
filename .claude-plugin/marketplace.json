@@ -1,0 +1,14 @@
+{
+  "name": "alfabra-vetor-vendored",
+  "owner": {
+    "name": "Vitor Tavares Chaves"
+  },
+  "plugins": [
+    {
+      "name": "vetor",
+      "source": "./.claude-plugin/vendor/vetor",
+      "description": "Cópia vendorizada do plugin Vetor (github.com/Tavaressan/Vetor) para disponibilidade em nível de repositório, sem dependência de rede — usada por rotinas claude.ai. Atualize via .claude-plugin/update-vendor.sh.",
+      "version": "0.4.0"
+    }
+  ]
+}
