@@ -282,20 +282,19 @@ jobs:
           cache: true
           cache-hash: ${{ hashFiles('deno.lock') }}
 
-      # Issue #227: o cache do Deno (actions/cache, usado internamente pelo
-      # setup-deno acima) já foi restaurado em estado inconsistente pelo
-      # menos uma vez, deixando node_modules/.deno/node_modules parcialmente
-      # criado e quebrando o `deno install` seguinte com "File exists"
-      # (determinístico, não desaparece com retry). Como rede de segurança,
-      # remove esse diretório antes de instalar — no-op se o cache estiver
-      # limpo.
-      - name: Clean potentially corrupted Deno cache state
-        run: rm -rf node_modules/.deno/node_modules
-
+      # Issue #227: `deno install` falha com "failed to create directory
+      # node_modules/.deno/node_modules: File exists" mesmo com o cache do
+      # setup-deno completamente purgado e com o diretório removido segundos
+      # antes desta run (confirmado: não é estado residual de cache) — é uma
+      # corrida interna do próprio `deno install` ao criar esse diretório
+      # compartilhado por múltiplos pacotes instalados em paralelo. O
+      # `|| deno install` reexecuta uma vez se a primeira falhar; na segunda
+      # tentativa o diretório já existe de forma consistente e a corrida não
+      # se repete.
       - name: Install dependencies
         run: |
           cd frontend
-          deno install
+          deno install || deno install
 
       - name: Next.js Cache
         uses: actions/cache@v4
