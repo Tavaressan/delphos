@@ -115,6 +115,53 @@ class ExecutionControllerTest {
     }
 
     @Test
+    void cancelExecution_withRunningExecution_setsStatusToCancelled() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID tenantId = UUID.randomUUID();
+        AgentExecution execution = new AgentExecution();
+        execution.setId(id);
+        execution.setTenantId(tenantId);
+        execution.setStatus("TOOL_RUNNING");
+
+        when(executionRepository.findById(id)).thenReturn(Optional.of(execution));
+        when(executionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        mockMvc.perform(post("/api/executions/" + id + "/cancel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        assertThat(execution.getStatus()).isEqualTo("CANCELLED");
+        assertThat(execution.getFinishedAt()).isNotNull();
+        verify(executionRepository).save(any());
+    }
+
+    @Test
+    void cancelExecution_withUnknownId_returns404() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(executionRepository.findById(id)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/executions/" + id + "/cancel"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void cancelExecution_withAlreadyCompletedExecution_keepsStatusAndDoesNotOverwrite() throws Exception {
+        UUID id = UUID.randomUUID();
+        AgentExecution execution = new AgentExecution();
+        execution.setId(id);
+        execution.setStatus("COMPLETED");
+        execution.setOutputResult("Resposta já pronta");
+
+        when(executionRepository.findById(id)).thenReturn(Optional.of(execution));
+
+        mockMvc.perform(post("/api/executions/" + id + "/cancel"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        verify(executionRepository, never()).save(any());
+    }
+
+    @Test
     void submitExecution_withoutAgentId_doesNotGenerateRandomAgentId() throws Exception {
         User admin = new User();
         admin.setId(UUID.randomUUID());

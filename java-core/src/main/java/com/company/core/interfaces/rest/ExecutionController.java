@@ -248,11 +248,35 @@ public class ExecutionController {
 
         // Execução já finalizada (por exemplo, a resposta chegou depois que o frontend desistiu):
         // não sobrescrever um resultado real com TIMEOUT.
-        if (!java.util.Set.of("COMPLETED", "FAILED", "TIMEOUT").contains(execution.getStatus())) {
+        if (!java.util.Set.of("COMPLETED", "FAILED", "TIMEOUT", "CANCELLED").contains(execution.getStatus())) {
             execution.setStatus("TIMEOUT");
             execution.setFinishedAt(Instant.now());
             execution.setErrorMessage("Tempo limite de execução excedido (timeout do frontend).");
             execution = executionRepository.save(execution);
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("executionId", execution.getId().toString());
+        response.put("status", execution.getStatus());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<Map<String, Object>> cancelExecution(@PathVariable UUID id) {
+        AgentExecution execution = executionRepository.findById(id).orElse(null);
+        if (execution == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Execução já finalizada (sucesso, falha, timeout ou já cancelada anteriormente):
+        // não sobrescrever um resultado real com CANCELLED (issue #221).
+        if (!java.util.Set.of("COMPLETED", "FAILED", "TIMEOUT", "CANCELLED").contains(execution.getStatus())) {
+            execution.setStatus("CANCELLED");
+            execution.setFinishedAt(Instant.now());
+            execution = executionRepository.save(execution);
+            auditService.logAction("CANCEL_EXECUTION", "Execution: " + execution.getId(),
+                    "{\"executionId\":\"" + execution.getId() + "\"}", execution.getTenantId());
         }
 
         Map<String, Object> response = new HashMap<>();
