@@ -275,26 +275,30 @@ jobs:
 
       # Runtime do frontend (issue #187, Fase 2). O Deno substitui o Node em
       # todo o ciclo: install, lint, test e build.
+      #
+      # Issue #227: cache: true (actions/cache via setup-deno) entra num
+      # ciclo de auto-corrupção — quando `deno install` falha com "failed to
+      # create directory node_modules/.deno/node_modules: File exists", o
+      # post-step do actions/cache salva o cache mesmo assim (ação não expõe
+      # `if: success()`), perpetuando o mesmo estado quebrado sob a mesma
+      # chave (hash de deno.lock) em toda run seguinte. Confirmado: purgar a
+      # entrada manualmente e até remover o diretório segundos antes do
+      # install não resolve, porque a run que falha recria o cache quebrado
+      # de novo no final. O job `docker-build-frontend` roda o mesmo
+      # `deno install`, sempre sem esse cache (dentro do container, do zero),
+      # e nunca falha — confirma que a causa é o cache, não o `deno install`
+      # em si. cache: false quebra o ciclo definitivamente, ao custo de um
+      # `deno install` mais lento (download completo a cada run).
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-          cache: true
-          cache-hash: ${{ hashFiles('deno.lock') }}
+          cache: false
 
-      # Issue #227: `deno install` falha com "failed to create directory
-      # node_modules/.deno/node_modules: File exists" mesmo com o cache do
-      # setup-deno completamente purgado e com o diretório removido segundos
-      # antes desta run (confirmado: não é estado residual de cache) — é uma
-      # corrida interna do próprio `deno install` ao criar esse diretório
-      # compartilhado por múltiplos pacotes instalados em paralelo. O
-      # `|| deno install` reexecuta uma vez se a primeira falhar; na segunda
-      # tentativa o diretório já existe de forma consistente e a corrida não
-      # se repete.
       - name: Install dependencies
         run: |
           cd frontend
-          deno install || deno install
+          deno install
 
       - name: Next.js Cache
         uses: actions/cache@v4
