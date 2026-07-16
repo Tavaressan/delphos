@@ -3,7 +3,11 @@
 Thumbs.db
 
 # Node
-node_modules/
+# Sem barra final: pega diretórios E outros tipos de entrada (ex.: symlinks)
+# nomeados node_modules em qualquer profundidade — evita repetição do
+# incidente em que um symlink node_modules->/caminho/local/absoluto escapou
+# do gitignore (padrão com barra só casa diretórios) e foi commitado (#235).
+node_modules
 .next/
 dist/
 .env.local
@@ -72,4 +76,5 @@ test_models.py
 # Arquivo de status de scratch usado por sub-agentes do coordinator (Vetor) —
 # nunca deve ser versionado, sob risco de sobrescrever o status de outros
 # workers ao fazer merge/rebase de master
-AGENT_STATUS.md.claude/vetor/status/
+AGENT_STATUS.md
+.claude/vetor/status/
