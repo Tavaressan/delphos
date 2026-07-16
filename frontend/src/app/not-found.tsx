@@ -1,13 +1,10 @@
+'use client';
+
 import React from 'react';
 import { Header } from '../components/layout';
 import Link from 'next/link';
 import { Button } from '../components/ui';
 import { Search } from 'lucide-react';
-
-export const metadata = {
-  title: 'Página Não Encontrada — Alfabra',
-  description: 'A página que você está procurando não existe.',
-};
 
 export default function NotFound() {
   return (
@@ -53,14 +50,13 @@ export default function NotFound() {
                   Voltar à Página Inicial
                 </Button>
               </Link>
-              <button
+              <Button
+                variant="secondary"
                 onClick={() => window.history.back()}
                 className="flex-1"
               >
-                <Button variant="secondary" className="w-full">
-                  Voltar
-                </Button>
-              </button>
+                Voltar
+              </Button>
             </div>
 
             {/* Help Text */}
