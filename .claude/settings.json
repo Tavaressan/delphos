@@ -29,8 +29,23 @@
       "Bash(node --test:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
-      "Bash(python3 -m black:*)"
-    ]
+      "Bash(python3 -m black:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh label create:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(git push:*)",
+      "Bash(git worktree:*)"
+    ],
+    "deny": [
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr ready:*)"
+    ] 
   },
   "hooks": {
     "Stop": [
@@ -51,8 +66,8 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push *)",
             "command": "sleep 4 && echo '--- CI Pipeline (último run) ---' && gh run list --limit 1 2>/dev/null | head -2 || true",
+            "if": "Bash(git push *)",
             "timeout": 30,
             "statusMessage": "Verificando status do CI...",
             "async": true
@@ -64,6 +79,10 @@
   "worktree": {
     "baseRef": "head"
   },
+  "enabledPlugins": {
+    "vetor@alfabra-vetor-vendored": true,
+    "vetor@vetor": true
+  },
   "extraKnownMarketplaces": {
     "alfabra-vetor-vendored": {
       "source": {
@@ -71,9 +90,5 @@
         "path": "${CLAUDE_PROJECT_DIR}"
       }
     }
-  },
-  "enabledPlugins": {
-    "vetor@alfabra-vetor-vendored": true,
-    "vetor@vetor": false
   }
 }
