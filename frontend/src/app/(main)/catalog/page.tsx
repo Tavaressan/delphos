@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Header, Sidebar, Footer } from '../../components/layout';
-import { AgentUploadManager } from '../../features/admin/components/AgentUploadManager';
+import { AgentUploadManager } from '../../../features/admin/components/AgentUploadManager';
 import { Search, Pencil, Check, X, PowerOff, Power, Trash2, Plug } from 'lucide-react';
-import { useAuth } from '../../providers/AuthProvider';
-import { apiClient } from '../../infrastructure/api/apiClient';
-import { canReactivate } from '../../features/catalog/agentStatus';
-import { validateAgentZipFileName } from '../../features/admin/agentUploadValidation';
-import { AgentIntegrationsPanel } from '../../features/agents/components/AgentIntegrationsPanel';
+import { useAuth } from '../../../providers/AuthProvider';
+import { apiClient } from '../../../infrastructure/api/apiClient';
+import { canReactivate } from '../../../features/catalog/agentStatus';
+import { validateAgentZipFileName } from '../../../features/admin/agentUploadValidation';
+import { AgentIntegrationsPanel } from '../../../features/agents/components/AgentIntegrationsPanel';
 
 interface Agent {
   id: string;
@@ -213,10 +212,7 @@ export default function CatalogPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <>
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-background p-4 md:p-6 flex flex-col min-h-0 font-body">
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -432,15 +428,12 @@ export default function CatalogPage() {
 
           </div>
         </main>
-      </div>
-      <Footer />
-
       {integrationsAgent && (
         <AgentIntegrationsPanel
           agentName={integrationsAgent.name}
           onClose={() => setIntegrationsAgent(null)}
         />
       )}
-    </div>
+    </>
   );
 }

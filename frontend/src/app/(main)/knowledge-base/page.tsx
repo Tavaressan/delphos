@@ -1,13 +1,12 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Header, Sidebar, Footer } from '../../components/layout';
-import { FileUploadArea } from '../../components/forms/FileUploadArea';
-import { KnowledgeSearchDrawer, SearchResultItem } from '../../components/drawer/KnowledgeSearchDrawer';
-import { Button } from '../../components/ui/Button';
+import { FileUploadArea } from '../../../components/forms/FileUploadArea';
+import { KnowledgeSearchDrawer, SearchResultItem } from '../../../components/drawer/KnowledgeSearchDrawer';
+import { Button } from '../../../components/ui/Button';
 import { Search, AlertCircle } from 'lucide-react';
-import { useAuth } from '../../providers/AuthProvider';
-import { apiClient } from '../../infrastructure/api/apiClient';
+import { useAuth } from '../../../providers/AuthProvider';
+import { apiClient } from '../../../infrastructure/api/apiClient';
 
 interface DocEntry {
   id: string;
@@ -126,10 +125,7 @@ export default function KnowledgeBasePage() {
   }, [docs, kbFilter, kbSortField]);
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <>
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-background p-4 md:p-6 flex flex-col min-h-0 font-body">
 
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -248,9 +244,6 @@ export default function KnowledgeBasePage() {
           </div>
 
         </main>
-      </div>
-      <Footer />
-
       <KnowledgeSearchDrawer
         isOpen={isSearchDrawerOpen}
         query={searchQuery}
@@ -261,6 +254,6 @@ export default function KnowledgeBasePage() {
         onSearch={handleSemanticSearch}
         onClose={() => setIsSearchDrawerOpen(false)}
       />
-    </div>
+    </>
   );
 }
