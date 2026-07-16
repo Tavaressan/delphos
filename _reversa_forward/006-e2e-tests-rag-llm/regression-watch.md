@@ -22,3 +22,13 @@ Este arquivo define itens de monitoramento obrigatórios para impedir regressõe
 ## 4. Observações
 
 *Nenhuma observação de baixa confidência registrada.*
+
+## Histórico de re-extrações
+
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+

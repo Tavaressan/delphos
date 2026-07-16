@@ -1,4 +1,5 @@
-# Portas expostas ao host apenas para o job `e2e-integration` do CI.
+# Portas expostas ao host + imagens publicadas no GHCR, apenas para o job
+# `e2e-integration` do CI.
 #
 # O job usa `-f docker-compose.yml` explícito (sem docker-compose.override.yml,
 # que força EMBEDDING_PROVIDER=real para desenvolvimento local). Isso também
@@ -6,6 +7,40 @@
 # no override — sem eles, a suíte Node.js (rodando no host runner, fora da
 # rede docker) não consegue alcançar esses serviços. Este arquivo republica
 # só as portas necessárias para o teste, sem nenhuma variável de ambiente.
+#
+# Issue #203: os 7 serviços de aplicação (Rust ×4, Java, Python, Frontend)
+# passam a usar `image:` (imagem já publicada pelos jobs `docker-build-*` no
+# GHCR, resolvida pelo step "Resolver tags de imagem" do job
+# `e2e-integration`) em vez de `build:`, para que o job só faça `pull` da
+# imagem já buildada em paralelo — sem rebuildar tudo do zero por dentro do
+# `docker compose up`. O `build:` de cada serviço, herdado de
+# docker-compose.yml via merge, é sobrescrito por este `image:` (Compose
+# resolve o serviço com `image` definido e ignora `build` quando a imagem já
+# existe localmente/foi puxada). O fallback `:latest` cobre execução local
+# manual deste arquivo sem as env vars de tag setadas pelo CI.
+#
+# `script-executor` não é publicado no GHCR (não faz parte do escopo da
+# #203 — só os 4 jobs `docker-build-*` existentes, rust/java/frontend/
+# python, não `docker-build-python-executor`). A tag `local/script-executor:ci`
+# abaixo é buildada localmente pelo próprio job `e2e-integration` via
+# buildx + cache GHA (issue #200, step "Build script-executor image (cache
+# GHA)") e carregada no daemon (`load: true`) antes do `docker compose up`
+# — sem fallback `:latest`, já que essa tag nunca é publicada em registro
+# nenhum, só existe no daemon local do runner.
+#
+# `frontend.volumes`: o serviço `frontend` do docker-compose.yml base monta
+# `.:/app` para hot-reload em desenvolvimento local — um bind mount pensado
+# para quando o serviço faz `build:` local a partir do working tree.
+# Combinado com a imagem já publicada (`image:` acima), esse bind mount
+# sobrepõe o `/app` da imagem com o código do host em runtime e quebra
+# `deno task dev` (`next/dist/bin/next`, CommonJS, passa a ser resolvido como
+# módulo do host em vez do pacote já instalado na imagem, causando
+# `ReferenceError: exports is not defined`). O Compose mescla `volumes:`
+# (long/short syntax) por `target`: redeclarar `/app` aqui como volume comum
+# (sem bind ao host) substitui a entrada `.:/app` herdada do base só neste
+# overlay de CI — funciona em qualquer versão do Compose (não depende do tag
+# `!override`, exclusivo de v2.24+). O docker-compose.yml base, usado no
+# `docker compose up` de dev local (build: + hot-reload), continua intacto.
 version: "3.9"
 
 services:
@@ -14,13 +49,33 @@ services:
       - "5432:5432"
 
   core:
+    image: ${CORE_IMAGE:-ghcr.io/tavaressan/alfabra-vector/java-core:latest}
     ports:
       - "8080:8080"
 
   embedding-service:
+    image: ${EMBEDDING_SERVICE_IMAGE:-ghcr.io/tavaressan/alfabra-vector/embedding-service:latest}
     ports:
       - "8000:8000"
 
+  ingestion-worker:
+    image: ${INGESTION_WORKER_IMAGE:-ghcr.io/tavaressan/alfabra-vector/ingestion-worker:latest}
+
+  rag-worker:
+    image: ${RAG_WORKER_IMAGE:-ghcr.io/tavaressan/alfabra-vector/rag-worker:latest}
+
+  workflow-worker:
+    image: ${WORKFLOW_WORKER_IMAGE:-ghcr.io/tavaressan/alfabra-vector/workflow-worker:latest}
+
+  crew-worker:
+    image: ${CREW_WORKER_IMAGE:-ghcr.io/tavaressan/alfabra-vector/crew-worker:latest}
+
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/tavaressan/alfabra-vector/frontend:latest}
     ports:
       - "3000:3000"
+    volumes:
+      - /app
+
+  script-executor:
+    image: local/script-executor:ci
