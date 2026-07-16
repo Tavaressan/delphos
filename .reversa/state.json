@@ -8,7 +8,7 @@
   "doc_level": "essencial",
   "output_folder": "_reversa_sdd",
   "forward_folder": "_reversa_forward",
-  "phase": "interpretacao",
+  "phase": "concluido",
   "completed": [
     "reconhecimento",
     "escavacao",
@@ -53,10 +53,19 @@
       ]
     },
     "reviewer": {
-      "completed_at": "2026-06-19T03:00:00.000000Z",
+      "completed_at": "2026-07-15T18:17:45.341Z",
       "files": [
-        "_reversa_sdd/review.md"
-      ]
+        "_reversa_sdd/confidence-report.md",
+        "_reversa_sdd/questions.md"
+      ],
+      "stats": {
+        "specs_reviewed": 5,
+        "cross_review_done": false,
+        "reclassifications": 1,
+        "questions_generated": 4,
+        "questions_answered": 4,
+        "final_confidence_percent": 93
+      }
     }
   },
   "engines": [
