@@ -20,6 +20,14 @@ permissions:
   contents: read
   pull-requests: read
 
+env:
+  # Base do registro de imagens publicadas pelos jobs docker-build-* (issue
+  # #203). Minúsculo fixo (não deriva de github.repository): o GHCR exige
+  # nomes de imagem em lowercase, e o nome do repo no GitHub é
+  # "Tavaressan/Alfabra-Vector" (mixed case).
+  REGISTRY: ghcr.io
+  IMAGE_BASE: tavaressan/alfabra-vector
+
 jobs:
   changes:
     name: Detect changed paths
@@ -239,6 +247,23 @@ jobs:
           chmod +x gradlew
           ./gradlew integrationTest
 
+      # Convenção padrão do Gradle para a task `integrationTest` (Test task
+      # nomeada, sem override de `reporting`/`reports.html.outputLocation`
+      # em build.gradle.kts): build/reports/tests/integrationTest/ (HTML) e
+      # build/test-results/integrationTest/ (XML). Sobe as duas árvores de
+      # relatório (não só o HTML) para cobrir o formato mais fácil de
+      # inspecionar depois que o job expira (issue #200).
+      - name: Upload integration test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-integration-test-report
+          path: |
+            java-core/build/reports/tests/
+            java-core/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
   frontend-check:
     name: Frontend Lint, Test & Build
     runs-on: ubuntu-latest
@@ -250,12 +275,25 @@ jobs:
 
       # Runtime do frontend (issue #187, Fase 2). O Deno substitui o Node em
       # todo o ciclo: install, lint, test e build.
+      #
+      # Issue #227: cache: true (actions/cache via setup-deno) entra num
+      # ciclo de auto-corrupção — quando `deno install` falha com "failed to
+      # create directory node_modules/.deno/node_modules: File exists", o
+      # post-step do actions/cache salva o cache mesmo assim (ação não expõe
+      # `if: success()`), perpetuando o mesmo estado quebrado sob a mesma
+      # chave (hash de deno.lock) em toda run seguinte. Confirmado: purgar a
+      # entrada manualmente e até remover o diretório segundos antes do
+      # install não resolve, porque a run que falha recria o cache quebrado
+      # de novo no final. O job `docker-build-frontend` roda o mesmo
+      # `deno install`, sempre sem esse cache (dentro do container, do zero),
+      # e nunca falha — confirma que a causa é o cache, não o `deno install`
+      # em si. cache: false quebra o ciclo definitivamente, ao custo de um
+      # `deno install` mais lento (download completo a cada run).
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-          cache: true
-          cache-hash: ${{ hashFiles('deno.lock') }}
+          cache: false
 
       - name: Install dependencies
         run: |
@@ -331,6 +369,9 @@ jobs:
     name: Docker Build (Rust services)
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
+      packages: write
     # Sem `if` no nível do job: um job com `strategy.matrix` que é pulado
     # via `if` de job não expande a matrix e não posta check-run algum
     # para as combinações nomeadas (ex.: "... (embedding-service)"), que
@@ -354,13 +395,45 @@ jobs:
         if: needs.changes.outputs.rust == 'true'
         uses: docker/setup-buildx-action@v3
 
-      - name: Build ${{ matrix.service }} image
+      - name: Login to GHCR
+        if: needs.changes.outputs.rust == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag do SHA sempre publicada (necessária para o pull de e2e-integration
+      # mesmo em PRs). Tag :latest só é atualizada em push nas branches
+      # long-lived (main/master/develop, únicas cobertas por `on.push` neste
+      # workflow) — nunca a partir de uma PR, para não sobrescrever o
+      # fallback ":latest" usado pelo e2e-integration de outras PRs
+      # concorrentes que não tocaram este módulo (issue #203).
+      - name: Compute image tags
+        id: meta
+        if: needs.changes.outputs.rust == 'true'
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAGS=$(printf '%s:%s\n%s:latest' "$IMAGE" "${{ github.sha }}" "$IMAGE")
+          else
+            TAGS="$IMAGE:${{ github.sha }}"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$TAGS"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.service }} image
         if: needs.changes.outputs.rust == 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./rust-services
           file: ./rust-services/${{ matrix.service }}/Dockerfile
-          push: false
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
@@ -369,6 +442,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.java == 'true'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -376,12 +452,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build java-core image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAGS=$(printf '%s:%s\n%s:latest' "$IMAGE" "${{ github.sha }}" "$IMAGE")
+          else
+            TAGS="$IMAGE:${{ github.sha }}"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$TAGS"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push java-core image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./java-core/Dockerfile
-          push: false
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=java-core
           cache-to: type=gha,mode=max,scope=java-core
 
@@ -390,6 +490,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -397,12 +500,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build frontend image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAGS=$(printf '%s:%s\n%s:latest' "$IMAGE" "${{ github.sha }}" "$IMAGE")
+          else
+            TAGS="$IMAGE:${{ github.sha }}"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$TAGS"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push frontend image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./frontend/Dockerfile
-          push: false
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
@@ -411,6 +538,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.python == 'true'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -418,12 +548,36 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build crew-worker image
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          set -euo pipefail
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAGS=$(printf '%s:%s\n%s:latest' "$IMAGE" "${{ github.sha }}" "$IMAGE")
+          else
+            TAGS="$IMAGE:${{ github.sha }}"
+          fi
+          {
+            echo "tags<<TAGS_EOF"
+            echo "$TAGS"
+            echo "TAGS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push crew-worker image
         uses: docker/build-push-action@v6
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile
-          push: false
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=crew-worker
           cache-to: type=gha,mode=max,scope=crew-worker
 
@@ -467,25 +621,42 @@ jobs:
   e2e-integration:
     name: Integration E2E (Docker Compose + Mock LLM)
     runs-on: ubuntu-latest
-    needs: changes
+    needs: [changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
+    # Explícito e não ambíguo de propósito (em vez de depender do
+    # comportamento implícito de success() com deps "skipped"): roda quando
+    # `changes` teve sucesso, cada docker-build-* OU teve sucesso OU foi
+    # pulado (módulo não mudou — não é falha), e ao menos um módulo
+    # relevante mudou. Se qualquer docker-build-* FALHOU, este job é pulado
+    # (não silenciosamente: o próprio docker-build-* já reprova o gate de CI
+    # obrigatório da PR, ver CLAUDE.md "CI — Gate de imagens Docker") em vez
+    # de tentar rodar contra uma imagem inexistente/desatualizada (issue #203).
     if: |
-      needs.changes.outputs.rust == 'true' ||
-      needs.changes.outputs.java == 'true' ||
-      needs.changes.outputs.python == 'true' ||
-      needs.changes.outputs.e2e == 'true'
+      always() &&
+      needs.changes.result == 'success' &&
+      (needs.docker-build-rust.result == 'success' || needs.docker-build-rust.result == 'skipped') &&
+      (needs.docker-build-java.result == 'success' || needs.docker-build-java.result == 'skipped') &&
+      (needs.docker-build-frontend.result == 'success' || needs.docker-build-frontend.result == 'skipped') &&
+      (needs.docker-build-python.result == 'success' || needs.docker-build-python.result == 'skipped') &&
+      (
+        needs.changes.outputs.rust == 'true' ||
+        needs.changes.outputs.java == 'true' ||
+        needs.changes.outputs.python == 'true' ||
+        needs.changes.outputs.e2e == 'true'
+      )
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 25
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # Suíte migrada de node:test/npm para deno test (issue #199) — sem
+      # depender de `npm ci`/node_modules na raiz para rodar a suíte E2E.
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install root dependencies (E2E test runner)
-        run: npm ci
+          deno-version: v2.x
 
       - name: Prepare .env for CI (mock LLM providers, no GCP credentials required)
         run: |
@@ -499,27 +670,94 @@ jobs:
             echo "ADC_PATH=/tmp/ci-fake-adc.json"
           } >> .env
 
-      - name: Build and start full stack (docker-compose.yml + portas de CI, sem override de dev)
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Resolve, por serviço, a tag da imagem já publicada pelos jobs
+      # docker-build-* (issue #203): tag do SHA atual se o módulo do serviço
+      # mudou neste push/PR (a imagem foi de fato publicada agora), ou
+      # ":latest" (última imagem publicada a partir de push em main/master/
+      # develop) caso contrário — fail-safe simétrico ao já usado no job
+      # `changes` (#77/#87). Os 4 serviços Rust (matrix docker-build-rust)
+      # compartilham um único filtro de path (`rust`, não há filtro por
+      # microsserviço) e por isso resolvem juntos.
+      - name: Resolver tags de imagem (fail-safe SHA-ou-latest)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d --build \
+          set -euo pipefail
+          resolve() {
+            local changed="$1" service="$2"
+            if [ "$changed" = "true" ]; then
+              echo "${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${service}:${{ github.sha }}"
+            else
+              echo "${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${service}:latest"
+            fi
+          }
+          {
+            echo "CORE_IMAGE=$(resolve '${{ needs.changes.outputs.java }}' java-core)"
+            echo "EMBEDDING_SERVICE_IMAGE=$(resolve '${{ needs.changes.outputs.rust }}' embedding-service)"
+            echo "INGESTION_WORKER_IMAGE=$(resolve '${{ needs.changes.outputs.rust }}' ingestion-worker)"
+            echo "RAG_WORKER_IMAGE=$(resolve '${{ needs.changes.outputs.rust }}' rag-worker)"
+            echo "WORKFLOW_WORKER_IMAGE=$(resolve '${{ needs.changes.outputs.rust }}' workflow-worker)"
+            echo "CREW_WORKER_IMAGE=$(resolve '${{ needs.changes.outputs.python }}' crew-worker)"
+            echo "FRONTEND_IMAGE=$(resolve '${{ needs.changes.outputs.frontend }}' frontend)"
+          } >> "$GITHUB_ENV"
+
+      # --ignore-pull-failures: bootstrap. Um serviço cujo módulo não mudou
+      # neste push resolve para a tag ":latest" (ver step anterior), mas essa
+      # tag só existe no GHCR depois do primeiro push bem-sucedido em
+      # main/master/develop que tenha de fato alterado aquele módulo — antes
+      # disso (ou para um serviço que nunca mudou desde a introdução da
+      # #203), o pull falha (404/403). Sem essa flag, isso derrubaria
+      # `e2e-integration` para QUALQUER PR que não tocasse todos os módulos.
+      # Com a flag, o pull segue best-effort; o próximo step (`up -d`, sem
+      # `--build`) builda localmente, via `docker compose`, apenas os
+      # serviços cuja imagem não ficou disponível — não os 7 de uma vez.
+      - name: Pull das imagens publicadas (sem rebuild)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml pull \
+            --ignore-pull-failures \
+            postgres redis minio rabbitmq \
+            core embedding-service ingestion-worker rag-worker workflow-worker crew-worker frontend
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # `script-executor` fica fora do GHCR (não é um dos 4 jobs
+      # docker-build-* publicados pela #203). Continua buildado localmente
+      # aqui, mas via buildx + cache GHA (mesmo scope=script-executor do job
+      # docker-build-python-executor — reaproveita o cache já aquecido por
+      # ele) em vez do build clássico implícito do `docker compose up`, que
+      # não suporta cache type=gha (issue #200). `load: true` materializa a
+      # imagem no daemon local sob a tag que docker-compose.ci-ports.yml
+      # espera, para que o `up` seguinte não precise buildar de novo.
+      - name: Build script-executor image (cache GHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./python-services/crew-worker
+          file: ./python-services/crew-worker/Dockerfile.executor
+          tags: local/script-executor:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=script-executor
+          cache-to: type=gha,mode=max,scope=script-executor
+
+      # --wait: espera os serviços com healthcheck ficarem "healthy" (não só
+      # "running") e os sem healthcheck alcançarem "running" — substitui o
+      # sleep fixo + loop manual de `docker inspect` (issue #200). Se algum
+      # container sair/crashar durante a espera, `up --wait` falha o step
+      # imediatamente, cobrindo o mesmo caso de crash-loop que o loop manual
+      # verificava.
+      - name: Start full stack (imagens publicadas + script-executor local, sem rebuild dos demais)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d --wait --wait-timeout 300 \
             postgres redis minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker \
             script-executor \
             frontend
-
-      - name: Verificar que os workers assíncronos subiram e não entraram em crash-loop
-        run: |
-          set -euo pipefail
-          sleep 15
-          for name in ingestion_worker rag_worker workflow_worker crew_worker script_executor; do
-            status=$(docker inspect --format '{{.State.Status}}' "$name")
-            echo "Container $name: status=$status"
-            if [ "$status" != "running" ]; then
-              echo "::error::Container $name não está 'running' (status=$status)"
-              docker logs "$name" --tail 100 || true
-              exit 1
-            fi
-          done
 
       - name: Sidecar script-executor — isolamento de kernel (issue #148)
         run: |
@@ -566,11 +804,24 @@ jobs:
           # prioridade sobre a linha (incorreta) do .env.example sem precisar
           # editar esse arquivo compartilhado.
           NEXT_PUBLIC_BACKEND_URL: http://localhost:8080
-        run: npm run test:e2e
+        run: deno test -A --node-modules-dir=none tests/e2e/
 
       - name: Dump container logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --tail=200
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --tail=200
+          docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml logs --no-color > /tmp/e2e-compose-logs.txt
+
+      # Log completo (não só os últimos 200 do console, que somem quando o
+      # job expira) como artefato baixável e pesquisável (issue #200).
+      - name: Upload compose logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-integration-compose-logs
+          path: /tmp/e2e-compose-logs.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Tear down stack
         if: always()
