@@ -29,12 +29,12 @@ export const PanelDock: React.FC<PanelDockProps> = ({ panels, onClosePanel, empt
   }
 
   return (
-    <div data-testid="panel-dock" className="flex h-full w-full gap-3 overflow-x-auto">
+    <div data-testid="panel-dock" className="flex flex-col md:flex-row h-full w-full gap-3 overflow-y-auto md:overflow-x-auto">
       {panels.map((panel) => (
         <div
           key={panel.id}
           data-testid={`panel-${panel.id}`}
-          className="flex flex-col min-w-[280px] flex-1 border border-border-color rounded bg-surface"
+          className="flex flex-col min-w-0 md:min-w-[280px] flex-1 border border-border-color rounded bg-surface"
         >
           <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border-color">
             <span className="text-xs font-bold text-text-primary uppercase tracking-wider heading-font truncate">

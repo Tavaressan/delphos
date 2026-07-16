@@ -66,4 +66,19 @@ describe('PanelDock (issue #146 — painel dockável para múltiplos painéis)',
 
     assert.strictEqual(closedId, 'mcp');
   });
+
+  test('issue #230: usa flex-col no mobile e flex-row no desktop', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PanelDock, { panels, onClosePanel: () => {} })
+    );
+
+    // Parent container deve ser responsivo
+    assert.match(html, /flex-col/);
+    assert.match(html, /md:flex-row/);
+    assert.match(html, /overflow-y-auto/);
+    assert.match(html, /md:overflow-x-auto/);
+
+    // Child deve ser responsivo, sem min-width fixo forçado no mobile
+    assert.match(html, /md:min-w-\[280px\]/);
+  });
 });
