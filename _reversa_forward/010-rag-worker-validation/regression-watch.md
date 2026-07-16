@@ -12,6 +12,13 @@ Nenhum watch item de regressão de regras de domínio foi criado nesta rodada, p
 
 ## Histórico de re-extrações
 
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| - | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+
+
 *(Vazio - a ser preenchido pelo agente reverso nas próximas execuções do `/reversa`)*
 
 ## Arquivadas

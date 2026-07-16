@@ -1,4 +1,10 @@
 {
   "unstable": ["detect-cjs", "node-globals", "unsafe-proto", "sloppy-imports"],
-  "nodeModulesDir": "auto"
+  "nodeModulesDir": "auto",
+  "imports": {
+    "pg": "npm:pg@^8.11.5"
+  },
+  "tasks": {
+    "test:e2e": "deno test -A --node-modules-dir=none tests/e2e/"
+  }
 }

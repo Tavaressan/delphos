@@ -7,7 +7,7 @@
     "frontend"
   ],
   "scripts": {
-    "test:e2e": "node --test tests/e2e/runner.test.js",
+    "test:e2e": "deno test -A --node-modules-dir=none tests/e2e/",
     "lint": "eslint .",
     "type-check": "tsc --noEmit"
   },
@@ -17,7 +17,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "pg": "^8.11.5",
     "reversa": "^1.2.43"
   }
 }
