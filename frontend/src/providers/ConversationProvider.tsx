@@ -21,7 +21,7 @@ export const ConversationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { tenantId, isLogged } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, _setActiveConversationId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof localStorage !== 'undefined') {
       return localStorage.getItem('activeConversationId');
     }
     return null;
@@ -29,7 +29,7 @@ export const ConversationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const setActiveConversationId = useCallback((id: string | null) => {
     _setActiveConversationId(id);
-    if (typeof window !== 'undefined') {
+    if (typeof localStorage !== 'undefined') {
       if (id) {
         localStorage.setItem('activeConversationId', id);
       } else {
