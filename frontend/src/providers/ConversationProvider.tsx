@@ -20,7 +20,23 @@ const ConversationContext = createContext<ConversationContextValue | null>(null)
 export const ConversationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { tenantId, isLogged } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversationId, _setActiveConversationId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('activeConversationId');
+    }
+    return null;
+  });
+
+  const setActiveConversationId = useCallback((id: string | null) => {
+    _setActiveConversationId(id);
+    if (typeof window !== 'undefined') {
+      if (id) {
+        localStorage.setItem('activeConversationId', id);
+      } else {
+        localStorage.removeItem('activeConversationId');
+      }
+    }
+  }, []);
   const [isLoading, setIsLoading] = useState(false);
 
   const refreshConversations = useCallback(async () => {
