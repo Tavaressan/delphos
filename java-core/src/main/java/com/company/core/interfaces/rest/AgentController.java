@@ -20,9 +20,13 @@ import java.util.UUID;
 @RequestMapping("/api")
 public class AgentController {
 
+    // 'DISPATCHED' e 'WAITING_TOOL' não são atribuídos por nenhum produtor de eventos
+    // (java-core, rag-worker, crew-worker, workflow-worker) e por isso foram removidos
+    // desta lista (ver issue #221) — mantê-los aqui bloquearia exclusão de agentes por
+    // execuções "em andamento" que na prática nunca existem nesse estado.
     private static final List<String> RUNNING_EXECUTION_STATUSES = Arrays.asList(
-            "REQUESTED", "QUEUED", "DISPATCHED", "STARTED", "THINKING",
-            "TOOL_RUNNING", "WAITING_TOOL", "RETRIEVAL_RUNNING");
+            "REQUESTED", "QUEUED", "STARTED", "THINKING",
+            "TOOL_RUNNING", "RETRIEVAL_RUNNING");
 
     private final AgentService agentService;
     private final AgentRepository agentRepository;

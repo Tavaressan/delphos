@@ -29,7 +29,12 @@ public class AgentExecution {
     @NotBlank
     @Size(max = 50)
     @Column(nullable = false)
-    private String status; // 'REQUESTED', 'QUEUED', 'DISPATCHED', 'STARTED', 'THINKING', 'TOOL_RUNNING', 'WAITING_TOOL', 'RETRIEVAL_RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT'
+    // Estados efetivamente atribuídos por ExecutionController/AgentExecutionEventListener
+    // (java-core) e pelos workers (rag-worker, crew-worker, workflow-worker). 'DISPATCHED'
+    // e 'WAITING_TOOL' foram removidos deste ciclo de vida por não serem atribuídos por
+    // nenhum produtor de eventos (ver issue #221); reintroduza-os apenas quando um worker
+    // passar a emiti-los de fato.
+    private String status; // 'REQUESTED', 'QUEUED', 'STARTED', 'THINKING', 'TOOL_RUNNING', 'RETRIEVAL_RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT'
 
     @NotBlank
     @Column(name = "prompt_final", columnDefinition = "text", nullable = false)
