@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Header, Sidebar, Footer } from '../../components/layout';
-import { Button, Input } from '../../components/ui';
+import { Button, Input } from '../../../components/ui';
 import { Palette, Bell, Link2, ShieldCheck, Sun, Moon, Loader2, X } from 'lucide-react';
-import { useAuth } from '../../providers/AuthProvider';
-import { useTheme } from '../../hooks/useTheme';
-import { apiClient } from '../../infrastructure/api/apiClient';
-import { userRepository } from '../../infrastructure/repositories/UserRepository';
-import { UserSession } from '../../domain/entities';
+import { useAuth } from '../../../providers/AuthProvider';
+import { useTheme } from '../../../hooks/useTheme';
+import { apiClient } from '../../../infrastructure/api/apiClient';
+import { userRepository } from '../../../infrastructure/repositories/UserRepository';
+import { UserSession } from '../../../domain/entities';
 
 type Locale = 'pt-BR' | 'en-US';
 type Density = 'compact' | 'normal' | 'spacious';
@@ -217,10 +216,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary transition-colors duration-200">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <>
         <main className="flex-1 overflow-y-auto bg-background/50 p-6 flex flex-col min-h-0 font-body transition-colors duration-200">
           <div className="mb-6">
             <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Configurações</h2>
@@ -369,9 +365,6 @@ export default function SettingsPage() {
 
           </div>
         </main>
-      </div>
-      <Footer />
-
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="card-alfabra w-full max-w-sm relative">
@@ -406,6 +399,6 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

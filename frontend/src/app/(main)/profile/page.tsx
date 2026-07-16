@@ -1,13 +1,12 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Header, Sidebar, Footer } from '../../components/layout';
-import { Badge, Button, Input } from '../../components/ui';
-import { useAuth } from '../../providers/AuthProvider';
-import { userRepository } from '../../infrastructure/repositories/UserRepository';
-import { executionRepository } from '../../infrastructure/repositories/ExecutionRepository';
-import { UserProfile } from '../../domain/entities';
-import { ListExecutionItemResponse } from '../../domain/dto';
+import { Badge, Button, Input } from '../../../components/ui';
+import { useAuth } from '../../../providers/AuthProvider';
+import { userRepository } from '../../../infrastructure/repositories/UserRepository';
+import { executionRepository } from '../../../infrastructure/repositories/ExecutionRepository';
+import { UserProfile } from '../../../domain/entities';
+import { ListExecutionItemResponse } from '../../../domain/dto';
 import { ShieldCheck, Building2, Calendar, Activity, Camera, Save, Loader2 } from 'lucide-react';
 
 const getInitials = (name?: string) => {
@@ -142,10 +141,7 @@ export default function ProfilePage() {
   const currentRole = profile?.roles?.[0] ?? user?.role ?? 'ROLE_USER';
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary transition-colors duration-200">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <>
         <main className="flex-1 overflow-y-auto bg-background/50 p-6 flex flex-col min-h-0 font-body transition-colors duration-200">
           <div className="mb-6">
             <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Meu Perfil</h2>
@@ -290,8 +286,6 @@ export default function ProfilePage() {
             </div>
           </div>
         </main>
-      </div>
-      <Footer />
-    </div>
+    </>
   );
 }
