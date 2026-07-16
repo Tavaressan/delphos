@@ -282,6 +282,16 @@ jobs:
           cache: true
           cache-hash: ${{ hashFiles('deno.lock') }}
 
+      # Issue #227: o cache do Deno (actions/cache, usado internamente pelo
+      # setup-deno acima) já foi restaurado em estado inconsistente pelo
+      # menos uma vez, deixando node_modules/.deno/node_modules parcialmente
+      # criado e quebrando o `deno install` seguinte com "File exists"
+      # (determinístico, não desaparece com retry). Como rede de segurança,
+      # remove esse diretório antes de instalar — no-op se o cache estiver
+      # limpo.
+      - name: Clean potentially corrupted Deno cache state
+        run: rm -rf node_modules/.deno/node_modules
+
       - name: Install dependencies
         run: |
           cd frontend

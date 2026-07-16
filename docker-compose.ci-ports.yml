@@ -27,6 +27,20 @@
 # GHA)") e carregada no daemon (`load: true`) antes do `docker compose up`
 # — sem fallback `:latest`, já que essa tag nunca é publicada em registro
 # nenhum, só existe no daemon local do runner.
+#
+# `frontend.volumes`: o serviço `frontend` do docker-compose.yml base monta
+# `.:/app` para hot-reload em desenvolvimento local — um bind mount pensado
+# para quando o serviço faz `build:` local a partir do working tree.
+# Combinado com a imagem já publicada (`image:` acima), esse bind mount
+# sobrepõe o `/app` da imagem com o código do host em runtime e quebra
+# `deno task dev` (`next/dist/bin/next`, CommonJS, passa a ser resolvido como
+# módulo do host em vez do pacote já instalado na imagem, causando
+# `ReferenceError: exports is not defined`). O Compose mescla `volumes:`
+# (long/short syntax) por `target`: redeclarar `/app` aqui como volume comum
+# (sem bind ao host) substitui a entrada `.:/app` herdada do base só neste
+# overlay de CI — funciona em qualquer versão do Compose (não depende do tag
+# `!override`, exclusivo de v2.24+). O docker-compose.yml base, usado no
+# `docker compose up` de dev local (build: + hot-reload), continua intacto.
 version: "3.9"
 
 services:
@@ -60,6 +74,8 @@ services:
     image: ${FRONTEND_IMAGE:-ghcr.io/tavaressan/alfabra-vector/frontend:latest}
     ports:
       - "3000:3000"
+    volumes:
+      - /app
 
   script-executor:
     image: local/script-executor:ci
