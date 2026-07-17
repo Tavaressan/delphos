@@ -169,10 +169,13 @@ mod tests {
         let query_5 = vector_search_query_with_limit(true, 5);
         let query_50 = vector_search_query_with_limit(true, 50);
 
-        assert!(query_5.contains("LIMIT 5"));
-        assert!(!query_5.contains("LIMIT 50"));
+        // LIMIT é sempre o último token da query (sem sufixo), então
+        // `ends_with` compara o valor exato em vez de substring — evita o
+        // falso positivo de "LIMIT 50" conter "LIMIT 5".
+        assert!(query_5.ends_with("LIMIT 5"));
+        assert!(!query_5.ends_with("LIMIT 50"));
 
-        assert!(query_50.contains("LIMIT 50"));
-        assert!(!query_50.contains("LIMIT 5"));
+        assert!(query_50.ends_with("LIMIT 50"));
+        assert!(!query_50.ends_with("LIMIT 5"));
     }
 }
