@@ -152,20 +152,7 @@ gh pr create \
   --base "$DEFAULT_BRANCH"
 ```
 
-### 6.b — Promover para "ready for review" (antes da observação de CI)
-
-```bash
-gh pr ready <PR-number>
-```
-
-O PR nasce draft no passo 6 e é promovido aqui, **antes** de entrar na fase de observação de CI
-(passo 7). Motivo (issue #250): `docker-build-*`/`e2e-integration` são pulados quando o PR está em
-draft (ver `.github/workflows/ci.yml`) — se a promoção só acontecesse no merge (antigo passo 10),
-todo o loop de fix-and-retry (passo 8) rodaria contra um gate incompleto, e o squash-merge seguiria
-sem esperar o run completo disparado pela própria transição draft→ready. Promover aqui garante que
-os passos 7–8 já observam e corrigem contra o conjunto completo de jobs.
-
-### 7 — Monitorar CI
+### 7 — Monitorar CI (PR ainda em draft)
 
 ```bash
 gh pr checks <PR-number> --watch
@@ -173,7 +160,19 @@ gh pr checks <PR-number> --watch
 
 Timeout: 20 minutos. Se expirar, notifique e pare.
 
+**PR permanece draft neste passo e no passo 8** (issue #250 — economiza os runs caros de
+`docker-build-*`/`e2e-integration` durante o loop de fix-and-retry, que normalmente é o trecho
+onde mais iterações de CI acontecem). Com o `ci.yml` atual, esses jobs aparecem com conclusão
+**"skipped"** enquanto o PR estiver draft — isso é esperado, não é falha. Os jobs que rodam de
+verdade aqui, e que este watch/loop deve avaliar, são os nativos (`rust-check`, `java-check`,
+`frontend-check`, `python-ci` etc.).
+
 ### 8 — Monitoramento de CI, Classificação de Erros e Loop de Fix (máximo 3 iterações)
+
+**Escopo deste passo:** reage apenas a falhas reais dos jobs nativos (lint/compilação/teste de
+Rust, Java, Frontend, Python). `docker-build-*`/`e2e-integration` com conclusão "skipped" aqui
+não contam como falha — são validados de verdade no passo 8.b, depois que os jobs nativos
+estiverem verdes.
 
 Para cada falha detectada no monitoramento do CI:
 
@@ -207,6 +206,34 @@ Worktree preservado para inspeção manual.
 ```
 **Pare.** Não tente mergear.
 
+### 8.b — Promover para ready e validar o gate completo (docker-build-*/e2e-integration)
+
+Só chegue aqui com os jobs nativos verdes (passo 8 concluído com sucesso). Promova o PR — isso
+dispara, via o trigger `ready_for_review` (issue #250, já presente em `ci.yml`), um novo run que
+não pula mais `docker-build-*`/`e2e-integration`:
+
+```bash
+gh pr ready <PR-number>
+```
+
+Observe especificamente esse novo run até ele terminar:
+
+```bash
+gh pr checks <PR-number> --watch
+```
+
+Timeout: 20 minutos. Se expirar, notifique e pare.
+
+**Se o gate completo falhar aqui:** trate como mais uma iteração do MESMO orçamento de 3
+tentativas do passo 8 — não abra um contador separado. Identifique a causa raiz, aplique a
+correção, commit (`fix: corrige <problema> no CI`) e `git push origin <branch>`. O PR já está
+"ready" neste ponto — **não volte para draft** (não é uma operação simples/bem suportada via
+`gh pr edit`, e não compensa a complexidade); o push aciona o gate completo diretamente. Depois
+do push, volte a observar com o mesmo `gh pr checks <PR-number> --watch` deste passo.
+
+Se o orçamento de 3 iterações (somando as do passo 8 e as deste passo) se esgotar sem o gate
+completo ficar verde, use a mesma mensagem de falha e parada do passo 8 — não tente mergear.
+
 ### 9 — Verificar review
 
 ```bash
@@ -227,7 +254,7 @@ Aguardando aprovação antes de prosseguir com merge.
 bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-merge.sh" <PR-number>
 ```
 
-O script faz `gh pr ready` (no-op nesta altura — o PR já foi promovido no passo 6.b) +
+O script faz `gh pr ready` (no-op nesta altura — o PR já foi promovido no passo 8.b) +
 `gh pr merge --squash --delete-branch` e verifica o estado real do PR quando o `gh` sai não-zero
 (um erro de cleanup local da branch não é falha de merge):
 - **exit 0** — PR mergeado. Siga direto para o passo 11.
