@@ -7,6 +7,11 @@ on:
       - master
       - develop
   pull_request:
+    # Default implícito (opened, synchronize, reopened) não inclui
+    # ready_for_review — sem isso, marcar um PR draft como "Ready for
+    # review" não dispara um novo run e os jobs pulados em draft (ver
+    # draft-skip abaixo) nunca rodam antes do merge (issue #250).
+    types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - main
       - master
@@ -379,7 +384,8 @@ jobs:
     # deixa esses 4 required checks presos para sempre em "Expected —
     # Waiting for status to be reported", bloqueando o merge de qualquer
     # PR que não toque rust-services/** (achado ao investigar softlock no
-    # PR #224). Por isso o gate fica no step de build, não no job.
+    # PR #224). Por isso o gate fica no step de build, não no job — mesmo
+    # padrão usado abaixo para pular em PRs draft (issue #250).
     strategy:
       matrix:
         service:
@@ -392,11 +398,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -411,7 +417,7 @@ jobs:
       # concorrentes que não tocaram este módulo (issue #203).
       - name: Compute image tags
         id: meta
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         run: |
           set -euo pipefail
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}"
@@ -427,7 +433,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push ${{ matrix.service }} image
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: docker/build-push-action@v6
         with:
           context: ./rust-services
@@ -441,7 +447,10 @@ jobs:
     name: Docker Build (Java core)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.java == 'true'
+    # PRs draft não expandem matrix (ver docker-build-rust acima), então
+    # aqui o gate de draft-skip pode ficar no nível do job com segurança
+    # (issue #250): job único, um só check-run "skipped" é postado.
+    if: needs.changes.outputs.java == 'true' && github.event.pull_request.draft != true
     permissions:
       contents: read
       packages: write
@@ -489,7 +498,7 @@ jobs:
     name: Docker Build (Frontend)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' && github.event.pull_request.draft != true
     permissions:
       contents: read
       packages: write
@@ -537,7 +546,7 @@ jobs:
     name: Docker Build (Crew worker)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     permissions:
       contents: read
       packages: write
@@ -587,7 +596,7 @@ jobs:
     name: Docker Build (Script executor sidecar)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -624,8 +633,11 @@ jobs:
     needs: [changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
     # Explícito e não ambíguo de propósito (em vez de depender do
     # comportamento implícito de success() com deps "skipped"): roda quando
-    # `changes` teve sucesso, cada docker-build-* OU teve sucesso OU foi
-    # pulado (módulo não mudou — não é falha), e ao menos um módulo
+    # `changes` teve sucesso, o PR não está em draft (issue #250 — este job
+    # é caro e o issue-coordinator/worktree-ship passam a maior parte do
+    # tempo em draft, em loop de fix-and-retry), cada docker-build-* OU
+    # teve sucesso OU foi pulado (módulo não mudou — não é falha), e ao
+    # menos um módulo
     # relevante mudou. Se qualquer docker-build-* FALHOU, este job é pulado
     # (não silenciosamente: o próprio docker-build-* já reprova o gate de CI
     # obrigatório da PR, ver CLAUDE.md "CI — Gate de imagens Docker") em vez
@@ -633,6 +645,7 @@ jobs:
     if: |
       always() &&
       needs.changes.result == 'success' &&
+      github.event.pull_request.draft != true &&
       (needs.docker-build-rust.result == 'success' || needs.docker-build-rust.result == 'skipped') &&
       (needs.docker-build-java.result == 'success' || needs.docker-build-java.result == 'skipped') &&
       (needs.docker-build-frontend.result == 'success' || needs.docker-build-frontend.result == 'skipped') &&
@@ -646,7 +659,7 @@ jobs:
     permissions:
       contents: read
       packages: read
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

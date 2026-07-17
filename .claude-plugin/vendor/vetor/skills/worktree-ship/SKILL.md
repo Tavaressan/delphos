@@ -152,6 +152,19 @@ gh pr create \
   --base "$DEFAULT_BRANCH"
 ```
 
+### 6.b — Promover para "ready for review" (antes da observação de CI)
+
+```bash
+gh pr ready <PR-number>
+```
+
+O PR nasce draft no passo 6 e é promovido aqui, **antes** de entrar na fase de observação de CI
+(passo 7). Motivo (issue #250): `docker-build-*`/`e2e-integration` são pulados quando o PR está em
+draft (ver `.github/workflows/ci.yml`) — se a promoção só acontecesse no merge (antigo passo 10),
+todo o loop de fix-and-retry (passo 8) rodaria contra um gate incompleto, e o squash-merge seguiria
+sem esperar o run completo disparado pela própria transição draft→ready. Promover aqui garante que
+os passos 7–8 já observam e corrigem contra o conjunto completo de jobs.
+
 ### 7 — Monitorar CI
 
 ```bash
@@ -214,8 +227,9 @@ Aguardando aprovação antes de prosseguir com merge.
 bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-merge.sh" <PR-number>
 ```
 
-O script faz `gh pr ready` + `gh pr merge --squash --delete-branch` e verifica o estado real do PR
-quando o `gh` sai não-zero (um erro de cleanup local da branch não é falha de merge):
+O script faz `gh pr ready` (no-op nesta altura — o PR já foi promovido no passo 6.b) +
+`gh pr merge --squash --delete-branch` e verifica o estado real do PR quando o `gh` sai não-zero
+(um erro de cleanup local da branch não é falha de merge):
 - **exit 0** — PR mergeado. Siga direto para o passo 11.
 - **exit 3** — merge não aconteceu. Entre no fluxo de resolução de conflitos abaixo.
 
