@@ -1,0 +1,42 @@
+{
+  "extraKnownMarketplaces": {
+    "vetor": {
+      "source": {
+        "source": "github",
+        "repo": "Tavaressan/Vetor"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "vetor@vetor": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh issue create:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr ready:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh run view:*)",
+      "Bash(git worktree add:*)",
+      "Bash(git worktree remove:*)",
+      "Bash(git worktree list:*)",
+      "Bash(deno run:*)",
+      "Bash(deno task:*)",
+      "Bash(deno test:*)",
+      "Bash(deno install:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew test:*)",
+      "Bash(cargo build:*)",
+      "Bash(cargo test:*)",
+      "Bash(npm ci:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run *:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(pytest:*)",
+      "Bash(pip install:*)"
+    ]
+  }
+}
