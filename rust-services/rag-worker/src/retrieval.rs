@@ -37,6 +37,10 @@ where
 /// Quando `has_agent_id` é `true`, a query também aceita chunks de
 /// documentos sem agente associado (`d.agent_id IS NULL`), além dos do
 /// agente informado. Quando `false`, apenas chunks sem agente associado.
+///
+/// DEPRECATED: Use `vector_search_query_with_limit` para configurar o LIMIT.
+/// Mantida para compatibilidade com código externo que ainda a utiliza.
+#[allow(dead_code)]
 pub fn vector_search_query(has_agent_id: bool) -> &'static str {
     if has_agent_id {
         "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
@@ -52,6 +56,34 @@ pub fn vector_search_query(has_agent_id: bool) -> &'static str {
          WHERE dc.tenant_id = $2 AND d.agent_id IS NULL \
          ORDER BY similarity DESC \
          LIMIT 5"
+    }
+}
+
+/// Retorna a query SQL de busca vetorial com limit configurável.
+/// Quando `has_agent_id` é `true`, a query também aceita chunks de
+/// documentos sem agente associado (`d.agent_id IS NULL`), além dos do
+/// agente informado. Quando `false`, apenas chunks sem agente associado.
+pub fn vector_search_query_with_limit(has_agent_id: bool, limit: usize) -> String {
+    if has_agent_id {
+        format!(
+            "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
+             FROM document_chunks dc \
+             JOIN documents d ON dc.document_id = d.id \
+             WHERE dc.tenant_id = $2 AND (d.agent_id = $3 OR d.agent_id IS NULL) \
+             ORDER BY similarity DESC \
+             LIMIT {}",
+            limit
+        )
+    } else {
+        format!(
+            "SELECT dc.id, dc.content, 1 - (dc.embedding <=> $1::vector) as similarity \
+             FROM document_chunks dc \
+             JOIN documents d ON dc.document_id = d.id \
+             WHERE dc.tenant_id = $2 AND d.agent_id IS NULL \
+             ORDER BY similarity DESC \
+             LIMIT {}",
+            limit
+        )
     }
 }
 
@@ -114,5 +146,33 @@ mod tests {
         let query = vector_search_query(false);
         assert!(query.contains("d.agent_id IS NULL"));
         assert!(!query.contains("$3"));
+    }
+
+    #[test]
+    fn test_vector_search_query_with_limit_with_agent_id_custom_limit() {
+        let query = vector_search_query_with_limit(true, 10);
+        assert!(query.contains("LIMIT 10"));
+        assert!(query.contains("d.agent_id = $3 OR d.agent_id IS NULL"));
+        assert!(query.contains("ORDER BY similarity DESC"));
+    }
+
+    #[test]
+    fn test_vector_search_query_with_limit_without_agent_id_custom_limit() {
+        let query = vector_search_query_with_limit(false, 20);
+        assert!(query.contains("LIMIT 20"));
+        assert!(query.contains("d.agent_id IS NULL"));
+        assert!(!query.contains("$3"));
+    }
+
+    #[test]
+    fn test_vector_search_query_with_limit_respects_different_values() {
+        let query_5 = vector_search_query_with_limit(true, 5);
+        let query_50 = vector_search_query_with_limit(true, 50);
+
+        assert!(query_5.contains("LIMIT 5"));
+        assert!(!query_5.contains("LIMIT 50"));
+
+        assert!(query_50.contains("LIMIT 50"));
+        assert!(!query_50.contains("LIMIT 5"));
     }
 }

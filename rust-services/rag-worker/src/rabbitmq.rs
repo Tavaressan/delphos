@@ -560,18 +560,24 @@ impl RabbitMQManager {
         );
         let start_db = std::time::Instant::now();
         let rows = if let Some(aid) = agent_id {
-            sqlx::query(crate::retrieval::vector_search_query(true))
-                .bind(&embedding)
-                .bind(job.tenant_id)
-                .bind(aid)
-                .fetch_all(db_pool)
-                .await
+            sqlx::query(&crate::retrieval::vector_search_query_with_limit(
+                true,
+                self.config.rag_top_k,
+            ))
+            .bind(&embedding)
+            .bind(job.tenant_id)
+            .bind(aid)
+            .fetch_all(db_pool)
+            .await
         } else {
-            sqlx::query(crate::retrieval::vector_search_query(false))
-                .bind(&embedding)
-                .bind(job.tenant_id)
-                .fetch_all(db_pool)
-                .await
+            sqlx::query(&crate::retrieval::vector_search_query_with_limit(
+                false,
+                self.config.rag_top_k,
+            ))
+            .bind(&embedding)
+            .bind(job.tenant_id)
+            .fetch_all(db_pool)
+            .await
         }
         .map_err(|e| WorkerError::Database(format!("SQL execution error: {}", e)))?;
 
