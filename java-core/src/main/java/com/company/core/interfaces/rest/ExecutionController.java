@@ -11,6 +11,9 @@ import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentExecutionRepository;
 import com.company.core.domain.repositories.ConversationRepository;
 import com.company.core.domain.repositories.UserRepository;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +26,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/executions")
 public class ExecutionController {
+
+    private static final Logger log = LoggerFactory.getLogger(ExecutionController.class);
 
     private final UserRepository userRepository;
     private final ConversationRepository conversationRepository;
@@ -185,8 +190,9 @@ public class ExecutionController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
+            log.error("Erro ao processar submissão de execução", e);
             Map<String, Object> errorResp = new HashMap<>();
-            errorResp.put("error", e.getMessage());
+            errorResp.put("error", GlobalExceptionHandler.GENERIC_ERROR_MESSAGE);
             return ResponseEntity.internalServerError().body(errorResp);
         }
     }
