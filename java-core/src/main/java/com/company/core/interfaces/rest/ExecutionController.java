@@ -15,6 +15,8 @@ import com.company.core.infrastructure.web.GlobalExceptionHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -198,13 +200,14 @@ public class ExecutionController {
     }
 
     @GetMapping
-    public ResponseEntity<java.util.List<Map<String, Object>>> listExecutions(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+    public ResponseEntity<Page<Map<String, Object>>> listExecutions(
+            @RequestParam(value = "tenantId", required = false) String tenantIdStr,
+            Pageable pageable) {
         UUID tenantId = (tenantIdStr != null && !tenantIdStr.isEmpty())
                 ? UUID.fromString(tenantIdStr)
                 : UUID.fromString("00000000-0000-0000-0000-000000000000");
 
-        java.util.List<Map<String, Object>> response = executionRepository.findByTenantId(tenantId)
-                .stream()
+        Page<Map<String, Object>> response = executionRepository.findByTenantId(tenantId, pageable)
                 .map(execution -> {
                     Map<String, Object> item = new HashMap<>();
                     item.put("executionId", execution.getId().toString());
@@ -213,8 +216,7 @@ public class ExecutionController {
                     item.put("startedAt", execution.getStartedAt());
                     item.put("finishedAt", execution.getFinishedAt());
                     return item;
-                })
-                .collect(java.util.stream.Collectors.toList());
+                });
 
         return ResponseEntity.ok(response);
     }
