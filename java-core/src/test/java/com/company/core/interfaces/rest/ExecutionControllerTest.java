@@ -19,7 +19,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
@@ -283,5 +285,26 @@ class ExecutionControllerTest {
 
         verifyNoInteractions(rabbitTemplate);
         verify(executionRepository, never()).save(any());
+    }
+
+    /**
+     * Issue #247: uma exceção inesperada (ex.: falha ao consultar o banco) não pode vazar sua
+     * mensagem crua (e.getMessage()) para o corpo da resposta HTTP.
+     */
+    @Test
+    void submitExecution_whenRepositoryThrows_doesNotLeakInternalExceptionMessage() throws Exception {
+        String sensitiveDetail = "FATAL: password authentication failed for user \"core_admin\" at db-internal:5432";
+        when(userRepository.findByUsername("admin")).thenThrow(new RuntimeException(sensitiveDetail));
+
+        MvcResult result = mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"Olá\"}"))
+                .andExpect(status().isInternalServerError())
+                .andReturn();
+
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).doesNotContain(sensitiveDetail);
+        assertThat(body).doesNotContain("db-internal");
+        assertThat(body).contains(GlobalExceptionHandler.GENERIC_ERROR_MESSAGE);
     }
 }
