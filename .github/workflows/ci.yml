@@ -324,6 +324,21 @@ jobs:
           cd frontend
           deno task build
 
+      # Suíte de responsividade Playwright (issue #232, depende de #231).
+      # Gate obrigatório separado dos testes unitários acima: sobe o build
+      # de produção real (via playwright.config.ts) e valida sidebar,
+      # header e PanelDock nos viewports mobile/tablet/desktop. Escopada
+      # pelo mesmo path-filter do job (needs.changes.outputs.frontend).
+      - name: Install Playwright Browsers
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright viewport suite
+        run: |
+          cd frontend
+          deno task test:viewport
+
   python-ci:
     name: Python Lint & Test
     runs-on: ubuntu-latest
