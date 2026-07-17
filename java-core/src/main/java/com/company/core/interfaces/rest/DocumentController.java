@@ -15,6 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -22,7 +24,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -164,7 +165,9 @@ public class DocumentController {
     }
 
     @GetMapping
-    public ResponseEntity<?> listDocuments(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+    public ResponseEntity<?> listDocuments(
+            @RequestParam(value = "tenantId", required = false) String tenantIdStr,
+            Pageable pageable) {
         if (tenantIdStr == null || tenantIdStr.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "tenantId é obrigatório para listar documentos."));
         }
@@ -176,7 +179,7 @@ public class DocumentController {
             return ResponseEntity.badRequest().body(Map.of("error", "tenantId inválido."));
         }
 
-        List<Document> docs = documentRepository.findByTenantId(tenantId);
+        Page<Document> docs = documentRepository.findByTenantId(tenantId, pageable);
         return ResponseEntity.ok(docs);
     }
 
