@@ -720,7 +720,7 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml pull \
             --ignore-pull-failures \
-            postgres redis minio rabbitmq \
+            postgres minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker frontend
 
       - name: Set up Docker Buildx
@@ -754,7 +754,7 @@ jobs:
       - name: Start full stack (imagens publicadas + script-executor local, sem rebuild dos demais)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d --wait --wait-timeout 300 \
-            postgres redis minio rabbitmq \
+            postgres minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker \
             script-executor \
             frontend
