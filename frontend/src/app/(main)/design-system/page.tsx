@@ -1,15 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Header, Sidebar, Footer } from '../../components/layout';
-import { Button } from '../../components/ui';
+import { Button } from '../../../components/ui';
 
 export default function DesignSystemPage() {
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary transition-colors duration-200">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <>
         <main className="flex-1 overflow-y-auto bg-background/50 p-6 flex flex-col min-h-0 font-body transition-colors duration-200">
           <div className="mb-6">
             <h2 className="text-xl font-bold tracking-wide text-text-primary heading-font uppercase">Guia de Design System Tokens</h2>
@@ -146,8 +142,6 @@ export default function DesignSystemPage() {
 
           </div>
         </main>
-      </div>
-      <Footer />
-    </div>
+    </>
   );
 }

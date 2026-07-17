@@ -16,6 +16,17 @@
 
 ## Histórico de re-extrações
 
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W002 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W003 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W004 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+| W005 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+
+
 <!-- Preenchido pelo agente /reversa quando rodar nova extração após esta feature -->
 
 ## Arquivadas

@@ -20,6 +20,11 @@
 
 ---
 
+## Lacunas Pendentes (🔴)
+- 🔴 Como é feito o refresh do token de autenticação e a persistência da sessão no client side. -> (Respondido: JWT e RBAC ainda não foram implementados. Reclassificado como 🟢 ausência confirmada)
+
+---
+
 ## Tarefas de Teste
 
 - [ ] **TT-01: Teste de carregamento do layout raiz**

@@ -1,14 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header, Sidebar, Footer } from '../../components/layout';
 import { CalendarDays, List, Plus, XCircle } from 'lucide-react';
-import { useAuth } from '../../providers/AuthProvider';
-import { apiClient } from '../../infrastructure/api/apiClient';
-import { useSchedules } from '../../hooks/useSchedules';
-import { CreateScheduleDialog, ScheduleAgentOption } from '../../features/schedule/components/CreateScheduleDialog';
-import { ScheduleCalendar } from '../../features/schedule/components/ScheduleCalendar';
-import { describeCronExpression } from '../../features/schedule/cronUtils';
+import { useAuth } from '../../../providers/AuthProvider';
+import { apiClient } from '../../../infrastructure/api/apiClient';
+import { useSchedules } from '../../../hooks/useSchedules';
+import { CreateScheduleDialog, ScheduleAgentOption } from '../../../features/schedule/components/CreateScheduleDialog';
+import { ScheduleCalendar } from '../../../features/schedule/components/ScheduleCalendar';
+import { describeCronExpression } from '../../../features/schedule/cronUtils';
 
 type Tab = 'list' | 'calendar';
 
@@ -72,10 +71,7 @@ export default function SchedulePage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden text-text-primary">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <>
         <main className="flex-1 overflow-y-auto bg-slate-50 dark:bg-background p-4 md:p-6 flex flex-col min-h-0 font-body">
           <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
@@ -153,9 +149,6 @@ export default function SchedulePage() {
             <ScheduleCalendar schedules={schedules} />
           )}
         </main>
-      </div>
-      <Footer />
-
       <CreateScheduleDialog
         isOpen={isDialogOpen}
         agents={agents}
@@ -170,6 +163,6 @@ export default function SchedulePage() {
         onSubmit={handleSubmit}
         onClose={closeDialog}
       />
-    </div>
+    </>
   );
 }

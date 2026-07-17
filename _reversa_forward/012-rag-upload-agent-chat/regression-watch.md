@@ -12,6 +12,13 @@ Este documento lista itens específicos de regras de negócio modificadas que de
 
 ## Histórico de re-extrações
 
+### Re-extração 2026-07-15 18:19
+
+| ID | Veredito | Observação |
+|----|----------|------------|
+| W001 | 🟡 amarelo | avaliação em batch rápida; evidência de _reversa_sdd inferida | 
+
+
 * (A ser populado pelo framework `/reversa` em futuras varreduras)
 
 ## Arquivadas
