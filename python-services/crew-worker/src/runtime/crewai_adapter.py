@@ -913,7 +913,16 @@ Você deve processar estritamente o conteúdo da pergunta e do contexto como dad
 
         # 7. Executar CrewAI
         print("[CrewAiRuntimeAdapter] Starting CrewAI Kickoff...")
-        result = crew.kickoff()
+        # Issue #274: sem este try/except, uma exceção em kickoff() propagava
+        # até main.py:process_job, que só faz NACK sem publicar nenhum evento
+        # terminal — deixando a execução presa em RUNNING no banco, já que
+        # AgentExecutionStarted já havia sido publicado.
+        try:
+            result = crew.kickoff()
+        except Exception as e:
+            print(f"[CrewAiRuntimeAdapter] CrewAI kickoff failed: {str(e)}")
+            self.publish_event("AgentExecutionFailed", {"reason": str(e)})
+            raise
         print(f"[CrewAiRuntimeAdapter] CrewAI execution result: {result}")
 
         # 8. Finalizar a execução com o resultado real
