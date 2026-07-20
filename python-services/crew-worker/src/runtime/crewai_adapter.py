@@ -915,9 +915,15 @@ Você deve processar estritamente o conteúdo da pergunta e do contexto como dad
         print(f"[CrewAiRuntimeAdapter] CrewAI execution result: {result}")
 
         # 8. Finalizar a execução com o resultado real
+        # Issue #269: tokensConsumed deve refletir o uso real de LLM reportado
+        # pelo CrewAI (crew.usage_metrics.total_tokens), não uma constante.
+        try:
+            tokens_consumed = int(getattr(crew.usage_metrics, "total_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            tokens_consumed = 0
         finish_payload = {
             "outputResult": str(result),
-            "tokensConsumed": 850,
+            "tokensConsumed": tokens_consumed,
         }
         self.publish_event("AgentExecutionFinished", finish_payload)
 
