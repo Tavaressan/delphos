@@ -803,7 +803,9 @@ class CrewAiRuntimeAdapter:
             target_id, target_name, target_instructions = row
             parsed = parse_instructions(target_instructions, target_name)
 
-            rag_context = self._search_db(query, agent_id_override=str(target_id))
+            rag_context, _rag_sources = self._search_db(
+                query, agent_id_override=str(target_id)
+            )
 
             target_agent = Agent(
                 role=parsed["role"],
