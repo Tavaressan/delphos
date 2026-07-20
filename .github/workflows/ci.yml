@@ -478,7 +478,7 @@ jobs:
       - name: Build and push java-core image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./java-core
           file: ./java-core/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
