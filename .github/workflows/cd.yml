@@ -189,7 +189,11 @@ jobs:
           - ingestion-worker
           - rag-worker
           - workflow-worker
-          - document-processing
+          # document-processing removido do deploy: serviço órfão do stack
+          # (parsing DOCX/OCR simulados, sem integração em docker-compose/k8s).
+          # Ver ADR 0004 (_reversa_sdd/adrs/0004-document-processing-orfao.md)
+          # e issue #270. Reintegrar aqui somente após implementação real do
+          # parser e um consumidor efetivo no stack.
     env:
       IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REGISTRY_REPO }}/${{ matrix.service }}
     steps:
