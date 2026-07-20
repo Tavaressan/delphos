@@ -349,6 +349,13 @@ public class AgentServiceTest {
             }
             return savedAgent;
         });
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
+        });
 
         // Act & Assert
         org.assertj.core.api.Assertions.assertThatThrownBy(

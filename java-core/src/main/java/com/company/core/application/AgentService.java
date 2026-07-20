@@ -223,6 +223,25 @@ public class AgentService {
      * Deriva o nome da tool a partir do basename do arquivo (ex.: {@code tools/sum_values.py}
      * -> {@code sum_values}), validando que o resultado é um identificador seguro.
      */
+    /**
+     * Valida que o nome de uma entrada de documento do ZIP (PDF/DOCX/TXT/MD) não escapa do
+     * prefixo do agente ao ser composto na chave do objeto no MinIO (issue #275 - path
+     * traversal). Segue o mesmo princípio de validação estrita já usado em
+     * {@link #toolNameFromEntry(String)} para entradas de {@code tools/}.
+     */
+    private void validateDocumentEntryName(String entryName) {
+        String normalized = entryName.replace('\\', '/');
+        if (normalized.isEmpty()
+                || normalized.startsWith("/")
+                || normalized.equals("..")
+                || normalized.startsWith("../")
+                || normalized.contains("/../")
+                || normalized.endsWith("/..")) {
+            throw new IllegalArgumentException(
+                    "Nome de entrada de documento inválido (path traversal detectado): '" + entryName + "'.");
+        }
+    }
+
     private String toolNameFromEntry(String entryName) {
         String normalized = entryName.replace('\\', '/');
         String fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
@@ -260,6 +279,7 @@ public class AgentService {
                     // We only process knowledge documents like PDF, DOCX, TXT, MD
                     String ext = getFileExtension(entryName).toLowerCase();
                     if (Arrays.asList("pdf", "docx", "txt", "md").contains(ext)) {
+                        validateDocumentEntryName(entryName);
                         ByteArrayOutputStream bos = new ByteArrayOutputStream();
                         byte[] buffer = new byte[1024];
                         int len;
