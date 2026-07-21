@@ -41,11 +41,7 @@
       "Bash(gh pr view:*)",
       "Bash(git push:*)",
       "Bash(git worktree:*)"
-    ],
-    "deny": [
-      "Bash(gh pr merge:*)",
-      "Bash(gh pr ready:*)"
-    ] 
+    ]
   },
   "hooks": {
     "Stop": [
