@@ -39,6 +39,7 @@ public class AgentService {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
+    private final FileTypeValidator fileTypeValidator;
 
     @Value("${minio.bucket:agents-data}")
     private String minioBucket = "agents-data";
@@ -55,7 +56,8 @@ public class AgentService {
                         MinioClient minioClient,
                         RabbitTemplate rabbitTemplate,
                         ObjectMapper objectMapper,
-                        AuditService auditService) {
+                        AuditService auditService,
+                        FileTypeValidator fileTypeValidator) {
         this.agentRepository = agentRepository;
         this.documentRepository = documentRepository;
         this.userRepository = userRepository;
@@ -64,6 +66,7 @@ public class AgentService {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.fileTypeValidator = fileTypeValidator;
     }
 
     @Transactional
@@ -127,7 +130,13 @@ public class AgentService {
         if (file.isEmpty()) {
             throw new IllegalArgumentException("Arquivo ZIP vazio.");
         }
-        return file.getBytes();
+        byte[] bytes = file.getBytes();
+        // Assinatura ZIP ("PK\x03\x04" ou variantes vazio/spanned) via magic bytes,
+        // para recusar conteúdo não-ZIP disfarçado de pacote de agente (issue #178).
+        if (bytes.length < 4 || bytes[0] != 'P' || bytes[1] != 'K') {
+            throw new IllegalArgumentException("Arquivo enviado não é um ZIP válido.");
+        }
+        return bytes;
     }
 
     private static class ParsedZip {
@@ -268,7 +277,17 @@ public class AgentService {
                         }
                         byte[] fileData = bos.toByteArray();
 
-                        String objectPath = "agents-data/agent-" + agent.getId() + "/" + entryName;
+                        try {
+                            fileTypeValidator.validate(fileData, ext);
+                        } catch (FileTypeValidator.ValidationException e) {
+                            throw new IllegalArgumentException(
+                                    "Documento '" + entryName + "' no ZIP do agente foi recusado: " + e.getMessage(), e);
+                        }
+
+                        // Object key baseado em UUID, não no nome (potencialmente hostil) da
+                        // entrada do ZIP; o nome original é preservado só como metadado (Document.name).
+                        String storedFileName = UUID.randomUUID() + "." + ext;
+                        String objectPath = "agents-data/agent-" + agent.getId() + "/" + storedFileName;
                         try (InputStream fileIs = new ByteArrayInputStream(fileData)) {
                             minioClient.putObject(PutObjectArgs.builder()
                                     .bucket(minioBucket)

@@ -39,6 +39,7 @@ public class AgentServiceTest {
     private RabbitTemplate rabbitTemplate;
     private ObjectMapper objectMapper;
     private AuditService auditService;
+    private FileTypeValidator fileTypeValidator;
     private AgentService agentService;
 
     @BeforeEach
@@ -51,6 +52,7 @@ public class AgentServiceTest {
         rabbitTemplate = Mockito.mock(RabbitTemplate.class);
         objectMapper = Mockito.mock(ObjectMapper.class);
         auditService = Mockito.mock(AuditService.class);
+        fileTypeValidator = new FileTypeValidator();
 
         agentService = new AgentService(
                 agentRepository,
@@ -60,7 +62,8 @@ public class AgentServiceTest {
                 minioClient,
                 rabbitTemplate,
                 objectMapper,
-                auditService
+                auditService,
+                fileTypeValidator
         );
 
         when(agentCustomToolRepository.save(any(AgentCustomTool.class)))
