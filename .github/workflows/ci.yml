@@ -415,6 +415,22 @@ jobs:
           cd rust-services
           cargo nextest run --workspace
 
+      # Issue #176: vulnerabilidades conhecidas (RUSTSEC) nas dependências.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit dependencies (cargo audit)
+        run: |
+          cd rust-services
+          cargo audit
+
+      # Issue #176: licenças incompatíveis, crates banidas/duplicadas e
+      # fontes não confiáveis (config em rust-services/deny.toml).
+      - name: Audit licenses/bans/sources (cargo deny)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: rust-services/Cargo.toml
+
   java-check:
     name: Java Core Build & Test
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
@@ -594,7 +610,15 @@ jobs:
           if [ -f python-services/crew-worker/requirements.lock.txt ]; then
             pip install -r python-services/crew-worker/requirements.lock.txt
           fi
-          pip install black flake8 pytest
+          pip install black flake8 pytest pip-audit
+
+      # Issue #176: vulnerabilidades conhecidas (PyPA Advisory DB) nas
+      # dependências pinadas em requirements.txt.
+      - name: Audit dependencies (pip-audit)
+        run: |
+          if [ -f python-services/crew-worker/requirements.txt ]; then
+            pip-audit -r python-services/crew-worker/requirements.txt
+          fi
 
       - name: Run Linter (Flake8)
         run: |
@@ -700,6 +724,16 @@ jobs:
           # cache da base branch.
           cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}', matrix.service) || '' }}
 
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan ${{ matrix.service }} image (Trivy)
+        if: needs.changes.outputs.rust == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
   docker-build-java:
     name: Docker Build (Java core)
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
@@ -752,6 +786,15 @@ jobs:
           # Export só em push (ver docker-build-rust): cache de PR é
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=java-core' || '' }}
+
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan java-core image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
 
   docker-build-frontend:
     name: Docker Build (Frontend)
@@ -806,6 +849,15 @@ jobs:
           # Export só em push (ver docker-build-rust): cache de PR é
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=frontend' || '' }}
+
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan frontend image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
 
   docker-build-python:
     name: Docker Build (Crew worker)
@@ -863,6 +915,15 @@ jobs:
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=crew-worker' || '' }}
 
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan crew-worker image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
   # Imagem do sidecar de execução isolada de scripts (issue #148). Mesmo path-filter
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
@@ -881,16 +942,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # `load: true` + tag local (sem push) para o Trivy conseguir escanear
+      # a imagem abaixo — esta imagem nunca é publicada no GHCR (só validação
+      # de build), então não usa o padrão de tags SHA/latest dos demais jobs.
       - name: Build script-executor image
         uses: docker/build-push-action@v6
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile.executor
           push: false
+          load: true
+          tags: script-executor:${{ github.sha }}
           cache-from: type=gha,scope=script-executor
           # Export só em push (ver docker-build-rust): cache de PR é
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=script-executor' || '' }}
+
+      # Issue #176: CVEs conhecidas na imagem (SO + deps do binário).
+      - name: Scan script-executor image (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: script-executor:${{ github.sha }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
 
   # Job de integração cross-container (issue interna: gate de mock LLM no CI).
   # Diferente dos jobs docker-build-*, que só validam que cada imagem builda
