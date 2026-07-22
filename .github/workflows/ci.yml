@@ -31,7 +31,7 @@ env:
 jobs:
   changes:
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     outputs:
       rust: ${{ steps.normalize.outputs.rust }}
       java: ${{ steps.normalize.outputs.java }}
@@ -150,7 +150,7 @@ jobs:
 
   rust-check:
     name: Rust Check, Lint, Format & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     steps:
@@ -194,7 +194,7 @@ jobs:
 
   java-check:
     name: Java Core Build & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.java == 'true'
     steps:
@@ -226,7 +226,7 @@ jobs:
 
   java-integration:
     name: Java Core Integration Tests (BDD)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: [changes, java-check]
     if: needs.changes.outputs.java == 'true'
     timeout-minutes: 10
@@ -266,7 +266,7 @@ jobs:
 
   frontend-check:
     name: Frontend Lint, Test & Build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -326,7 +326,7 @@ jobs:
 
   python-ci:
     name: Python Lint & Test
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.python == 'true'
     steps:
@@ -367,7 +367,7 @@ jobs:
   # substituem os builds nativos, apenas validam que a imagem também builda.
   docker-build-rust:
     name: Docker Build (Rust services)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     permissions:
       contents: read
@@ -439,7 +439,7 @@ jobs:
 
   docker-build-java:
     name: Docker Build (Java core)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.java == 'true'
     permissions:
@@ -487,7 +487,7 @@ jobs:
 
   docker-build-frontend:
     name: Docker Build (Frontend)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     permissions:
@@ -535,7 +535,7 @@ jobs:
 
   docker-build-python:
     name: Docker Build (Crew worker)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.python == 'true'
     permissions:
@@ -585,7 +585,7 @@ jobs:
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
     name: Docker Build (Script executor sidecar)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: changes
     if: needs.changes.outputs.python == 'true'
     steps:
@@ -620,7 +620,7 @@ jobs:
   # tests/e2e/** nunca disparava este job (achado ao mesclar a PR #122).
   e2e-integration:
     name: Integration E2E (Docker Compose + Mock LLM)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     needs: [changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
     # Explícito e não ambíguo de propósito (em vez de depender do
     # comportamento implícito de success() com deps "skipped"): roda quando
