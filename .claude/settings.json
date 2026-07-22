@@ -7,6 +7,10 @@
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git worktree:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -38,9 +42,11 @@
       "Bash(gh label create:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr list:*)",
-      "Bash(gh pr view:*)",
-      "Bash(git push:*)",
-      "Bash(git worktree:*)"
+      "Bash(gh pr view:*)"
+    ],
+    "deny": [
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr ready:*)"
     ]
   },
   "hooks": {
