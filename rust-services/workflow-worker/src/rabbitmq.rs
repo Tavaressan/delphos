@@ -16,7 +16,6 @@ use crate::engine::WorkflowEngine;
 struct WorkflowJob {
     workflow_id: Uuid,
     workflow_version: i32,
-    #[allow(dead_code)]
     tenant_id: String,
     execution_id: Uuid,
 }
@@ -211,7 +210,10 @@ async fn process_delivery(pool: &PgPool, channel: &Channel, body: &str) -> Resul
         job.workflow_id, job.workflow_version
     );
 
-    let (nodes, edges) = match load_dag(pool, job.workflow_id, job.workflow_version).await {
+    let parsed_tenant_id = Uuid::parse_str(&job.tenant_id)
+        .map_err(|_| anyhow::anyhow!("INVALID_TENANT_ID"))?;
+
+    let (nodes, edges) = match load_dag(pool, parsed_tenant_id, job.workflow_id, job.workflow_version).await {
         Ok(res) => res,
         Err(err) => {
             let error_msg = format!("Failed to load DAG from Postgres: {}", err);
@@ -231,7 +233,7 @@ async fn process_delivery(pool: &PgPool, channel: &Channel, body: &str) -> Resul
 
     // 3. Execute DAG
     let engine = WorkflowEngine::new(nodes, edges);
-    match engine.execute().await {
+    match engine.execute(channel, job.execution_id).await {
         Ok(result_msg) => {
             let elapsed = Utc::now()
                 .signed_duration_since(start_time)
