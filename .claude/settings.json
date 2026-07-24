@@ -43,7 +43,8 @@
       "Bash(gh label create:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr list:*)",
-      "Bash(gh pr view:*)"
+      "Bash(gh pr view:*)",
+      "Bash(mkdir -p*)"
     ],
     "deny": [
       "Bash(gh pr merge:*)",
