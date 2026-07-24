@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +29,7 @@ import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 public class AgentServiceTest {
@@ -331,6 +334,53 @@ public class AgentServiceTest {
 
         // Assert
         org.mockito.Mockito.verify(agentCustomToolRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void createAgent_publishesIngestionJobOnlyAfterExternalTransactionCommits() throws Exception {
+        // issue #321: o RabbitTemplate não é amarrado à transação JPA externa. Publicar o
+        // job de ingestão ainda dentro da transação (@Transactional em createAgent) permite
+        // que o ingestion-worker processe a mensagem antes do commit ou após um rollback.
+        String mdContent = "# Behavior Instructions";
+        byte[] zipBytes = createMockZip(mdContent, null);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", zipBytes);
+
+        UUID tenantId = UUID.randomUUID();
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
+        when(agentRepository.save(any(Agent.class))).thenAnswer(invocation -> {
+            Agent savedAgent = invocation.getArgument(0);
+            if (savedAgent.getId() == null) {
+                savedAgent.setId(UUID.randomUUID());
+            }
+            return savedAgent;
+        });
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
+        });
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            agentService.createAgent("Agente com Doc", file, tenantId);
+
+            // Ainda dentro da transação (não commitada): o job não pode ter sido publicado.
+            verifyNoInteractions(rabbitTemplate);
+
+            // Simula rollback da transação externa (ex.: falha em outra parte do fluxo).
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            }
+
+            // Transação revertida: o job nunca deve ser publicado.
+            verifyNoInteractions(rabbitTemplate);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
     }
 
     @Test
