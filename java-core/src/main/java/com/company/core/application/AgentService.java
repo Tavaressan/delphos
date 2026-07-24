@@ -94,7 +94,9 @@ public class AgentService {
         ParsedZip parsed = parseZip(zipBytes);
 
         agent.setSystemInstructions(parsed.systemInstructions);
-        agent.setManifestConfig(parsed.manifestConfig);
+        if (parsed.manifestConfig != null) {
+            agent.setManifestConfig(parsed.manifestConfig);
+        }
         agent = agentRepository.save(agent);
 
         agent = uploadZipAndProcessDocuments(agent, zipBytes, agent.getTenantId());

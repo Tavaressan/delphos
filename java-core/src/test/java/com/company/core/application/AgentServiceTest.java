@@ -221,6 +221,43 @@ public class AgentServiceTest {
     }
 
     @Test
+    void updateAgentPackage_withoutManifestYaml_preservesExistingManifestConfig() throws Exception {
+        // Arrange (issue #303) - manifest.yaml é opcional; reenviar um pacote sem manifest
+        // não deve apagar um manifestConfig previamente configurado.
+        UUID tenantId = UUID.randomUUID();
+        Agent existingAgent = new Agent();
+        existingAgent.setId(UUID.randomUUID());
+        existingAgent.setName("Agente Existente");
+        existingAgent.setTenantId(tenantId);
+        existingAgent.setSystemInstructions("instrucoes antigas");
+        existingAgent.setManifestConfig("schema_version: 1\ntools:\n  - name: search_knowledge_base");
+
+        String newMdContent = "# Novas instrucoes sem manifest";
+        byte[] zipBytes = createMockZip(newMdContent, null);
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", zipBytes);
+
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
+        when(agentRepository.save(any(Agent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
+        });
+
+        // Act
+        Agent result = agentService.updateAgentPackage(existingAgent, file);
+
+        // Assert
+        assertThat(result.getSystemInstructions()).isEqualTo(newMdContent);
+        assertThat(result.getManifestConfig())
+                .isEqualTo("schema_version: 1\ntools:\n  - name: search_knowledge_base");
+    }
+
+    @Test
     void createAgent_WithToolsFolder_PersistsCustomToolsPerScript() throws Exception {
         // Arrange (issue #129)
         String mdContent = "# Behavior Instructions";
