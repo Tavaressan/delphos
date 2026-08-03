@@ -40,12 +40,6 @@ jobs:
     name: Select CI runner pool
     runs-on: ubuntu-latest
     permissions:
-      # A API "List self-hosted runners for a repository" usada no step
-      # "Check self-hosted runner availability" exige administration:read no
-      # GITHUB_TOKEN — sem ela, a chamada retorna 403 e o `|| echo 0` mascara
-      # o erro como "nenhum runner online", fazendo o job cair SEMPRE no
-      # fallback ubuntu-latest mesmo com a EC2 e o runner self-hosted ativos.
-      administration: read
       actions: read
       id-token: write
     outputs:
