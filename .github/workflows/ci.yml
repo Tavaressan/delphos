@@ -79,12 +79,15 @@ jobs:
           # no GitHub após o start-instances acima — poll com timeout em vez
           # de checar uma única vez, senão todo cold-start cairia no
           # fallback hosted mesmo com a EC2 subindo com sucesso. Janela
-          # ampliada de 90s para 180s (18x10s): no run 30821949759 a
-          # instância já estava "running" e os runners (alfabra-ec2-1/2)
-          # registraram como online poucos segundos depois do poll de 90s
-          # esgotar, derrubando o job para ubuntu-latest por pouco.
+          # ampliada de 180s para 240s (24x10s): no run 30823116364, com a
+          # instância genuinamente "stopped" (cold boot completo), o
+          # start-instances disparou às 14:31:56 e os runners
+          # (alfabra-ec2-1/2) só apareceram "online" por volta de
+          # 14:35:04-14:35:15 (~188-199s depois) — o poll de 180s esgotou
+          # a poucos segundos do runner ficar pronto. 240s dá ~50s de
+          # margem sobre o cold-boot medido.
           ONLINE=0
-          for _ in $(seq 1 18); do
+          for _ in $(seq 1 24); do
             ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
               --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
               2>/dev/null || echo 0)
