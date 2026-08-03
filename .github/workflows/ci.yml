@@ -69,10 +69,28 @@ jobs:
             echo "::notice::Instância EC2 estava parada, start-instances disparado"
           fi
 
+      # secrets.GITHUB_TOKEN nunca consegue chamar "List self-hosted runners
+      # for a repository" (retorna 403 "Resource not accessible by
+      # integration" sempre, independente do bloco `permissions:` do job —
+      # não existe chave de permissão para isso no GITHUB_TOKEN automático).
+      # Confirmado no run 30823634398: as 24 tentativas do poll abaixo
+      # falharam com 403, mascaradas por `|| echo 0` como "nenhum runner
+      # online", mesmo com os runners de fato online. A mesma GitHub App
+      # (app-id 4358824) já usada para registrar os runners na EC2 (ver
+      # scripts/ci-runner-ec2-bootstrap.sh) tem permissão de administração
+      # do repositório — gera um token de instalação dela aqui só para essa
+      # checagem.
+      - name: Gera token da GitHub App (permissão de administração)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: 4358824
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
       - name: Check self-hosted runner availability
         id: pick
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           # A instância pode levar ~30-60s pra bootar e o runner registrar
