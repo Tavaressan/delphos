@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
       "Bash(find:*)",
       "Bash(grep:*)",
@@ -7,6 +8,10 @@
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git worktree:*)",
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -39,13 +44,14 @@
       "Bash(gh pr create:*)",
       "Bash(gh pr list:*)",
       "Bash(gh pr view:*)",
-      "Bash(git push:*)",
-      "Bash(git worktree:*)"
+      "Bash(mkdir:*)",
+      "Agent(vetor:issue-worker)",
+      "Agent(vetor:code-review)"
     ],
     "deny": [
       "Bash(gh pr merge:*)",
       "Bash(gh pr ready:*)"
-    ] 
+    ]
   },
   "hooks": {
     "Stop": [

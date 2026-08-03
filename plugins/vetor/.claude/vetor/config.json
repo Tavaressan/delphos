@@ -1,6 +1,0 @@
-{
-  "maxConcurrentWorkers": 5,
-  "runtime": "deno",
-  "packageManager": "deno",
-  "testCommand": "deno task test"
-}
