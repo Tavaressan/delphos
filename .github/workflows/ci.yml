@@ -41,23 +41,59 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      id-token: write
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
+      # Sem isso, o runner EC2 só entra no ar se alguém der `aws ec2
+      # start-instances` manualmente (ver #345) — o que faz quase todo push
+      # cair no fallback hosted. A role é assumida via OIDC (sem access key
+      # fixa em secret) e só permite start-instances nesta instância
+      # específica + describe-instances read-only.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::076248672901:role/alfabra-ci-github-actions-start
+          aws-region: us-east-1
+
+      - name: Start EC2 CI runner instance (idempotente)
+        env:
+          INSTANCE_ID: i-060c83aa05d25e679
+        run: |
+          set -euo pipefail
+          STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' --output text)
+          echo "Estado atual da instância: $STATE"
+          if [ "$STATE" = "stopped" ]; then
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
+            echo "::notice::Instância EC2 estava parada, start-instances disparado"
+          fi
+
       - name: Check self-hosted runner availability
         id: pick
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
-            --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
-            2>/dev/null || echo 0)
+          # A instância pode levar ~30-60s pra bootar e o runner registrar
+          # no GitHub após o start-instances acima — poll com timeout em vez
+          # de checar uma única vez, senão todo cold-start cairia no
+          # fallback hosted mesmo com a EC2 subindo com sucesso.
+          ONLINE=0
+          for _ in $(seq 1 9); do
+            ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
+              --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
+              2>/dev/null || echo 0)
+            if [ "$ONLINE" -gt 0 ]; then
+              break
+            fi
+            sleep 10
+          done
           if [ "$ONLINE" -gt 0 ]; then
             echo "::notice::$ONLINE runner(s) self-hosted online (label alfabra-local) - usando self-hosted"
             echo 'runner=["self-hosted","alfabra-local"]' >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Nenhum runner self-hosted online - fallback para GitHub-hosted (ubuntu-latest)"
+            echo "::notice::Nenhum runner self-hosted online após poll - fallback para GitHub-hosted (ubuntu-latest)"
             echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
           fi
 
