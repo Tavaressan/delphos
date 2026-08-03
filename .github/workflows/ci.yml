@@ -104,6 +104,18 @@ jobs:
           # 14:35:04-14:35:15 (~188-199s depois) — o poll de 180s esgotou
           # a poucos segundos do runner ficar pronto. 240s dá ~50s de
           # margem sobre o cold-boot medido.
+          #
+          # issue #349: esse cold-boot de ~200s só acontece quando a
+          # instância EC2 está genuinamente "stopped" (não quando os
+          # containers do runner apenas reiniciam — systemd
+          # Restart=always já cobre isso sem reboot). A causa raiz de o
+          # cold-boot se repetir a cada PR da fila serializada era o
+          # auto-stop por ociosidade (scripts/ec2-idle-stop.sh) desligando
+          # a instância cedo demais — corrigido usando a média de carga de
+          # 15min em vez de 1min, exigindo ociosidade sustentada antes de
+          # parar. O poll de 240s aqui continua necessário como
+          # salvaguarda para o caso (mais raro após o fix) de cold-boot
+          # genuíno.
           ONLINE=0
           for _ in $(seq 1 24); do
             ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
