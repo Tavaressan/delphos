@@ -49,6 +49,7 @@ Cargo.lock
 # Docker
 *.log
 .env
+.env.ci-runner
 
 # Bloqueio absoluto de chaves de nuvem
 infrastructure/gcp/*.json

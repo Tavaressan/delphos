@@ -29,9 +29,42 @@ env:
   IMAGE_BASE: tavaressan/alfabra-vector
 
 jobs:
+  # Fallback automático entre self-hosted (local + EC2, label alfabra-local)
+  # e GitHub-hosted: GitHub Actions não faz balanceamento entre pools por si
+  # só (runs-on é match estático de label), então este job checa em tempo
+  # real se há ao menos um runner self-hosted online e decide o pool para
+  # todos os demais jobs. `|| echo 0` garante fail-safe (mesma filosofia do
+  # job `changes` ver #87): qualquer erro na checagem (rate limit, API fora)
+  # cai para ubuntu-latest em vez de travar o pipeline inteiro.
+  select-runner:
+    name: Select CI runner pool
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      - name: Check self-hosted runner availability
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
+            --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
+            2>/dev/null || echo 0)
+          if [ "$ONLINE" -gt 0 ]; then
+            echo "::notice::$ONLINE runner(s) self-hosted online (label alfabra-local) - usando self-hosted"
+            echo 'runner=["self-hosted","alfabra-local"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nenhum runner self-hosted online - fallback para GitHub-hosted (ubuntu-latest)"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          fi
+
   changes:
     name: Detect changed paths
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
     outputs:
       rust: ${{ steps.normalize.outputs.rust }}
       java: ${{ steps.normalize.outputs.java }}
@@ -150,8 +183,8 @@ jobs:
 
   rust-check:
     name: Rust Check, Lint, Format & Test
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout code
@@ -194,8 +227,8 @@ jobs:
 
   java-check:
     name: Java Core Build & Test
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.java == 'true'
     steps:
       - name: Checkout code
@@ -226,8 +259,8 @@ jobs:
 
   java-integration:
     name: Java Core Integration Tests (BDD)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: [changes, java-check]
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, java-check]
     if: needs.changes.outputs.java == 'true'
     timeout-minutes: 10
     steps:
@@ -266,8 +299,8 @@ jobs:
 
   frontend-check:
     name: Frontend Lint, Test & Build
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.frontend == 'true'
     steps:
       - name: Checkout code
@@ -326,8 +359,8 @@ jobs:
 
   python-ci:
     name: Python Lint & Test
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
@@ -367,8 +400,8 @@ jobs:
   # substituem os builds nativos, apenas validam que a imagem também builda.
   docker-build-rust:
     name: Docker Build (Rust services)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     permissions:
       contents: read
       packages: write
@@ -439,8 +472,8 @@ jobs:
 
   docker-build-java:
     name: Docker Build (Java core)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.java == 'true'
     permissions:
       contents: read
@@ -487,8 +520,8 @@ jobs:
 
   docker-build-frontend:
     name: Docker Build (Frontend)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.frontend == 'true'
     permissions:
       contents: read
@@ -535,8 +568,8 @@ jobs:
 
   docker-build-python:
     name: Docker Build (Crew worker)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     permissions:
       contents: read
@@ -585,8 +618,8 @@ jobs:
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
     name: Docker Build (Script executor sidecar)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
@@ -620,8 +653,8 @@ jobs:
   # tests/e2e/** nunca disparava este job (achado ao mesclar a PR #122).
   e2e-integration:
     name: Integration E2E (Docker Compose + Mock LLM)
-    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
-    needs: [changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
     # Explícito e não ambíguo de propósito (em vez de depender do
     # comportamento implícito de success() com deps "skipped"): roda quando
     # `changes` teve sucesso, cada docker-build-* OU teve sucesso OU foi
