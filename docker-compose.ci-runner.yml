@@ -1,0 +1,80 @@
+# docker-compose.ci-runner.yml — 2 runners self-hosted do GitHub Actions
+# (myoung34/github-runner), como workaround enquanto o billing do GitHub
+# Actions hospedado está bloqueado (ver commit abcc102).
+#
+# Substitui os containers avulsos (docker run) gh-runner-alfabra,
+# gh-runner-alfabra-2 e gh-runner-alfabra-3 por 2 novos, gerenciados via
+# compose, com volumes de trabalho novos (build limpo). Autenticação via
+# GitHub App (APP_ID + APP_LOGIN + APP_PRIVATE_KEY), suportada nativamente
+# pela imagem myoung34/github-runner — troca a private key por um
+# installation token internamente a cada (re)registro, sem depender de
+# PAT/registration token manual.
+#
+# Cenário "equilibrado": divide os recursos do Docker Desktop (4 CPU / 11.7GB
+# neste host) entre os 2 containers, reservando margem para o Docker
+# Desktop/SO e para a stack de aplicação (docker-compose.yml) rodar em
+# paralelo se necessário:
+#   - 2x runner: 1.5 CPU / 4GB limite cada  =  3 CPU / 8GB total
+#   - headroom:                                1 CPU / ~3.7GB livre
+#
+# Os dois containers usam o mesmo label (alfabra-local, já configurado na
+# variável de repo CI_RUNNER_LABELS), então o GitHub distribui os jobs entre
+# eles automaticamente conforme disponibilidade — não é preciso configurar
+# afinidade job→runner manualmente.
+#
+# Uso (a private key é PEM multilinha — não cabe bem em .env, então é
+# exportada via command substitution a partir do arquivo original):
+#   docker rm -f gh-runner-alfabra gh-runner-alfabra-2 gh-runner-alfabra-3
+#   docker pull myoung34/github-runner:latest
+#   export GH_RUNNER_APP_PRIVATE_KEY="$(cat ~/Desktop/Chaves/alfabra-vector-ci-runner.2026-07-21.private-key.pem)"
+#   docker compose -f docker-compose.ci-runner.yml up -d --force-recreate
+#   docker compose -f docker-compose.ci-runner.yml logs -f
+#   docker compose -f docker-compose.ci-runner.yml down
+
+x-runner-common: &runner-common
+  image: myoung34/github-runner:latest
+  restart: unless-stopped
+  cpus: "1.5"
+  mem_limit: "4g"
+  mem_reservation: "2g"
+
+services:
+  gh-runner-alfabra-1:
+    <<: *runner-common
+    container_name: gh-runner-alfabra-1
+    environment:
+      REPO_URL: https://github.com/Tavaressan/Alfabra-Vector
+      RUNNER_SCOPE: repo
+      APP_ID: "4358824"
+      APP_LOGIN: Tavaressan
+      APP_PRIVATE_KEY: ${GH_RUNNER_APP_PRIVATE_KEY}
+      RUNNER_NAME: alfabra-local-mac-1
+      RUNNER_WORKDIR: /tmp/runner
+      LABELS: alfabra-local
+      AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    volumes:
+      - runner-work-1:/tmp/runner
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  gh-runner-alfabra-2:
+    <<: *runner-common
+    container_name: gh-runner-alfabra-2
+    environment:
+      REPO_URL: https://github.com/Tavaressan/Alfabra-Vector
+      RUNNER_SCOPE: repo
+      APP_ID: "4358824"
+      APP_LOGIN: Tavaressan
+      APP_PRIVATE_KEY: ${GH_RUNNER_APP_PRIVATE_KEY}
+      RUNNER_NAME: alfabra-local-mac-2
+      RUNNER_WORKDIR: /tmp/runner
+      LABELS: alfabra-local
+      AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    volumes:
+      - runner-work-2:/tmp/runner
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  runner-work-1:
+  runner-work-2:
