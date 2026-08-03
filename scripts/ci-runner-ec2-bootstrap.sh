@@ -9,7 +9,7 @@
 # reaplicar (ex.: trocar RUNNER_COUNT).
 #
 # Uso:
-#   scp -i <key>.pem scripts/ci-runner-ec2-bootstrap.sh ubuntu@<IP>:~/
+#   scp -i <key>.pem scripts/ci-runner-ec2-bootstrap.sh scripts/ec2-idle-stop.sh ubuntu@<IP>:~/
 #   scp -i <key>.pem <app-private-key>.pem ubuntu@<IP>:~/gh-app-key.pem
 #   ssh -i <key>.pem ubuntu@<IP>
 #   sudo bash ci-runner-ec2-bootstrap.sh
@@ -18,6 +18,14 @@
 # religada (`aws ec2 start-instances`) quantas vezes for preciso — os
 # runners sobem sozinhos a cada boot (systemd) e a instância se autodesliga
 # depois de ociosa (systemd timer), sem precisar rodar este script de novo.
+#
+# Decisão (issue #349): manter o modelo de auto-stop por ociosidade (em vez
+# de deixar a instância sempre ligada 24/7 — trade-off de custo indesejado
+# dado o crédito AWS limitado, ver comentário no topo) mas corrigir a
+# heurística de ociosidade, que estava desligando a instância cedo demais
+# (ver scripts/ec2-idle-stop.sh para o detalhe do bug e do fix). O efeito
+# esperado é reduzir a frequência de cold-boot (~180-200s) sem manter a
+# instância ligada indefinidamente.
 
 set -euo pipefail
 
@@ -36,6 +44,13 @@ fi
 
 if [ ! -f "$KEY_SRC" ]; then
   echo "Private key da GitHub App não encontrada em $KEY_SRC — copie antes via scp." >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IDLE_STOP_SRC="${IDLE_STOP_SRC:-$SCRIPT_DIR/ec2-idle-stop.sh}"
+if [ ! -f "$IDLE_STOP_SRC" ]; then
+  echo "ec2-idle-stop.sh não encontrado em $IDLE_STOP_SRC — copie-o junto via scp (ver Uso acima)." >&2
   exit 1
 fi
 
@@ -113,33 +128,11 @@ for i in $(seq 1 "$RUNNER_COUNT"); do
 done
 
 echo "==> Instalando script de auto-desligamento por ociosidade"
-cat > /usr/local/bin/ec2-idle-stop.sh <<SCRIPT
-#!/usr/bin/env bash
-# Heurístico simples: se a carga média (1min, normalizada por vCPU) ficar
-# abaixo de ${IDLE_THRESHOLD_PCT}% depois dos primeiros ${GRACE_MIN}min de
-# uptime, considera a instância ociosa (nenhum job rodando) e se autopara.
-# A janela de 1min do load average já dá uma folga natural logo após um job
-# terminar — não é um sinal exato, é aproximado de propósito (simplicidade).
-set -euo pipefail
-
-UPTIME_MIN=\$(awk '{print int(\$1/60)}' /proc/uptime)
-if [ "\$UPTIME_MIN" -lt "${GRACE_MIN}" ]; then
-  exit 0
-fi
-
-NCPU=\$(nproc)
-LOAD1=\$(awk '{print \$1}' /proc/loadavg)
-BUSY_PCT=\$(awk -v l="\$LOAD1" -v n="\$NCPU" 'BEGIN{printf "%.0f", (l/n)*100}')
-
-if [ "\$BUSY_PCT" -lt "${IDLE_THRESHOLD_PCT}" ]; then
-  TOKEN=\$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
-  IID=\$(curl -s -H "X-aws-ec2-metadata-token: \$TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
-  REGION=\$(curl -s -H "X-aws-ec2-metadata-token: \$TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
-  echo "Ocioso ha >= ${GRACE_MIN}min (carga \${BUSY_PCT}% < ${IDLE_THRESHOLD_PCT}%) - autodesligando \$IID"
-  /usr/local/bin/aws ec2 stop-instances --instance-ids "\$IID" --region "\$REGION"
-fi
-SCRIPT
-chmod +x /usr/local/bin/ec2-idle-stop.sh
+# Copiado de scripts/ec2-idle-stop.sh (issue #349) em vez de gerado inline
+# via heredoc — mantém a lógica testável isoladamente (ver
+# ci-runner-ec2-idle-stop.test.sh) e evita duplicar o fix em dois lugares.
+cp "$IDLE_STOP_SRC" /usr/local/bin/ec2-idle-stop.sh
+chmod 755 /usr/local/bin/ec2-idle-stop.sh
 
 cat > /etc/systemd/system/ec2-idle-stop.service <<UNIT
 [Unit]
@@ -147,6 +140,8 @@ Description=Autodesliga a instancia se ociosa (sem job de CI rodando)
 
 [Service]
 Type=oneshot
+Environment=IDLE_THRESHOLD_PCT=${IDLE_THRESHOLD_PCT}
+Environment=GRACE_MIN=${GRACE_MIN}
 ExecStart=/usr/local/bin/ec2-idle-stop.sh
 UNIT
 
