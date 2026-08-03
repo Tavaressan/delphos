@@ -32,9 +32,9 @@ dependencies {
     testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:junit-jupiter")
-    testImplementation("io.cucumber:cucumber-java:7.34.4")
-    testImplementation("io.cucumber:cucumber-spring:7.34.4")
-    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.4")
+    testImplementation("io.cucumber:cucumber-java:7.34.6")
+    testImplementation("io.cucumber:cucumber-spring:7.34.6")
+    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.6")
     testImplementation("org.junit.platform:junit-platform-suite:6.1.2")
 }
 
