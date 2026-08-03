@@ -88,6 +88,17 @@ class UserControllerTest {
     }
 
     @Test
+    void getMe_withInactiveUser_returns401() throws Exception {
+        UUID id = UUID.randomUUID();
+        User user = buildUser(id);
+        user.setStatus("INACTIVE");
+        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+
+        mockMvc.perform(get("/api/users/me").header("X-User-Id", id.toString()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void getMe_withoutHeader_returns400() throws Exception {
         mockMvc.perform(get("/api/users/me"))
                 .andExpect(status().isBadRequest());
