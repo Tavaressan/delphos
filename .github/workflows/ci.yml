@@ -50,13 +50,21 @@ jobs:
       # cair no fallback hosted. A role é assumida via OIDC (sem access key
       # fixa em secret) e só permite start-instances nesta instância
       # específica + describe-instances read-only.
+      # PRs abertas pelo Dependabot rodam em contexto restrito sem acesso aos
+      # secrets de Actions do repositório (só ao GITHUB_TOKEN automático e a
+      # "Dependabot secrets", não cadastrados aqui — ver #350). O step
+      # seguinte de app-token sempre falhava com "private-key" vazio nesse
+      # caso, derrubando o job inteiro antes de chegar no fallback hosted.
+      # Pula toda a tentativa de self-hosted/EC2 para esse actor.
       - name: Configure AWS credentials (OIDC)
+        if: github.actor != 'dependabot[bot]'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::076248672901:role/alfabra-ci-github-actions-start
           aws-region: us-east-1
 
       - name: Start EC2 CI runner instance (idempotente)
+        if: github.actor != 'dependabot[bot]'
         env:
           INSTANCE_ID: i-060c83aa05d25e679
         run: |
@@ -82,6 +90,7 @@ jobs:
       # checagem.
       - name: Gera token da GitHub App (permissão de administração)
         id: app-token
+        if: github.actor != 'dependabot[bot]'
         uses: actions/create-github-app-token@v1
         with:
           app-id: 4358824
@@ -93,6 +102,14 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
+          # Ver #350: sem os steps acima (pulados para este actor), não há
+          # instância EC2 disparada nem GH_TOKEN válido para consultar
+          # runners self-hosted — cai direto para GitHub-hosted.
+          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            echo "::notice::Actor é dependabot[bot] (sem acesso a secrets de Actions, ver #350) - fallback direto para GitHub-hosted"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # A instância pode levar ~30-60s pra bootar e o runner registrar
           # no GitHub após o start-instances acima — poll com timeout em vez
           # de checar uma única vez, senão todo cold-start cairia no
@@ -104,6 +121,18 @@ jobs:
           # 14:35:04-14:35:15 (~188-199s depois) — o poll de 180s esgotou
           # a poucos segundos do runner ficar pronto. 240s dá ~50s de
           # margem sobre o cold-boot medido.
+          #
+          # issue #349: esse cold-boot de ~200s só acontece quando a
+          # instância EC2 está genuinamente "stopped" (não quando os
+          # containers do runner apenas reiniciam — systemd
+          # Restart=always já cobre isso sem reboot). A causa raiz de o
+          # cold-boot se repetir a cada PR da fila serializada era o
+          # auto-stop por ociosidade (scripts/ec2-idle-stop.sh) desligando
+          # a instância cedo demais — corrigido usando a média de carga de
+          # 15min em vez de 1min, exigindo ociosidade sustentada antes de
+          # parar. O poll de 240s aqui continua necessário como
+          # salvaguarda para o caso (mais raro após o fix) de cold-boot
+          # genuíno.
           ONLINE=0
           for _ in $(seq 1 24); do
             ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
