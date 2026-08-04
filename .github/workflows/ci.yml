@@ -29,9 +29,132 @@ env:
   IMAGE_BASE: tavaressan/alfabra-vector
 
 jobs:
+  # Fallback automático entre self-hosted (local + EC2, label alfabra-local)
+  # e GitHub-hosted: GitHub Actions não faz balanceamento entre pools por si
+  # só (runs-on é match estático de label), então este job checa em tempo
+  # real se há ao menos um runner self-hosted online e decide o pool para
+  # todos os demais jobs. `|| echo 0` garante fail-safe (mesma filosofia do
+  # job `changes` ver #87): qualquer erro na checagem (rate limit, API fora)
+  # cai para ubuntu-latest em vez de travar o pipeline inteiro.
+  select-runner:
+    name: Select CI runner pool
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      id-token: write
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      # Sem isso, o runner EC2 só entra no ar se alguém der `aws ec2
+      # start-instances` manualmente (ver #345) — o que faz quase todo push
+      # cair no fallback hosted. A role é assumida via OIDC (sem access key
+      # fixa em secret) e só permite start-instances nesta instância
+      # específica + describe-instances read-only.
+      # PRs abertas pelo Dependabot rodam em contexto restrito sem acesso aos
+      # secrets de Actions do repositório (só ao GITHUB_TOKEN automático e a
+      # "Dependabot secrets", não cadastrados aqui — ver #350). O step
+      # seguinte de app-token sempre falhava com "private-key" vazio nesse
+      # caso, derrubando o job inteiro antes de chegar no fallback hosted.
+      # Pula toda a tentativa de self-hosted/EC2 para esse actor.
+      - name: Configure AWS credentials (OIDC)
+        if: github.actor != 'dependabot[bot]'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::076248672901:role/alfabra-ci-github-actions-start
+          aws-region: us-east-1
+
+      - name: Start EC2 CI runner instance (idempotente)
+        if: github.actor != 'dependabot[bot]'
+        env:
+          INSTANCE_ID: i-060c83aa05d25e679
+        run: |
+          set -euo pipefail
+          STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' --output text)
+          echo "Estado atual da instância: $STATE"
+          if [ "$STATE" = "stopped" ]; then
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
+            echo "::notice::Instância EC2 estava parada, start-instances disparado"
+          fi
+
+      # secrets.GITHUB_TOKEN nunca consegue chamar "List self-hosted runners
+      # for a repository" (retorna 403 "Resource not accessible by
+      # integration" sempre, independente do bloco `permissions:` do job —
+      # não existe chave de permissão para isso no GITHUB_TOKEN automático).
+      # Confirmado no run 30823634398: as 24 tentativas do poll abaixo
+      # falharam com 403, mascaradas por `|| echo 0` como "nenhum runner
+      # online", mesmo com os runners de fato online. A mesma GitHub App
+      # (app-id 4358824) já usada para registrar os runners na EC2 (ver
+      # scripts/ci-runner-ec2-bootstrap.sh) tem permissão de administração
+      # do repositório — gera um token de instalação dela aqui só para essa
+      # checagem.
+      - name: Gera token da GitHub App (permissão de administração)
+        id: app-token
+        if: github.actor != 'dependabot[bot]'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: 4358824
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Check self-hosted runner availability
+        id: pick
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Ver #350: sem os steps acima (pulados para este actor), não há
+          # instância EC2 disparada nem GH_TOKEN válido para consultar
+          # runners self-hosted — cai direto para GitHub-hosted.
+          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            echo "::notice::Actor é dependabot[bot] (sem acesso a secrets de Actions, ver #350) - fallback direto para GitHub-hosted"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A instância pode levar ~30-60s pra bootar e o runner registrar
+          # no GitHub após o start-instances acima — poll com timeout em vez
+          # de checar uma única vez, senão todo cold-start cairia no
+          # fallback hosted mesmo com a EC2 subindo com sucesso. Janela
+          # ampliada de 180s para 240s (24x10s): no run 30823116364, com a
+          # instância genuinamente "stopped" (cold boot completo), o
+          # start-instances disparou às 14:31:56 e os runners
+          # (alfabra-ec2-1/2) só apareceram "online" por volta de
+          # 14:35:04-14:35:15 (~188-199s depois) — o poll de 180s esgotou
+          # a poucos segundos do runner ficar pronto. 240s dá ~50s de
+          # margem sobre o cold-boot medido.
+          #
+          # issue #349: esse cold-boot de ~200s só acontece quando a
+          # instância EC2 está genuinamente "stopped" (não quando os
+          # containers do runner apenas reiniciam — systemd
+          # Restart=always já cobre isso sem reboot). A causa raiz de o
+          # cold-boot se repetir a cada PR da fila serializada era o
+          # auto-stop por ociosidade (scripts/ec2-idle-stop.sh) desligando
+          # a instância cedo demais — corrigido usando a média de carga de
+          # 15min em vez de 1min, exigindo ociosidade sustentada antes de
+          # parar. O poll de 240s aqui continua necessário como
+          # salvaguarda para o caso (mais raro após o fix) de cold-boot
+          # genuíno.
+          ONLINE=0
+          for _ in $(seq 1 24); do
+            ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
+              --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
+              2>/dev/null || echo 0)
+            if [ "$ONLINE" -gt 0 ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ "$ONLINE" -gt 0 ]; then
+            echo "::notice::$ONLINE runner(s) self-hosted online (label alfabra-local) - usando self-hosted"
+            echo 'runner=["self-hosted","alfabra-local"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nenhum runner self-hosted online após poll - fallback para GitHub-hosted (ubuntu-latest)"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          fi
+
   changes:
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    needs: select-runner
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
     outputs:
       rust: ${{ steps.normalize.outputs.rust }}
       java: ${{ steps.normalize.outputs.java }}
@@ -150,8 +273,8 @@ jobs:
 
   rust-check:
     name: Rust Check, Lint, Format & Test
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout code
@@ -194,8 +317,8 @@ jobs:
 
   java-check:
     name: Java Core Build & Test
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.java == 'true'
     steps:
       - name: Checkout code
@@ -226,8 +349,8 @@ jobs:
 
   java-integration:
     name: Java Core Integration Tests (BDD)
-    runs-on: ubuntu-latest
-    needs: [changes, java-check]
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, java-check]
     if: needs.changes.outputs.java == 'true'
     timeout-minutes: 10
     steps:
@@ -266,8 +389,8 @@ jobs:
 
   frontend-check:
     name: Frontend Lint, Test & Build
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.frontend == 'true'
     steps:
       - name: Checkout code
@@ -326,8 +449,8 @@ jobs:
 
   python-ci:
     name: Python Lint & Test
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
@@ -367,8 +490,8 @@ jobs:
   # substituem os builds nativos, apenas validam que a imagem também builda.
   docker-build-rust:
     name: Docker Build (Rust services)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     permissions:
       contents: read
       packages: write
@@ -439,8 +562,8 @@ jobs:
 
   docker-build-java:
     name: Docker Build (Java core)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.java == 'true'
     permissions:
       contents: read
@@ -487,8 +610,8 @@ jobs:
 
   docker-build-frontend:
     name: Docker Build (Frontend)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.frontend == 'true'
     permissions:
       contents: read
@@ -535,8 +658,8 @@ jobs:
 
   docker-build-python:
     name: Docker Build (Crew worker)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     permissions:
       contents: read
@@ -585,8 +708,8 @@ jobs:
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
     name: Docker Build (Script executor sidecar)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
@@ -620,8 +743,8 @@ jobs:
   # tests/e2e/** nunca disparava este job (achado ao mesclar a PR #122).
   e2e-integration:
     name: Integration E2E (Docker Compose + Mock LLM)
-    runs-on: ubuntu-latest
-    needs: [changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
     # Explícito e não ambíguo de propósito (em vez de depender do
     # comportamento implícito de success() com deps "skipped"): roda quando
     # `changes` teve sucesso, cada docker-build-* OU teve sucesso OU foi
