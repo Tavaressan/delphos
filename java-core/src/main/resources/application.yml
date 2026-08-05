@@ -25,12 +25,6 @@ spring:
     placeholders:
       "embedding.dimension": ${EMBEDDING_DIMENSIONS:768}
 
-  data:
-    redis:
-      host: ${REDIS_HOST:redis}
-      port: ${REDIS_PORT:6379}
-      timeout: 2000ms
-
   rabbitmq:
     host: ${RABBITMQ_HOST:rabbitmq}
     port: ${RABBITMQ_PORT:5672}
