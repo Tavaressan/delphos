@@ -31,6 +31,26 @@
 #   docker compose -f docker-compose.ci-runner.yml logs -f
 #   docker compose -f docker-compose.ci-runner.yml down
 
+# Paridade de namespace com o host (issues #347/#353, PRs #354/#356) — os
+# runners rodam em container mas usam o daemon Docker do host via docker.sock,
+# entao tudo que um job entrega ao daemon e interpretado no namespace do HOST:
+#
+#   - workdir: bind mount no MESMO caminho dos dois lados. O volume nomeado
+#     anterior (runner-work-N:/tmp/runner) nao tem caminho de host que o
+#     compose de um job pudesse referenciar — bind mounts como
+#     ./infrastructure/postgres/init.sql resolviam para /tmp/runner/... , que
+#     nao existe no host, e o Docker criava diretorio vazio no lugar do
+#     arquivo ("psql: init.sql: Is a directory").
+#   - network_mode: host. Em bridge, as portas que o compose de um job publica
+#     (8080, 8000, 3000, 15672) ficam no namespace do host e o "localhost" de
+#     dentro do runner e outro — a suite tests/e2e/runner.test.js falhava com
+#     "Backend nao ficou pronto" mesmo com o servico no ar.
+#
+# NAO TESTADO neste host: os runners do Mac estavam offline quando a correcao
+# foi escrita (so os da EC2 foram validados). Ao reativa-los, confirme que
+# /tmp/gh-runner-work-N esta no file sharing do Docker Desktop e rode o job
+# e2e-integration uma vez antes de confiar no gate.
+
 x-runner-common: &runner-common
   image: myoung34/github-runner:latest
   restart: unless-stopped
@@ -49,12 +69,13 @@ services:
       APP_LOGIN: Tavaressan
       APP_PRIVATE_KEY: ${GH_RUNNER_APP_PRIVATE_KEY}
       RUNNER_NAME: alfabra-local-mac-1
-      RUNNER_WORKDIR: /tmp/runner
+      RUNNER_WORKDIR: /tmp/gh-runner-work-1
       LABELS: alfabra-local
       AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESTCONTAINERS_RYUK_DISABLED: "true"
+    network_mode: host
     volumes:
-      - runner-work-1:/tmp/runner
+      - /tmp/gh-runner-work-1:/tmp/gh-runner-work-1
       - /var/run/docker.sock:/var/run/docker.sock
 
   gh-runner-alfabra-2:
@@ -67,14 +88,11 @@ services:
       APP_LOGIN: Tavaressan
       APP_PRIVATE_KEY: ${GH_RUNNER_APP_PRIVATE_KEY}
       RUNNER_NAME: alfabra-local-mac-2
-      RUNNER_WORKDIR: /tmp/runner
+      RUNNER_WORKDIR: /tmp/gh-runner-work-2
       LABELS: alfabra-local
       AGENT_TOOLSDIRECTORY: /opt/hostedtoolcache
       TESTCONTAINERS_RYUK_DISABLED: "true"
+    network_mode: host
     volumes:
-      - runner-work-2:/tmp/runner
+      - /tmp/gh-runner-work-2:/tmp/gh-runner-work-2
       - /var/run/docker.sock:/var/run/docker.sock
-
-volumes:
-  runner-work-1:
-  runner-work-2:
