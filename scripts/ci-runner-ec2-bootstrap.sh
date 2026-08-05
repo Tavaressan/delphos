@@ -92,11 +92,20 @@ cat > /usr/local/bin/gh-runner-start.sh <<WRAPPER
 # caminhos divergentes o daemon não encontra a origem, cria um diretório vazio
 # no lugar e o mount silenciosamente vira lixo — foi o que quebrou o job
 # e2e-integration em 100% dos runs (Postgres: "init.sql: Is a directory").
+#
+# "--network host" pelo mesmo motivo, aplicado à rede em vez do filesystem: as
+# portas que o docker-compose publica num job (8080 do core, 8000 do
+# embedding-service, 3000 do frontend, 15672 do RabbitMQ) são abertas pelo
+# daemon no namespace de rede do HOST. Em bridge, o "localhost" de dentro do
+# runner é outro namespace (172.17.x) e não enxerga nenhuma delas — a suíte
+# tests/e2e/runner.test.js, que roda no runner e busca localhost:8080, falhava
+# com "Backend não ficou pronto" mesmo com o Spring Boot no ar e saudável.
 set -euo pipefail
 INDEX="\$1"
 export APP_PRIVATE_KEY
 APP_PRIVATE_KEY="\$(cat /etc/gh-runner/app-key.pem)"
 exec docker run --rm --name "gh-runner-ec2-\${INDEX}" \\
+  --network host \\
   -e REPO_URL="${REPO_URL}" \\
   -e RUNNER_SCOPE=repo \\
   -e APP_ID="${APP_ID}" \\
