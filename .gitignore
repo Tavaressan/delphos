@@ -80,3 +80,14 @@ test_models.py
 # workers ao fazer merge/rebase de master
 AGENT_STATUS.md
 .claude/vetor/status/
+
+# Copias derivadas das skills/agents do Vetor com $CLAUDE_PLUGIN_ROOT ja
+# expandido para caminho absoluto da maquina local — nunca versionar: o path
+# e especifico de um SO/checkout e quebraria em qualquer outra maquina. A
+# copia canonica e .claude-plugin/vendor/vetor/ (versionada, com
+# $CLAUDE_PLUGIN_ROOT intacto, sincronizada por .claude-plugin/update-vendor.sh),
+# e e dela que as rotinas headless carregam o plugin via o marketplace
+# alfabra-vetor-vendored. Ignorado tambem para que nenhum commit automatico
+# volte a captura-las.
+.claude/skills/
+.claude/agents/
