@@ -164,99 +164,125 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Necessário para o dorny/paths-filter conseguir calcular o
-          # merge-base contra `base` em eventos push (long-lived branches).
+          # Necessário para o turbo `--affected` conseguir calcular o
+          # merge-base contra a branch base sem marcar tudo como afetado
+          # por engano (clone raso = "sufficient history" ausente, ver docs
+          # oficiais do Turborepo).
           fetch-depth: 0
 
-      # Filtro dedicado para o próprio workflow: mudanças em ci.yml não
-      # devem ser listadas dentro de cada filtro de módulo (o que os
-      # tornava auto-referentes), e sim combinadas via `||` no step de
-      # normalização abaixo. Ver issue #77.
-      - uses: dorny/paths-filter@v3
-        id: filter
-        # Nunca deixe uma falha de cálculo de diff no paths-filter
-        # derrubar o job silenciosamente (issue #87) — o step de
-        # normalização abaixo trata esse caso como fail-safe (roda tudo).
-        continue-on-error: true
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          # Base explícita para eventos push: quando `base` é o mesmo
-          # branch que disparou o push, o paths-filter compara contra o
-          # commit mais recente do mesmo branch antes do push (padrão
-          # "long-lived branch" documentado pela action). Ignorado em
-          # eventos pull_request (usa o branch base do PR automaticamente).
-          base: ${{ github.ref_name }}
-          filters: |
-            ci_workflow:
-              - '.github/workflows/ci.yml'
-            rust:
-              - 'rust-services/**'
-            java:
-              - 'java-core/**'
-            frontend:
-              - 'frontend/**'
-            python:
-              - 'python-services/**'
-            # Cobre a própria suíte E2E e os arquivos que o job
-            # e2e-integration usa diretamente — sem isso, uma mudança que só
-            # toca tests/e2e/** (ex.: novos cenários) faz rust/java/frontend/
-            # python ficarem todos 'false' e o job que deveria validar
-            # justamente essa mudança é pulado (achado ao mesclar a PR #122).
-            e2e:
-              - 'tests/e2e/**'
-              - 'docker-compose.yml'
-              - 'docker-compose.ci-ports.yml'
-              - 'scripts/reset.sh'
-              - 'scripts/setup.sh'
+          node-version: 20
+
+      # Detecção via `turbo ls --affected`, que só exige um `package.json`
+      # fino em cada módulo como marcador de fronteira de pacote (sem
+      # turbo.json com tasks, sem duplicar comandos que já existem abaixo
+      # neste workflow). Substitui o dorny/paths-filter para os 4 módulos
+      # do workspace (rust/java/frontend/python) — ver estudo de
+      # Turborepo x Deno Workspaces. `.github/workflows/ci.yml` e a suíte
+      # `tests/e2e/**` não pertencem a nenhum pacote do workspace, então
+      # continuam cobertos por diff manual no step de normalização abaixo.
+      - name: Detect affected packages (Turborepo)
+        id: filter
+        # Nunca deixe uma falha de cálculo de affected derrubar o job
+        # silenciosamente (issue #87) — o step de normalização abaixo trata
+        # esse caso como fail-safe (roda tudo).
+        continue-on-error: true
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Base explícita por tipo de evento, no mesmo espírito do que o
+          # dorny/paths-filter fazia: PR compara contra o SHA base do PR;
+          # push (long-lived branch) compara contra o commit anterior no
+          # mesmo branch. Fallback para HEAD~1 só no caso extremo de
+          # `before` vir zerado (primeiro push histórico do branch).
+          if [ "$GH_EVENT" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            BASE="$PUSH_BEFORE_SHA"
+          else
+            BASE="HEAD~1"
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "::notice::turbo ls --affected comparado contra $BASE (evento: $GH_EVENT)"
+
+          RAW=$(TURBO_SCM_BASE="$BASE" npx --yes turbo@2.10.8 ls --affected --output=json)
+          # Descarta a linha de banner ("• turbo x.y.z") impressa antes do JSON.
+          JSON=$(echo "$RAW" | sed -n '/^{/,$p')
+          echo "affected_json<<AFFECTED_EOF" >> "$GITHUB_OUTPUT"
+          echo "$JSON" >> "$GITHUB_OUTPUT"
+          echo "AFFECTED_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Normalize filter outputs (fail-safe)
         id: normalize
         if: always()
         env:
           OUTCOME: ${{ steps.filter.outcome }}
-          CI_WORKFLOW: ${{ steps.filter.outputs.ci_workflow }}
-          F_RUST: ${{ steps.filter.outputs.rust }}
-          F_JAVA: ${{ steps.filter.outputs.java }}
-          F_FRONTEND: ${{ steps.filter.outputs.frontend }}
-          F_PYTHON: ${{ steps.filter.outputs.python }}
-          F_E2E: ${{ steps.filter.outputs.e2e }}
+          BASE: ${{ steps.filter.outputs.base }}
+          AFFECTED_JSON: ${{ steps.filter.outputs.affected_json }}
         run: |
           set -euo pipefail
-          # Fail-safe: se o paths-filter falhou ou não conseguiu calcular o
-          # diff, NUNCA pule checks silenciosamente — rode todos os
-          # módulos por padrão (issue #87).
-          if [ "$OUTCOME" != "success" ]; then
-            echo "::warning::dorny/paths-filter falhou (outcome=$OUTCOME) - failing safe: rodando TODOS os módulos"
+
+          run_all() {
             echo "rust=true" >> "$GITHUB_OUTPUT"
             echo "java=true" >> "$GITHUB_OUTPUT"
             echo "frontend=true" >> "$GITHUB_OUTPUT"
             echo "python=true" >> "$GITHUB_OUTPUT"
             echo "e2e=true" >> "$GITHUB_OUTPUT"
+          }
+
+          # Fail-safe: se o turbo ls --affected falhou ou não conseguiu
+          # calcular o diff, NUNCA pule checks silenciosamente — rode todos
+          # os módulos por padrão (issue #87).
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::warning::turbo ls --affected falhou (outcome=$OUTCOME) - failing safe: rodando TODOS os módulos"
+            run_all
             exit 0
           fi
+
+          CHANGED=$(git diff --name-only "$BASE"...HEAD)
 
           # Mudança no próprio workflow: roda todos os módulos para
-          # validar o novo pipeline de ponta a ponta.
-          if [ "$CI_WORKFLOW" = "true" ]; then
+          # validar o novo pipeline de ponta a ponta. ci.yml não é um
+          # pacote do workspace, então o turbo nunca o marcaria como
+          # afetado por conta própria (issue #77).
+          if echo "$CHANGED" | grep -q '^\.github/workflows/ci\.yml$'; then
             echo "::notice::ci.yml alterado - rodando todos os módulos"
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "java=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "python=true" >> "$GITHUB_OUTPUT"
-            echo "e2e=true" >> "$GITHUB_OUTPUT"
+            run_all
             exit 0
           fi
 
-          echo "rust=$F_RUST" >> "$GITHUB_OUTPUT"
-          echo "java=$F_JAVA" >> "$GITHUB_OUTPUT"
-          echo "frontend=$F_FRONTEND" >> "$GITHUB_OUTPUT"
-          echo "python=$F_PYTHON" >> "$GITHUB_OUTPUT"
-          echo "e2e=$F_E2E" >> "$GITHUB_OUTPUT"
+          RUST=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='rust-services' for p in d['packages']['items']) else 'false')")
+          JAVA=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='java-core' for p in d['packages']['items']) else 'false')")
+          FRONTEND=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='frontend' for p in d['packages']['items']) else 'false')")
+          PYTHON=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='python-services/crew-worker' for p in d['packages']['items']) else 'false')")
+
+          # tests/e2e/** e os arquivos de infra que e2e-integration usa
+          # diretamente não pertencem a nenhum pacote do workspace turbo —
+          # continuam cobertos por diff manual (mesmo motivo da PR #122:
+          # sem isso, uma mudança só em tests/e2e/** faz todos os módulos
+          # ficarem 'false' e o job que deveria validar essa mudança é
+          # pulado).
+          E2E=false
+          if echo "$CHANGED" | grep -qE '^(tests/e2e/|docker-compose\.yml$|docker-compose\.ci-ports\.yml$|scripts/reset\.sh$|scripts/setup\.sh$)'; then
+            E2E=true
+          fi
+
+          echo "rust=$RUST" >> "$GITHUB_OUTPUT"
+          echo "java=$JAVA" >> "$GITHUB_OUTPUT"
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "python=$PYTHON" >> "$GITHUB_OUTPUT"
+          echo "e2e=$E2E" >> "$GITHUB_OUTPUT"
 
       - name: Sanity check filter outputs
         if: always()
         run: |
           set -euo pipefail
-          echo "Outcome do paths-filter: ${{ steps.filter.outcome }}"
+          echo "Outcome do turbo ls --affected: ${{ steps.filter.outcome }}"
           echo "rust=${{ steps.normalize.outputs.rust }}"
           echo "java=${{ steps.normalize.outputs.java }}"
           echo "frontend=${{ steps.normalize.outputs.frontend }}"
