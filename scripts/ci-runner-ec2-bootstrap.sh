@@ -81,6 +81,17 @@ cat > /usr/local/bin/gh-runner-start.sh <<WRAPPER
 # repassada ao docker via "-e APP_PRIVATE_KEY" sem valor inline — assim ela
 # nunca aparece no argv do docker/systemd (visível via ps/systemctl status),
 # só em /proc/<pid>/environ, que já é restrito a root/mesmo usuário.
+#
+# O workdir é montado no MESMO caminho dentro e fora do container
+# (/opt/gh-runner-work-N nos dois lados) — não use um caminho interno
+# diferente do caminho do host (issues #347/#353). O runner roda dentro de um
+# container mas usa o daemon Docker do HOST (docker.sock montado abaixo):
+# todo bind mount que um job criar (ex.: ./infrastructure/postgres/init.sql do
+# docker-compose.yml) é resolvido pelo compose para um caminho do workspace e
+# entregue ao daemon do host, que o interpreta no SEU próprio filesystem. Com
+# caminhos divergentes o daemon não encontra a origem, cria um diretório vazio
+# no lugar e o mount silenciosamente vira lixo — foi o que quebrou o job
+# e2e-integration em 100% dos runs (Postgres: "init.sql: Is a directory").
 set -euo pipefail
 INDEX="\$1"
 export APP_PRIVATE_KEY
@@ -92,11 +103,11 @@ exec docker run --rm --name "gh-runner-ec2-\${INDEX}" \\
   -e APP_LOGIN="${APP_LOGIN}" \\
   -e APP_PRIVATE_KEY \\
   -e RUNNER_NAME="alfabra-ec2-\${INDEX}" \\
-  -e RUNNER_WORKDIR=/tmp/runner \\
+  -e RUNNER_WORKDIR="/opt/gh-runner-work-\${INDEX}" \\
   -e LABELS=alfabra-local \\
   -e EPHEMERAL=true \\
   -e TESTCONTAINERS_RYUK_DISABLED=true \\
-  -v "/opt/gh-runner-work-\${INDEX}:/tmp/runner" \\
+  -v "/opt/gh-runner-work-\${INDEX}:/opt/gh-runner-work-\${INDEX}" \\
   -v /var/run/docker.sock:/var/run/docker.sock \\
   myoung34/github-runner:latest
 WRAPPER
