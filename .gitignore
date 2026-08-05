@@ -9,6 +9,7 @@ Thumbs.db
 # do gitignore (padrão com barra só casa diretórios) e foi commitado (#235).
 node_modules
 .next/
+.turbo
 dist/
 .env.local
 .env.*.local

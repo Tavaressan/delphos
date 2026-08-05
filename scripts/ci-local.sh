@@ -31,19 +31,23 @@ done
 
 cd "$WORKTREE"
 
-# ── 1. Detectar módulos alterados (espelha os globs do job `changes`) ────────
+# ── 1. Detectar módulos alterados via `turbo ls --affected` (mesmo motor do
+#      job `changes` no ci.yml — elimina a duplicação de detecção que
+#      motivou a adoção do Turborepo) ────────────────────────────────────────
 if $ALL; then
   RUST=true; JAVA=true; FRONTEND=true; PYTHON=true
 else
   CHANGED=$(git diff --name-only "$BASE"...HEAD)
-  RUST=false; JAVA=false; FRONTEND=false; PYTHON=false
-  echo "$CHANGED" | grep -q '^rust-services/'   && RUST=true
-  echo "$CHANGED" | grep -q '^java-core/'       && JAVA=true
-  echo "$CHANGED" | grep -q '^frontend/'        && FRONTEND=true
-  echo "$CHANGED" | grep -q '^python-services/' && PYTHON=true
-  # Mudança no próprio ci.yml: roda tudo (mesmo fail-safe do job `changes`, issue #87)
+  # Mudança no próprio ci.yml: roda tudo (mesmo fail-safe do job `changes`,
+  # issue #87) — ci.yml não é um pacote do workspace, o turbo não o veria.
   if echo "$CHANGED" | grep -q '^\.github/workflows/ci\.yml$'; then
     RUST=true; JAVA=true; FRONTEND=true; PYTHON=true
+  else
+    AFFECTED_JSON=$(TURBO_SCM_BASE="$BASE" npx --yes turbo@2.10.8 ls --affected --output=json | sed -n '/^{/,$p')
+    RUST=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='rust-services' for p in d['packages']['items']) else 'false')")
+    JAVA=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='java-core' for p in d['packages']['items']) else 'false')")
+    FRONTEND=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='frontend' for p in d['packages']['items']) else 'false')")
+    PYTHON=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='python-services/crew-worker' for p in d['packages']['items']) else 'false')")
   fi
 fi
 
