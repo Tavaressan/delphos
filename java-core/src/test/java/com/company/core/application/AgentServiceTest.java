@@ -400,4 +400,55 @@ public class AgentServiceTest {
                         () -> agentService.createAgent("Agente Invalido", file, tenantId))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    private byte[] createMockZipWithRawEntry(String mdContent, String entryName, String entryContent) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(bos)) {
+            if (mdContent != null) {
+                ZipEntry mdEntry = new ZipEntry("instructions.md");
+                zos.putNextEntry(mdEntry);
+                zos.write(mdContent.getBytes(StandardCharsets.UTF_8));
+                zos.closeEntry();
+            }
+            ZipEntry entry = new ZipEntry(entryName);
+            zos.putNextEntry(entry);
+            zos.write(entryContent.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+        return bos.toByteArray();
+    }
+
+    @Test
+    void createAgent_WithPathTraversalDocumentEntry_ThrowsIllegalArgumentException() throws Exception {
+        // Arrange (issue #275) - entryName de documento não pode escapar do prefixo do agente
+        String mdContent = "# Behavior Instructions";
+        byte[] zipBytes = createMockZipWithRawEntry(mdContent, "../evil.txt", "conteudo malicioso");
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "agent.zip", "application/zip", zipBytes);
+
+        UUID tenantId = UUID.randomUUID();
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.empty());
+        when(agentRepository.save(any(Agent.class))).thenAnswer(invocation -> {
+            Agent savedAgent = invocation.getArgument(0);
+            if (savedAgent.getId() == null) {
+                savedAgent.setId(UUID.randomUUID());
+            }
+            return savedAgent;
+        });
+        when(documentRepository.save(any(Document.class))).thenAnswer(invocation -> {
+            Document savedDoc = invocation.getArgument(0);
+            if (savedDoc.getId() == null) {
+                savedDoc.setId(UUID.randomUUID());
+            }
+            return savedDoc;
+        });
+
+        // Act & Assert
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> agentService.createAgent("Agente Malicioso", file, tenantId))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verify(minioClient, org.mockito.Mockito.never())
+                .putObject(org.mockito.ArgumentMatchers.argThat(args -> args.object().contains("evil.txt")));
+    }
 }
