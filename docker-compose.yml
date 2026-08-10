@@ -20,18 +20,6 @@ services:
       retries: 5
       start_period: 20s
 
-  redis:
-    image: redis:7-alpine
-    container_name: rag_redis
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
   minio:
     image: minio/minio:latest
     container_name: rag_minio
@@ -63,8 +51,6 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://alfabra-vector.vercel.app,https://*.vercel.app,http://localhost:[*]}
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -314,6 +300,5 @@ volumes:
   caddy_data:
   caddy_config:
   postgres_data:
-  redis_data:
   minio_data:
   rabbitmq_data:
