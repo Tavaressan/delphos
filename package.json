@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "private": true,
+  "packageManager": "npm@11.13.0",
   "workspaces": [
-    "frontend"
+    "frontend",
+    "rust-services",
+    "java-core",
+    "python-services/crew-worker"
   ],
   "scripts": {
     "test:e2e": "deno test -A --node-modules-dir=none tests/e2e/",
@@ -14,7 +18,8 @@
   "devDependencies": {
     "eslint": "^9.00.0",
     "eslint-config-next": "^16.2.9",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "turbo": "^2.10.8"
   },
   "dependencies": {
     "reversa": "^1.2.43"
