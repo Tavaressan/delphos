@@ -22,7 +22,6 @@ graph TD
         FE -->|HTTPS| CX[Caddy Proxy]
         CX -->|API REST| JC[Java Core API]
         
-        JC -->|Cache/Sessões| RD[Redis]
         JC -->|Dados/Metadados| PG[(PostgreSQL + pgvector)]
         JC -->|Uploads| MO[MinIO / S3]
         JC -.->|Enfileira Jobs| RMQ[RabbitMQ Broker]
@@ -75,7 +74,7 @@ A organização do código segue um padrão modular:
 ## 🚀 Destaques Tecnológicos
 
 - **Frontend**: Next.js (App Router), Tailwind CSS, Shadcn UI, TanStack Query, Framer Motion.
-- **Backend Core**: Java 21, Spring Boot, Spring Security (JWT), PostgreSQL + pgvector, Redis.
+- **Backend Core**: Java 21, Spring Boot, Spring Security (JWT), PostgreSQL + pgvector.
 - **Processamento**: Rust para processamento paralelo e eficiente de dados.
 - **IA**: Integração com Google Vertex AI / Gemini 2.5 Pro para geração de texto e embeddings.
 - **Infraestrutura**: Orquestração via Docker Compose, MinIO para armazenamento de objetos e Nginx como Reverse Proxy.
