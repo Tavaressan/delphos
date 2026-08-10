@@ -201,6 +201,44 @@ class ExecutionControllerTest {
     }
 
     @Test
+    void submitExecution_withoutTenantId_usesDefaultZeroTenantIdInsteadOfRandom() throws Exception {
+        // issue #313: omitir tenantId deve usar o mesmo UUID zero padrão dos demais
+        // controllers (AgentController, ChatController), não um UUID aleatório - do
+        // contrário a execução fica órfã e não aparece em GET /api/executions sem
+        // query param (que também usa o UUID zero como default).
+        User admin = new User();
+        admin.setId(UUID.randomUUID());
+        admin.setUsername("admin");
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(admin));
+
+        when(conversationRepository.save(any())).thenAnswer(inv -> {
+            Conversation c = inv.getArgument(0);
+            c.setId(UUID.randomUUID());
+            return c;
+        });
+
+        when(executionRepository.save(any())).thenAnswer(inv -> {
+            AgentExecution e = inv.getArgument(0);
+            if (e.getId() == null) {
+                e.setId(UUID.randomUUID());
+            }
+            return e;
+        });
+
+        ArgumentCaptor<AgentExecution> executionCaptor = ArgumentCaptor.forClass(AgentExecution.class);
+
+        mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"Olá\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value("00000000-0000-0000-0000-000000000000"));
+
+        verify(executionRepository, org.mockito.Mockito.atLeastOnce()).save(executionCaptor.capture());
+        assertThat(executionCaptor.getValue().getTenantId())
+                .isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000000"));
+    }
+
+    @Test
     void listExecutions_withTenantId_returnsExecutionsForTenant() throws Exception {
         UUID tenantId = UUID.randomUUID();
         AgentExecution execution = new AgentExecution();

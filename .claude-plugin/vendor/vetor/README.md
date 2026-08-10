@@ -76,7 +76,7 @@ Sobre o servidor `docker`:
 |---------|----------|
 | `/vetor [--force]` | Porta de entrada — inicializa e configura o ambiente do Vetor no projeto-alvo |
 | `/vetor:worktree-create <type> <slug> [issue#]` | Primitivo headless — cria worktree isolado sem prompts, todos os parâmetros via args |
-| `/vetor:worktree-ship [issue#]` | Pipeline headless: test local → push → PR draft → CI watch → merge → sync root → cleanup |
+| `/vetor:worktree-ship [issue#]` | Pipeline headless: test local → push → PR draft → CI watch → code review consultivo → merge → sync root → cleanup |
 | `/vetor:fix-loop <descrição>` | Loop autônomo reproduce → fix → rebuild → test (máx. 5 iterações) |
 | `/vetor:backlog [tema]` | Ideação guiada ancorada em docs do projeto → batch de issues GitHub com aprovação humana |
 | `/vetor:guardian [--cron]` | Audit + auto-fix de gaps que o pre-commit não cobre (JSON, migrations, worktrees, Dependabot) |
@@ -214,14 +214,18 @@ Primitivos compostos por skills de nível superior. A Fase 4 do coordinator desp
 
 **`agents/issue-worker.md`** — subagente nativo do plugin (não uma skill), despachado pelo `issue-coordinator` uma vez por issue. Tem `tools` restritos e nunca faz `git push`, `gh pr create/merge/ready` por instrução; pré-carrega a skill `fix-loop-agent` via campo `skills:`. O que é aplicado por hook, e não por instrução: push para branch protegida, push/PR de worker não-GREEN, escrita fora do worktree e encerramento sem status file (ver "Hooks").
 
+**`agents/code-review.md`** — subagente nativo de revisão de código, despachado pelo `worktree-ship` (passo 8.5) depois do CI verde e antes da checagem de review humano. Substitui o antigo GitHub Action `code-review@claude-code-plugins` (desativado por cobrar por execução independente do risco/tamanho da PR). Tools restritos a leitura (`Bash`/`Read`/`Grep`/`Glob`, sem `Write`/`Edit`); publica achados como comentário na PR via `gh pr comment` e **nunca bloqueia o merge** — a decisão de agir sobre um achado é sempre humana. Só roda quando o diff tocou algum módulo real (mesmo filtro do passo 3 do `worktree-ship`), então PRs só de docs/lockfile/config não pagam o custo da revisão.
+
 ### Hooks
 
 Hooks disparam **dentro dos subagentes** (o payload traz `agent_id`/`agent_type`), então são o único
 mecanismo que aplica uma política de fato — instrução em prompt o agente pode ignorar.
 
+**⚠️ Cobertura por plataforma:** A tabela abaixo lista os hooks do **Claude Code**. A cobertura no Antigravity é reduzida e no Codex é estruturalmente equivalente mas não validada em produção (ver seções "Compatibilidade com Antigravity" e "Compatibilidade com OpenAI Codex" abaixo).
+
 | Evento | Matcher | Script | O que faz |
 |--------|---------|--------|-----------|
-| `PreToolUse` | `Bash\|Edit\|Write` | `safety-check.ts` | Barra push para branch protegida; barra push/PR de worker não-GREEN; barra escrita fora do worktree (exceto o status file) |
+| `PreToolUse` | `Bash\|Edit\|Write` | `safety-check.ts` / `safety-check.sh` | Barra push para branch protegida; barra push/PR de worker não-GREEN; barra escrita fora do worktree (exceto o status file); em `Edit`/`Write`, correlaciona `agent_id` com o worktree resolvido para detectar cwd contaminado entre workers em paralelo (issue #63) |
 | `PostToolUse` | `Edit\|Write` | `check-edit.ts` | Roda o typecheck no arquivo editado e injeta o erro no contexto do agente |
 | `SubagentStop` | `vetor:issue-worker` | `check-status.ts` | Impede o worker de encerrar sem status file em estado terminal |
 | `SessionStart` | — | `session-check.ts` | Avisa se o projeto ainda não rodou `/vetor` |
@@ -231,6 +235,87 @@ O `check-edit.ts` existe para poupar iterações do fix-loop: sem ele, um erro d
 só apareceria ao **rodar o teste**, e cada descoberta dessas queima uma das 5 iterações do worker.
 Com ele, o erro volta junto com o resultado do próprio `Edit`. Só age em `.ts`/`.tsx`, tem timeout de
 20s e **fica em silêncio quando não há erro**.
+
+#### Compatibilidade com Antigravity
+
+**Claude Code** (`hooks/hooks.json`):
+- ✅ `PreToolUse`, `PostToolUse`, `SubagentStop`, `SessionStart`, `WorktreeCreate`
+- **Proteção**: completa. Bloqueia escrita fora do worktree, obriga status file em estado terminal, injeta diagnostics de edição
+
+**Antigravity** (`hooks.json` na raiz):
+- ✅ `PreToolUse` (suportado e configurado)
+- ⚠️ `PostToolUse` (evento existe no Antigravity, mas **não está configurado** no `hooks.json`)
+- ❌ `SubagentStop` (não existe. Antigravity tem um evento `Stop` genérico, mas não específico a subagentes; não é equivalente)
+- ❌ `SessionStart` (não suportado)
+- ❌ `WorktreeCreate` (não suportado)
+- **Proteção**: reduzida. Apenas prévia de push/escrita via `PreToolUse`; **sem** diagnostics de edição ou garantia de status file
+
+Para usar o Vetor com Antigravity, a restrição crítica é que workers podem escrever fora do worktree (além do `status file`), encerrar sem preenchê-lo, e não recebem feedback de tipo. Recomenda-se manter a invocação manual (`/vetor:fix-loop`, `/vetor:worktree-ship`) e **não usar `/vetor:coordinator`** com dispatch em background até que Antigravity suporte os eventos faltantes.
+
+#### Compatibilidade com OpenAI Codex
+
+Investigação feita em 2026-07-20 contra a documentação pública do Codex CLI
+([`developers.openai.com/codex`](https://developers.openai.com/codex/cli), espelhada em
+`learn.chatgpt.com/docs/*`) — sem acesso a uma instância real do `codex` CLI neste ambiente para
+validar o payload exato dos hooks. Trate o que segue como verificado **contra a doc**, não contra
+comportamento em produção; valide antes de mergear em um projeto que dependa disto.
+
+Ao contrário do Antigravity, o Codex tem hooks de ciclo de vida com o **mesmo formato de arquivo**
+do Claude Code (`hooks.json` com `hooks.<Evento>[].matcher`/`hooks[].type: "command"`) e uma lista
+de eventos mais completa — inclusive `SubagentStop`, que falta no Antigravity:
+
+- ✅ `SessionStart`, `PreToolUse`, `PostToolUse`, `SubagentStop`, `SubagentStart`, `Stop`,
+  `UserPromptSubmit`, `PermissionRequest`, `PreCompact`, `PostCompact`
+- ❌ `WorktreeCreate` (não existe equivalente — nenhum evento cobre "worktree acabou de ser
+  criado")
+- `PreToolUse` bloqueia de fato: exit code `2` (mesmo contrato do Claude Code) ou JSON
+  `{"hookSpecificOutput": {"permissionDecision": "deny"}}`
+
+**Reuso dos scripts.** `hooks/hooks-codex.json` reaproveita os mesmos scripts Deno do Claude Code
+(`safety-check.ts`, `check-edit.ts`, `check-status.ts`, `session-check.ts`) sem duplicar lógica —
+só troca `${CLAUDE_PLUGIN_ROOT}` por `${PLUGIN_ROOT}` (variável equivalente que o Codex expõe para
+hooks de plugin). **Não verificado:** se o JSON que o Codex envia no stdin usa os mesmos nomes de
+campo que o Claude Code (`tool_name`, `tool_input.command`, `tool_input.file_path`, `cwd`,
+`agent_type`, `agent_id`) — a doc pública não detalha o schema campo a campo. Sem isso confirmado
+contra uma sessão real, os scripts podem rodar sem erro e simplesmente não encontrar os campos
+esperados (fail-open, não fail-closed — os scripts saem com código 0 em JSON não reconhecido).
+
+**Skills.** O formato é idêntico ao Claude Code (`SKILL.md` com frontmatter `name`/`description`),
+e o manifesto do plugin Codex (`.codex-plugin/plugin.json`) tem um campo `skills` que aceita
+apontar para um diretório — em tese, o mesmo `skills/` deste repositório serviria sem duplicação.
+**Na prática, isso está bloqueado**: 8 dos 9 arquivos de skill (todos exceto `fix-loop-agent`, que
+tem esse problema por dependência) referenciam `$CLAUDE_PLUGIN_ROOT` no corpo do texto, variável
+que o Codex não define. `.codex-plugin/plugin.json` **deliberadamente não declara** o campo
+`skills` até essa referência ser tornada agnóstica de runtime (issue de acompanhamento) — declarar
+teria dado falsa impressão de skills funcionais que na verdade falham ao resolver um path.
+
+**Subagentes.** Definidos como arquivos TOML (`name`, `description`, `developer_instructions`,
+`model`, `sandbox_mode`, `mcp_servers`, `skills.config`) em `.codex/agents/` (projeto) ou
+`~/.codex/agents/` (pessoal) — não em Markdown como `agents/issue-worker.md`. Dois gaps reais:
+
+- **Sem lista de tools por agente.** O Claude Code restringe `tools:` por subagente; o Antigravity
+  tem `toolNames`. O Codex não documenta um allowlist equivalente — o subagente herda todas as
+  tools da sessão pai.
+- **Sem isolamento de worktree nativo.** `isolation: worktree` (Claude Code) não tem equivalente —
+  subagentes herdam o cwd/sandbox da sessão pai. O template `agents/issue-worker/codex.toml`
+  instrui o worker a `cd` para o worktree recebido no prompt, mas isso é reforçado só por
+  instrução, nunca por hook (nenhum evento de hook carrega o cwd do subagente antes dele agir).
+
+**Bundling via plugin.** O manifesto `.codex-plugin/plugin.json` tem campos para `skills`,
+`hooks`, `mcpServers` e `apps`, mas **nenhum para subagentes** — não há como o plugin instalar um
+`.toml` de agente automaticamente. `agents/issue-worker/codex.toml` e
+`agents/code-review/codex.toml` neste repositório são **templates de referência**: para usar, copie
+manualmente para `.codex/agents/` no projeto-alvo. O `/vetor` (porta de entrada) ainda não
+automatiza essa cópia.
+
+**Resumo da proteção:** guards de segurança têm parceridade estrutural com o Claude Code (mesmo
+formato de hook, mesmos scripts, cobertura de eventos igual ou maior), mas dependem de validação
+de payload não feita nesta investigação. Skills não funcionam sem edição prévia. Subagentes
+funcionam, mas sem tool allowlist e sem isolamento de worktree garantido por hook — a mesma classe
+de risco documentada para o Antigravity (issue #57: cwd mal resolvido contaminando a raiz
+compartilhada), só que sem o guard `PreToolUse` de escrita fora do worktree para pegar o caso,
+porque esse guard depende do payload não verificado. **Não usar `/vetor:coordinator` com dispatch
+em background no Codex** até essa validação ser feita contra uma sessão real.
 
 ### Convenções do projeto (`.claude/rules/vetor/`)
 
@@ -276,6 +361,8 @@ Para habilitar, adicione ao `.claude/settings.json` do projeto (ou exporte no sh
 }
 ```
 
+**Limitação conhecida: cwd contaminado entre workers paralelos (issue #63).** Com múltiplos `vetor:issue-worker` despachados em paralelo pelo `issue-coordinator`, já foi observado o `cwd` recebido por `PreToolUse` resolver para o worktree de **outro** worker ativo na mesma sessão — não uma cwd inválida (isso `isLinked` já cobre, issue #57), mas um worktree real, só que do agente errado. Investigação confirmou que `safety-check.ts` não tem estado de módulo compartilhado entre invocações (cada evento de hook spawna um processo `deno run` novo, conforme `hooks/hooks.json`), o que descarta uma causa dentro do plugin — o payload `cwd` em si chega inconsistente do harness sob paralelismo. Como o plugin não controla esse payload, a mitigação implementada é uma segunda camada em `checkAgentBinding` (`scripts/safety-check.ts`): correlaciona `agent_id` (estável por instância de subagente, ao contrário de `agent_type`) com o worktree resolvido na primeira chamada de `Edit`/`Write`; uma mudança de worktree para o mesmo `agent_id` é bloqueada com mensagem específica. Não elimina a causa raiz (fora do controle do plugin), mas impede que a escrita vaze silenciosamente para o worktree errado.
+
 ---
 
 ## Referência
@@ -287,7 +374,7 @@ Para habilitar, adicione ao `.claude/settings.json` do projeto (ou exporte no sh
 | Iterações do fix-loop | 5 |
 | Retentativas de CI no ship | 3 |
 | Timeout global do coordinator | 90 min |
-| Workers simultâneos por rodada do coordinator | 5 (`maxConcurrentWorkers` em `.claude/vetor/config.json`) |
+| Workers simultâneos por rodada do coordinator | Perguntado por sessão (padrão: 5, máx: 8) |
 
 ### Custo de tokens
 
@@ -303,10 +390,19 @@ Alavancas para manter o custo baixo no dispatch paralelo:
 
 ```
 .claude-plugin/
-├── plugin.json              # manifesto do plugin
+├── plugin.json              # manifesto do plugin (Claude Code)
 └── marketplace.json         # listagem do marketplace
+.codex-plugin/
+└── plugin.json              # manifesto do plugin (Codex) — sem campo "skills" (ver Compatibilidade)
 agents/
-└── issue-worker.md          # subagente nativo — worker isolado despachado pelo coordinator
+├── issue-worker.md          # subagente nativo (Claude Code) — worker isolado despachado pelo coordinator
+├── issue-worker/
+│   ├── agent.json           # subagente nativo (Antigravity)
+│   └── codex.toml           # template de subagente (Codex) — copiar para .codex/agents/
+├── code-review.md           # subagente nativo (Claude Code) — revisão consultiva despachada pelo worktree-ship
+└── code-review/
+    ├── agent.json           # subagente nativo (Antigravity)
+    └── codex.toml           # template de subagente (Codex) — copiar para .codex/agents/
 skills/
 ├── shared/references/
 │   ├── module-test-map.template.md

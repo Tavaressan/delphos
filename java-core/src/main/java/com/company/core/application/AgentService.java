@@ -17,6 +17,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -94,7 +96,9 @@ public class AgentService {
         ParsedZip parsed = parseZip(zipBytes);
 
         agent.setSystemInstructions(parsed.systemInstructions);
-        agent.setManifestConfig(parsed.manifestConfig);
+        if (parsed.manifestConfig != null) {
+            agent.setManifestConfig(parsed.manifestConfig);
+        }
         agent = agentRepository.save(agent);
 
         agent = uploadZipAndProcessDocuments(agent, zipBytes, agent.getTenantId());
@@ -223,6 +227,25 @@ public class AgentService {
      * Deriva o nome da tool a partir do basename do arquivo (ex.: {@code tools/sum_values.py}
      * -> {@code sum_values}), validando que o resultado é um identificador seguro.
      */
+    /**
+     * Valida que o nome de uma entrada de documento do ZIP (PDF/DOCX/TXT/MD) não escapa do
+     * prefixo do agente ao ser composto na chave do objeto no MinIO (issue #275 - path
+     * traversal). Segue o mesmo princípio de validação estrita já usado em
+     * {@link #toolNameFromEntry(String)} para entradas de {@code tools/}.
+     */
+    private void validateDocumentEntryName(String entryName) {
+        String normalized = entryName.replace('\\', '/');
+        if (normalized.isEmpty()
+                || normalized.startsWith("/")
+                || normalized.equals("..")
+                || normalized.startsWith("../")
+                || normalized.contains("/../")
+                || normalized.endsWith("/..")) {
+            throw new IllegalArgumentException(
+                    "Nome de entrada de documento inválido (path traversal detectado): '" + entryName + "'.");
+        }
+    }
+
     private String toolNameFromEntry(String entryName) {
         String normalized = entryName.replace('\\', '/');
         String fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
@@ -260,6 +283,7 @@ public class AgentService {
                     // We only process knowledge documents like PDF, DOCX, TXT, MD
                     String ext = getFileExtension(entryName).toLowerCase();
                     if (Arrays.asList("pdf", "docx", "txt", "md").contains(ext)) {
+                        validateDocumentEntryName(entryName);
                         ByteArrayOutputStream bos = new ByteArrayOutputStream();
                         byte[] buffer = new byte[1024];
                         int len;
@@ -297,12 +321,10 @@ public class AgentService {
                         jobPayload.put("tenant_id", tenantId.toString());
                         jobPayload.put("file_type", ext);
 
-                        rabbitTemplate.convertAndSend(
-                                "agent.execution.exchange",
-                                "document.ingestion.jobs",
-                                objectMapper.writeValueAsString(jobPayload)
-                        );
-                        log.info("Published document ingestion job for doc: {} of agent: {}", doc.getId(), agent.getId());
+                        String payload = objectMapper.writeValueAsString(jobPayload);
+                        UUID docId = doc.getId();
+                        UUID agentId = agent.getId();
+                        publishDocumentIngestionJobAfterCommit(payload, docId, agentId);
                     }
                 }
                 zis.closeEntry();
@@ -310,6 +332,36 @@ public class AgentService {
         }
 
         return agent;
+    }
+
+    /**
+     * Publica o job de ingestão no RabbitMQ apenas após o commit da transação JPA externa
+     * (issue #321). O RabbitTemplate não está amarrado à transação do banco: publicar dentro
+     * dela permite que o ingestion-worker processe a mensagem antes do commit (documento
+     * ainda não visível) ou após um rollback (documento nunca chega a existir). Quando há uma
+     * transação ativa, o envio é adiado via {@link TransactionSynchronizationManager} e só
+     * ocorre em {@code afterCommit}; fora de uma transação (ex.: chamada direta em teste),
+     * publica imediatamente.
+     */
+    private void publishDocumentIngestionJobAfterCommit(String payload, UUID docId, UUID agentId) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    rabbitTemplate.convertAndSend(
+                            "agent.execution.exchange",
+                            "document.ingestion.jobs",
+                            payload);
+                    log.info("Published document ingestion job for doc: {} of agent: {}", docId, agentId);
+                }
+            });
+        } else {
+            rabbitTemplate.convertAndSend(
+                    "agent.execution.exchange",
+                    "document.ingestion.jobs",
+                    payload);
+            log.info("Published document ingestion job for doc: {} of agent: {}", docId, agentId);
+        }
     }
 
     private String getFileExtension(String fileName) {
