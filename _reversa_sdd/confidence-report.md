@@ -8,12 +8,12 @@
 
 | Nível | Quantidade | Percentual |
 |-------|-----------|------------|
-| 🟢 CONFIRMADO | 76 | 87% |
+| 🟢 CONFIRMADO | 77 | 89% |
 | 🟡 INFERIDO   | 9 | 10% |
-| 🔴 LACUNA     | 2 | 2% |
+| 🔴 LACUNA     | 1 | 1% |
 | **Total**     | 87 | 100% |
 
-**Confiança geral:** 93%
+**Confiança geral:** 94%
 
 ---
 
@@ -21,7 +21,7 @@
 
 | Spec | 🟢 | 🟡 | 🔴 | Confiança |
 |------|----|----|-----|-----------|
-| `sdd/frontend` | 12 | 1 | 2 | 83% |
+| `sdd/frontend` | 13 | 1 | 1 | 86% |
 | `sdd/nucleo-java` | 16 | 0 | 0 | 100% |
 | `sdd/servicos-rust` | 20 | 0 | 0 | 100% |
 | `sdd/infraestrutura` | 17 | 0 | 0 | 100% |
@@ -34,8 +34,7 @@
 Itens que permaneceram sem confirmação após a revisão:
 
 ### Frontend
-- **Abordagem de renderização principal (SSR vs Client)** — Usuário não soube informar. Necessita investigação técnica.
-  - Pergunta correspondente: `questions.md#pergunta-1`
+- (Nenhuma lacuna pendente)
 
 ### Core-Java
 - **Tratamento de lock JPA** — Usuário não soube informar.
@@ -58,3 +57,4 @@ Itens que permaneceram sem confirmação após a revisão:
 | De | Para | Afirmação | Evidência |
 |----|------|-----------|-----------|
 | 🔴 | 🟢 | Refresh de token e RBAC no frontend | Usuário confirmou que funcionalidades ainda não foram implementadas |
+| 🔴 | 🟢 | Abordagem de renderização principal (SSR vs Client) | ADR criada com decisão por SSR Seletivo |
