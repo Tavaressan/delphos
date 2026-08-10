@@ -351,18 +351,7 @@ impl RabbitMQManager {
 
         match self.execute_rag(&job, db_pool, authenticator).await {
             Ok((_response_text, chunks)) => {
-                let results = chunks
-                    .into_iter()
-                    .map(|c| {
-                        let chunk_id_str = c.id.as_str().unwrap_or("");
-                        let chunk_id = uuid::Uuid::parse_str(chunk_id_str).unwrap_or_default();
-                        DelegatedChunkData {
-                            chunk_id,
-                            text: c.content,
-                            score: c.score,
-                        }
-                    })
-                    .collect();
+                let results = chunks_to_delegated(chunks);
 
                 let event = DelegatedResponseEvent {
                     execution_id: job.execution_id,
@@ -712,5 +701,73 @@ impl RabbitMQManager {
             )
             .await?;
         Ok(())
+    }
+}
+
+/// Converte os `ChunkData` retornados pela busca RAG em `DelegatedChunkData`,
+/// descartando (e logando) qualquer chunk cujo `id` não seja uma string ou não
+/// seja um UUID válido, em vez de silenciosamente colapsar para um UUID nulo.
+fn chunks_to_delegated(chunks: Vec<ChunkData>) -> Vec<DelegatedChunkData> {
+    chunks
+        .into_iter()
+        .filter_map(
+            |c| match c.id.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+                Some(chunk_id) => Some(DelegatedChunkData {
+                    chunk_id,
+                    text: c.content,
+                    score: c.score,
+                }),
+                None => {
+                    eprintln!(
+                        "WARN: chunk descartado - id ausente ou invalido (esperado UUID): {:?}",
+                        c.id
+                    );
+                    None
+                }
+            },
+        )
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunks_to_delegated_keeps_valid_uuid_chunks() {
+        let valid_id = uuid::Uuid::new_v4();
+        let chunks = vec![ChunkData {
+            id: serde_json::Value::String(valid_id.to_string()),
+            content: "hello".to_string(),
+            score: 0.9,
+        }];
+
+        let result = chunks_to_delegated(chunks);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].chunk_id, valid_id);
+    }
+
+    #[test]
+    fn chunks_to_delegated_discards_invalid_or_missing_id_instead_of_nil_uuid() {
+        let chunks = vec![
+            ChunkData {
+                id: serde_json::Value::String("not-a-uuid".to_string()),
+                content: "invalid".to_string(),
+                score: 0.5,
+            },
+            ChunkData {
+                id: serde_json::Value::Null,
+                content: "missing".to_string(),
+                score: 0.5,
+            },
+        ];
+
+        let result = chunks_to_delegated(chunks);
+
+        // Nenhum chunk com id invalido deve ser silenciosamente substituido
+        // por um UUID nulo indistinguivel de um id legitimo.
+        assert!(result.is_empty());
+        assert!(!result.iter().any(|c| c.chunk_id.is_nil()));
     }
 }

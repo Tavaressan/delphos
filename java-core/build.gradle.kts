@@ -21,7 +21,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    implementation("org.springframework.boot:spring-boot-starter-data-redis")
     implementation("org.springframework.boot:spring-boot-starter-amqp")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
@@ -33,10 +32,10 @@ dependencies {
     testImplementation(platform("org.testcontainers:testcontainers-bom:1.20.4"))
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.testcontainers:junit-jupiter")
-    testImplementation("io.cucumber:cucumber-java:7.34.4")
-    testImplementation("io.cucumber:cucumber-spring:7.34.4")
-    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.4")
-    testImplementation("org.junit.platform:junit-platform-suite:6.1.1")
+    testImplementation("io.cucumber:cucumber-java:7.34.6")
+    testImplementation("io.cucumber:cucumber-spring:7.34.6")
+    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.6")
+    testImplementation("org.junit.platform:junit-platform-suite:6.1.2")
 }
 
 tasks.named<Test>("test") {
