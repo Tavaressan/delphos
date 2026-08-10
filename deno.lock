@@ -23,6 +23,7 @@
     "npm:reversa@^1.2.43": "1.2.43_@types+node@20.19.43",
     "npm:tailwind-merge@^2.3.0": "2.6.1",
     "npm:tailwindcss@^3.4.1": "3.4.19_tsx@4.23.0",
+    "npm:turbo@^2.10.8": "2.10.8",
     "npm:typescript@5": "5.9.3",
     "npm:typescript@^5.9.3": "5.9.3"
   },
@@ -574,6 +575,36 @@
         "@swc/counter",
         "tslib"
       ]
+    },
+    "@turbo/darwin-64@2.10.8": {
+      "integrity": "sha512-po+7rfJfUnFXjWlcoN2RwhErgzCdRtBc1T26vYPcywHlggmCQiQe1uWaE4j+BibI2uY9/2pDoFzMN0rmSaPFOw==",
+      "os": ["darwin"],
+      "cpu": ["x64"]
+    },
+    "@turbo/darwin-arm64@2.10.8": {
+      "integrity": "sha512-+zB2btDJ00lnPRuqOvpVvgl4x34k/djZQGZTTCfjn7JgNCl8QFY5Njo5+dqkY1g/+9gbbsnAvWm9CmJg9ebcXA==",
+      "os": ["darwin"],
+      "cpu": ["arm64"]
+    },
+    "@turbo/linux-64@2.10.8": {
+      "integrity": "sha512-K1dxqiVisyN7cViVsfQLs6xscQbYuI8aO2nbUhFURDACgEDfZRdP/b4CCxeosBJpcMfhYyiibWqJorCnvz9kKg==",
+      "os": ["android", "linux"],
+      "cpu": ["x64"]
+    },
+    "@turbo/linux-arm64@2.10.8": {
+      "integrity": "sha512-Gi77ibVnrE1fEmvr+/wBD/yvRqhwp/RQuCp2+//lv1U1wNFFyVg0V7Wj8FG9FXPFAw5QHReo8rxc9+wBSDZjzA==",
+      "os": ["android", "linux"],
+      "cpu": ["arm64"]
+    },
+    "@turbo/windows-64@2.10.8": {
+      "integrity": "sha512-znnLO1haJPYTHoKMKwlAvlkjRiYbbhBzME6wIGaMd+fwir23U6jVd1ecaTWWi1fbnRVqxMfgDBKseQ/hLKb83g==",
+      "os": ["win32"],
+      "cpu": ["x64"]
+    },
+    "@turbo/windows-arm64@2.10.8": {
+      "integrity": "sha512-VN30vh3b3Czh2WzYHNTfF1FE0YMZ5aHsLO8dBMGHJewA6792wX6iJR8ZxlzFW6WdOu0gEAKIvlYhfyT81Wkm4Q==",
+      "os": ["win32"],
+      "cpu": ["arm64"]
     },
     "@tybys/wasm-util@0.10.3": {
       "integrity": "sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==",
@@ -4051,6 +4082,18 @@
       ],
       "bin": true
     },
+    "turbo@2.10.8": {
+      "integrity": "sha512-9+8YX5QOkGXzZxcIykTHgaooRHGMWO+jfdyRK0o+rN0U7hBIig2MrJ8r/aNzIPDPhdA73SGb0O+tIztaModTMg==",
+      "optionalDependencies": [
+        "@turbo/darwin-64",
+        "@turbo/darwin-arm64",
+        "@turbo/linux-64",
+        "@turbo/linux-arm64",
+        "@turbo/windows-64",
+        "@turbo/windows-arm64"
+      ],
+      "bin": true
+    },
     "type-check@0.4.0": {
       "integrity": "sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==",
       "dependencies": [
@@ -4364,8 +4407,8 @@
       "dependencies": [
         "npm:eslint-config-next@^16.2.9",
         "npm:eslint@9",
-        "npm:pg@^8.11.5",
         "npm:reversa@^1.2.43",
+        "npm:turbo@^2.10.8",
         "npm:typescript@^5.9.3"
       ]
     },

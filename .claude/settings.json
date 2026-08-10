@@ -1,5 +1,6 @@
 {
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
       "Bash(find:*)",
       "Bash(grep:*)",
@@ -42,7 +43,15 @@
       "Bash(gh label create:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr list:*)",
-      "Bash(gh pr view:*)"
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(mkdir:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(ssh-keygen:*)",
+      "Bash(aws ec2-instance-connect:*)",
+      "Agent(vetor:issue-worker)",
+      "Agent(vetor:code-review)"
     ],
     "deny": [
       "Bash(gh pr merge:*)",
@@ -55,7 +64,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "CWD=$(pwd); MAIN=$(git worktree list 2>/dev/null | awk 'NR==1{print $1}'); if [ -n \"$MAIN\" ] && [ \"$CWD\" != \"$MAIN\" ]; then HAS=false; git diff --quiet 2>/dev/null || HAS=true; git diff --cached --quiet 2>/dev/null || HAS=true; git ls-files --others --exclude-standard 2>/dev/null | grep -q . && HAS=true; if [ \"$HAS\" = true ]; then git add -A && git commit -m 'wip: auto-snapshot antes de encerrar sessão' 2>/dev/null && echo '{\"systemMessage\": \"WIP commitado automaticamente na worktree\"}'; fi; fi || true",
+            "command": "GITDIR=$(git rev-parse --git-dir 2>/dev/null); COMMON=$(git rev-parse --git-common-dir 2>/dev/null); if [ -n \"$GITDIR\" ] && [ \"$GITDIR\" != \"$COMMON\" ]; then HAS=false; git diff --quiet 2>/dev/null || HAS=true; git diff --cached --quiet 2>/dev/null || HAS=true; git ls-files --others --exclude-standard 2>/dev/null | grep -q . && HAS=true; if [ \"$HAS\" = true ]; then git add -A && git commit -m 'wip: auto-snapshot antes de encerrar sessão' 2>/dev/null && echo '{\"systemMessage\": \"WIP commitado automaticamente na worktree\"}'; fi; fi || true",
             "timeout": 30,
             "statusMessage": "Verificando mudanças não commitadas na worktree..."
           }
