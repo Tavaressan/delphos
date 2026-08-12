@@ -1,0 +1,60 @@
+name: GHCR Retention
+
+# O ci.yml publica uma tag :sha de cada imagem a cada PR (issue #203) e nunca
+# remove nada. O plano Pro inclui 2 GB de storage para GitHub Packages e
+# repositórios privados consomem essa cota — "any usage beyond the included
+# amounts is billed to your account"
+# (docs.github.com/en/billing/concepts/product-billing/github-packages).
+# Um único conjunto de tags soma ~2,9 GB descomprimido, então sem retenção o
+# storage cresce indefinidamente e é cobrado.
+#
+# Transferência puxada por Actions no mesmo repositório via GITHUB_TOKEN não
+# conta na cota, então o `docker compose pull` do e2e-integration não é
+# afetado por nada aqui.
+
+on:
+  schedule:
+    # Segunda-feira, 04:00 UTC — fora da janela de trabalho, para que uma
+    # remoção nunca coincida com um run de CI que acabou de publicar sua tag.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      min-versions-to-keep:
+        description: 'Quantas versões manter por imagem'
+        required: false
+        default: '10'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    name: Remove versões antigas (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    strategy:
+      # fail-fast desligado: a falha de uma imagem (ex.: package que ainda não
+      # existe) não deve impedir a limpeza das demais.
+      fail-fast: false
+      matrix:
+        package:
+          - alfabra-vector/java-core
+          - alfabra-vector/frontend
+          - alfabra-vector/crew-worker
+          - alfabra-vector/embedding-service
+          - alfabra-vector/ingestion-worker
+          - alfabra-vector/rag-worker
+          - alfabra-vector/workflow-worker
+          - alfabra-vector/rust-builder
+    steps:
+      # min-versions-to-keep preserva as N versões mais recentes. Como a tag
+      # :latest só é movida em push para main/master/develop, ela sempre aponta
+      # para uma das mais recentes e nunca cai na faixa removida — por isso não
+      # é preciso protegê-la por `ignore-versions`, cujo regex casa contra o
+      # nome da versão (o digest), não contra a tag.
+      - name: Delete old versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ matrix.package }}
+          package-type: container
+          min-versions-to-keep: ${{ inputs.min-versions-to-keep || 10 }}
