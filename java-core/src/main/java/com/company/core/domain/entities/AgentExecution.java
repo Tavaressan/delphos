@@ -58,6 +58,10 @@ public class AgentExecution {
     @Column(name = "created_at", updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Version
+    @Column(name = "version")
+    private Long version = 0L;
+
     public UUID getId() {
         return id;
     }
@@ -152,5 +156,13 @@ public class AgentExecution {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 }
