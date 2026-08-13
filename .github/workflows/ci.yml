@@ -29,8 +29,161 @@ env:
   IMAGE_BASE: tavaressan/alfabra-vector
 
 jobs:
+  # Fallback automático entre self-hosted (local + EC2, label alfabra-local)
+  # e GitHub-hosted: GitHub Actions não faz balanceamento entre pools por si
+  # só (runs-on é match estático de label), então este job checa em tempo
+  # real se há ao menos um runner self-hosted online e decide o pool para
+  # todos os demais jobs. `|| echo 0` garante fail-safe (mesma filosofia do
+  # job `changes` ver #87): qualquer erro na checagem (rate limit, API fora)
+  # cai para ubuntu-latest em vez de travar o pipeline inteiro.
+  select-runner:
+    name: Select CI runner pool
+    runs-on: ubuntu-latest
+    # Depende de `changes` para saber se algum job que de fato roda no EC2
+    # (rust/java/python/e2e — ver a tabela de pools abaixo) foi disparado.
+    # Sem isso, toda PR — inclusive as que só tocam docs ou frontend —
+    # acordava a instância e a mantinha ligada até o auto-stop por
+    # ociosidade. Custo: `changes` (~10s) entra no caminho crítico antes do
+    # start-instances; irrelevante com a instância quente e ~10s a mais
+    # sobre os ~200s de um cold-boot genuíno.
+    needs: changes
+    permissions:
+      actions: read
+      id-token: write
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    env:
+      # Só estes 4 filtros disparam jobs que permanecem no pool self-hosted
+      # (mesma condição do `if` de e2e-integration). `frontend` fica de fora
+      # de propósito: frontend-check e docker-build-frontend migraram para o
+      # pool GitHub-hosted, então uma PR que só toca frontend/ não precisa da
+      # EC2. O contexto `env` é legível em `if` de step (não em `if` de job),
+      # que é exatamente como esta condição é consumida abaixo.
+      NEEDS_EC2: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.java == 'true' || needs.changes.outputs.python == 'true' || needs.changes.outputs.e2e == 'true' }}
+    steps:
+      # Sem isso, o runner EC2 só entra no ar se alguém der `aws ec2
+      # start-instances` manualmente (ver #345) — o que faz quase todo push
+      # cair no fallback hosted. A role é assumida via OIDC (sem access key
+      # fixa em secret) e só permite start-instances nesta instância
+      # específica + describe-instances read-only.
+      # PRs abertas pelo Dependabot rodam em contexto restrito sem acesso aos
+      # secrets de Actions do repositório (só ao GITHUB_TOKEN automático e a
+      # "Dependabot secrets", não cadastrados aqui — ver #350). O step
+      # seguinte de app-token sempre falhava com "private-key" vazio nesse
+      # caso, derrubando o job inteiro antes de chegar no fallback hosted.
+      # Pula toda a tentativa de self-hosted/EC2 para esse actor.
+      - name: Configure AWS credentials (OIDC)
+        if: github.actor != 'dependabot[bot]' && env.NEEDS_EC2 == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::076248672901:role/alfabra-ci-github-actions-start
+          aws-region: us-east-1
+
+      - name: Start EC2 CI runner instance (idempotente)
+        if: github.actor != 'dependabot[bot]' && env.NEEDS_EC2 == 'true'
+        env:
+          INSTANCE_ID: i-060c83aa05d25e679
+        run: |
+          set -euo pipefail
+          STATE=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[0].Instances[0].State.Name' --output text)
+          echo "Estado atual da instância: $STATE"
+          if [ "$STATE" = "stopped" ]; then
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID" >/dev/null
+            echo "::notice::Instância EC2 estava parada, start-instances disparado"
+          fi
+
+      # secrets.GITHUB_TOKEN nunca consegue chamar "List self-hosted runners
+      # for a repository" (retorna 403 "Resource not accessible by
+      # integration" sempre, independente do bloco `permissions:` do job —
+      # não existe chave de permissão para isso no GITHUB_TOKEN automático).
+      # Confirmado no run 30823634398: as 24 tentativas do poll abaixo
+      # falharam com 403, mascaradas por `|| echo 0` como "nenhum runner
+      # online", mesmo com os runners de fato online. A mesma GitHub App
+      # (app-id 4358824) já usada para registrar os runners na EC2 (ver
+      # scripts/ci-runner-ec2-bootstrap.sh) tem permissão de administração
+      # do repositório — gera um token de instalação dela aqui só para essa
+      # checagem.
+      - name: Gera token da GitHub App (permissão de administração)
+        id: app-token
+        if: github.actor != 'dependabot[bot]' && env.NEEDS_EC2 == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: 4358824
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - name: Check self-hosted runner availability
+        id: pick
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # Ver #350: sem os steps acima (pulados para este actor), não há
+          # instância EC2 disparada nem GH_TOKEN válido para consultar
+          # runners self-hosted — cai direto para GitHub-hosted.
+          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
+            echo "::notice::Actor é dependabot[bot] (sem acesso a secrets de Actions, ver #350) - fallback direto para GitHub-hosted"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Nenhum job do pool self-hosted foi disparado por esta mudança: os
+          # steps de start-instances/app-token acima foram pulados, então não
+          # há instância subindo nem GH_TOKEN para consultar runners. Emite o
+          # mesmo formato de output esperado pelo fromJSON dos dependentes —
+          # este job nunca pode ser pulado no nível de job, senão os outputs
+          # somem e todo `runs-on` derivado quebra (mesma armadilha da matrix
+          # documentada em docker-build-rust).
+          if [ "$NEEDS_EC2" != "true" ]; then
+            echo "::notice::Nenhum job self-hosted disparado (rust/java/python/e2e inalterados) - EC2 não foi acordada, usando GitHub-hosted"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A instância pode levar ~30-60s pra bootar e o runner registrar
+          # no GitHub após o start-instances acima — poll com timeout em vez
+          # de checar uma única vez, senão todo cold-start cairia no
+          # fallback hosted mesmo com a EC2 subindo com sucesso. Janela
+          # ampliada de 180s para 240s (24x10s): no run 30823116364, com a
+          # instância genuinamente "stopped" (cold boot completo), o
+          # start-instances disparou às 14:31:56 e os runners
+          # (alfabra-ec2-1/2) só apareceram "online" por volta de
+          # 14:35:04-14:35:15 (~188-199s depois) — o poll de 180s esgotou
+          # a poucos segundos do runner ficar pronto. 240s dá ~50s de
+          # margem sobre o cold-boot medido.
+          #
+          # issue #349: esse cold-boot de ~200s só acontece quando a
+          # instância EC2 está genuinamente "stopped" (não quando os
+          # containers do runner apenas reiniciam — systemd
+          # Restart=always já cobre isso sem reboot). A causa raiz de o
+          # cold-boot se repetir a cada PR da fila serializada era o
+          # auto-stop por ociosidade (scripts/ec2-idle-stop.sh) desligando
+          # a instância cedo demais — corrigido usando a média de carga de
+          # 15min em vez de 1min, exigindo ociosidade sustentada antes de
+          # parar. O poll de 240s aqui continua necessário como
+          # salvaguarda para o caso (mais raro após o fix) de cold-boot
+          # genuíno.
+          ONLINE=0
+          for _ in $(seq 1 24); do
+            ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
+              --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
+              2>/dev/null || echo 0)
+            if [ "$ONLINE" -gt 0 ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ "$ONLINE" -gt 0 ]; then
+            echo "::notice::$ONLINE runner(s) self-hosted online (label alfabra-local) - usando self-hosted"
+            echo 'runner=["self-hosted","alfabra-local"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nenhum runner self-hosted online após poll - fallback para GitHub-hosted (ubuntu-latest)"
+            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
+          fi
+
   changes:
     name: Detect changed paths
+    # Sempre GitHub-hosted: precede select-runner (que agora depende deste job
+    # para decidir se acorda a EC2) e é trabalho trivial de ~10s, sem nenhum
+    # cache local no host self-hosted que justificasse rodar lá.
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.normalize.outputs.rust }}
@@ -41,99 +194,125 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Necessário para o dorny/paths-filter conseguir calcular o
-          # merge-base contra `base` em eventos push (long-lived branches).
+          # Necessário para o turbo `--affected` conseguir calcular o
+          # merge-base contra a branch base sem marcar tudo como afetado
+          # por engano (clone raso = "sufficient history" ausente, ver docs
+          # oficiais do Turborepo).
           fetch-depth: 0
 
-      # Filtro dedicado para o próprio workflow: mudanças em ci.yml não
-      # devem ser listadas dentro de cada filtro de módulo (o que os
-      # tornava auto-referentes), e sim combinadas via `||` no step de
-      # normalização abaixo. Ver issue #77.
-      - uses: dorny/paths-filter@v3
-        id: filter
-        # Nunca deixe uma falha de cálculo de diff no paths-filter
-        # derrubar o job silenciosamente (issue #87) — o step de
-        # normalização abaixo trata esse caso como fail-safe (roda tudo).
-        continue-on-error: true
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          # Base explícita para eventos push: quando `base` é o mesmo
-          # branch que disparou o push, o paths-filter compara contra o
-          # commit mais recente do mesmo branch antes do push (padrão
-          # "long-lived branch" documentado pela action). Ignorado em
-          # eventos pull_request (usa o branch base do PR automaticamente).
-          base: ${{ github.ref_name }}
-          filters: |
-            ci_workflow:
-              - '.github/workflows/ci.yml'
-            rust:
-              - 'rust-services/**'
-            java:
-              - 'java-core/**'
-            frontend:
-              - 'frontend/**'
-            python:
-              - 'python-services/**'
-            # Cobre a própria suíte E2E e os arquivos que o job
-            # e2e-integration usa diretamente — sem isso, uma mudança que só
-            # toca tests/e2e/** (ex.: novos cenários) faz rust/java/frontend/
-            # python ficarem todos 'false' e o job que deveria validar
-            # justamente essa mudança é pulado (achado ao mesclar a PR #122).
-            e2e:
-              - 'tests/e2e/**'
-              - 'docker-compose.yml'
-              - 'docker-compose.ci-ports.yml'
-              - 'scripts/reset.sh'
-              - 'scripts/setup.sh'
+          node-version: 20
+
+      # Detecção via `turbo ls --affected`, que só exige um `package.json`
+      # fino em cada módulo como marcador de fronteira de pacote (sem
+      # turbo.json com tasks, sem duplicar comandos que já existem abaixo
+      # neste workflow). Substitui o dorny/paths-filter para os 4 módulos
+      # do workspace (rust/java/frontend/python) — ver estudo de
+      # Turborepo x Deno Workspaces. `.github/workflows/ci.yml` e a suíte
+      # `tests/e2e/**` não pertencem a nenhum pacote do workspace, então
+      # continuam cobertos por diff manual no step de normalização abaixo.
+      - name: Detect affected packages (Turborepo)
+        id: filter
+        # Nunca deixe uma falha de cálculo de affected derrubar o job
+        # silenciosamente (issue #87) — o step de normalização abaixo trata
+        # esse caso como fail-safe (roda tudo).
+        continue-on-error: true
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Base explícita por tipo de evento, no mesmo espírito do que o
+          # dorny/paths-filter fazia: PR compara contra o SHA base do PR;
+          # push (long-lived branch) compara contra o commit anterior no
+          # mesmo branch. Fallback para HEAD~1 só no caso extremo de
+          # `before` vir zerado (primeiro push histórico do branch).
+          if [ "$GH_EVENT" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            BASE="$PUSH_BEFORE_SHA"
+          else
+            BASE="HEAD~1"
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "::notice::turbo ls --affected comparado contra $BASE (evento: $GH_EVENT)"
+
+          RAW=$(TURBO_SCM_BASE="$BASE" npx --yes turbo@2.10.8 ls --affected --output=json)
+          # Descarta a linha de banner ("• turbo x.y.z") impressa antes do JSON.
+          JSON=$(echo "$RAW" | sed -n '/^{/,$p')
+          echo "affected_json<<AFFECTED_EOF" >> "$GITHUB_OUTPUT"
+          echo "$JSON" >> "$GITHUB_OUTPUT"
+          echo "AFFECTED_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Normalize filter outputs (fail-safe)
         id: normalize
         if: always()
         env:
           OUTCOME: ${{ steps.filter.outcome }}
-          CI_WORKFLOW: ${{ steps.filter.outputs.ci_workflow }}
-          F_RUST: ${{ steps.filter.outputs.rust }}
-          F_JAVA: ${{ steps.filter.outputs.java }}
-          F_FRONTEND: ${{ steps.filter.outputs.frontend }}
-          F_PYTHON: ${{ steps.filter.outputs.python }}
-          F_E2E: ${{ steps.filter.outputs.e2e }}
+          BASE: ${{ steps.filter.outputs.base }}
+          AFFECTED_JSON: ${{ steps.filter.outputs.affected_json }}
         run: |
           set -euo pipefail
-          # Fail-safe: se o paths-filter falhou ou não conseguiu calcular o
-          # diff, NUNCA pule checks silenciosamente — rode todos os
-          # módulos por padrão (issue #87).
-          if [ "$OUTCOME" != "success" ]; then
-            echo "::warning::dorny/paths-filter falhou (outcome=$OUTCOME) - failing safe: rodando TODOS os módulos"
+
+          run_all() {
             echo "rust=true" >> "$GITHUB_OUTPUT"
             echo "java=true" >> "$GITHUB_OUTPUT"
             echo "frontend=true" >> "$GITHUB_OUTPUT"
             echo "python=true" >> "$GITHUB_OUTPUT"
             echo "e2e=true" >> "$GITHUB_OUTPUT"
+          }
+
+          # Fail-safe: se o turbo ls --affected falhou ou não conseguiu
+          # calcular o diff, NUNCA pule checks silenciosamente — rode todos
+          # os módulos por padrão (issue #87).
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::warning::turbo ls --affected falhou (outcome=$OUTCOME) - failing safe: rodando TODOS os módulos"
+            run_all
             exit 0
           fi
+
+          CHANGED=$(git diff --name-only "$BASE"...HEAD)
 
           # Mudança no próprio workflow: roda todos os módulos para
-          # validar o novo pipeline de ponta a ponta.
-          if [ "$CI_WORKFLOW" = "true" ]; then
+          # validar o novo pipeline de ponta a ponta. ci.yml não é um
+          # pacote do workspace, então o turbo nunca o marcaria como
+          # afetado por conta própria (issue #77).
+          if echo "$CHANGED" | grep -q '^\.github/workflows/ci\.yml$'; then
             echo "::notice::ci.yml alterado - rodando todos os módulos"
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "java=true" >> "$GITHUB_OUTPUT"
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
-            echo "python=true" >> "$GITHUB_OUTPUT"
-            echo "e2e=true" >> "$GITHUB_OUTPUT"
+            run_all
             exit 0
           fi
 
-          echo "rust=$F_RUST" >> "$GITHUB_OUTPUT"
-          echo "java=$F_JAVA" >> "$GITHUB_OUTPUT"
-          echo "frontend=$F_FRONTEND" >> "$GITHUB_OUTPUT"
-          echo "python=$F_PYTHON" >> "$GITHUB_OUTPUT"
-          echo "e2e=$F_E2E" >> "$GITHUB_OUTPUT"
+          RUST=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='rust-services' for p in d['packages']['items']) else 'false')")
+          JAVA=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='java-core' for p in d['packages']['items']) else 'false')")
+          FRONTEND=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='frontend' for p in d['packages']['items']) else 'false')")
+          PYTHON=$(echo "$AFFECTED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print('true' if any(p['path']=='python-services/crew-worker' for p in d['packages']['items']) else 'false')")
+
+          # tests/e2e/** e os arquivos de infra que e2e-integration usa
+          # diretamente não pertencem a nenhum pacote do workspace turbo —
+          # continuam cobertos por diff manual (mesmo motivo da PR #122:
+          # sem isso, uma mudança só em tests/e2e/** faz todos os módulos
+          # ficarem 'false' e o job que deveria validar essa mudança é
+          # pulado).
+          E2E=false
+          if echo "$CHANGED" | grep -qE '^(tests/e2e/|docker-compose\.yml$|docker-compose\.ci-ports\.yml$|scripts/reset\.sh$|scripts/setup\.sh$)'; then
+            E2E=true
+          fi
+
+          echo "rust=$RUST" >> "$GITHUB_OUTPUT"
+          echo "java=$JAVA" >> "$GITHUB_OUTPUT"
+          echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "python=$PYTHON" >> "$GITHUB_OUTPUT"
+          echo "e2e=$E2E" >> "$GITHUB_OUTPUT"
 
       - name: Sanity check filter outputs
         if: always()
         run: |
           set -euo pipefail
-          echo "Outcome do paths-filter: ${{ steps.filter.outcome }}"
+          echo "Outcome do turbo ls --affected: ${{ steps.filter.outcome }}"
           echo "rust=${{ steps.normalize.outputs.rust }}"
           echo "java=${{ steps.normalize.outputs.java }}"
           echo "frontend=${{ steps.normalize.outputs.frontend }}"
@@ -150,8 +329,8 @@ jobs:
 
   rust-check:
     name: Rust Check, Lint, Format & Test
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.rust == 'true'
     steps:
       - name: Checkout code
@@ -194,8 +373,8 @@ jobs:
 
   java-check:
     name: Java Core Build & Test
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.java == 'true'
     steps:
       - name: Checkout code
@@ -226,8 +405,8 @@ jobs:
 
   java-integration:
     name: Java Core Integration Tests (BDD)
-    runs-on: ubuntu-latest
-    needs: [changes, java-check]
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, java-check]
     if: needs.changes.outputs.java == 'true'
     timeout-minutes: 10
     steps:
@@ -266,6 +445,10 @@ jobs:
 
   frontend-check:
     name: Frontend Lint, Test & Build
+    # Pool GitHub-hosted: o setup-deno roda com cache: false (issue #227) e o
+    # cache do Next.js vem do actions/cache pela rede — nada aqui aproveita o
+    # disco local do runner EC2, e liberar o slot lá reduz a fila dos jobs que
+    # de fato dependem de cache quente (rust-check, java-*).
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -341,6 +524,8 @@ jobs:
 
   python-ci:
     name: Python Lint & Test
+    # Pool GitHub-hosted: cache de pip via actions/setup-python (rede), sem
+    # dependência do disco local do EC2.
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.python == 'true'
@@ -382,6 +567,12 @@ jobs:
   # substituem os builds nativos, apenas validam que a imagem também builda.
   docker-build-rust:
     name: Docker Build (Rust services)
+    # Pool GitHub-hosted: o cache do buildx aqui é type=gha (ver cache-from/to
+    # abaixo), ou seja, trafega pela rede e não ganha nada com o disco local do
+    # EC2. São 4 jobs de matrix — a maior fatia de compute do pipeline — que no
+    # self-hosted disputavam 2 slots e aqui expandem em paralelo. As imagens vão
+    # para o GHCR e o e2e-integration as consome via `docker compose pull`, não
+    # pelo daemon que as construiu, então o split não quebra a cadeia.
     runs-on: ubuntu-latest
     needs: changes
     permissions:
@@ -454,8 +645,8 @@ jobs:
 
   docker-build-java:
     name: Docker Build (Java core)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.java == 'true'
     permissions:
       contents: read
@@ -493,7 +684,7 @@ jobs:
       - name: Build and push java-core image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./java-core
           file: ./java-core/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -502,6 +693,10 @@ jobs:
 
   docker-build-frontend:
     name: Docker Build (Frontend)
+    # Pool GitHub-hosted (mesma razão de cache type=gha dos demais). Com este
+    # job e o frontend-check fora do EC2, o filtro `frontend` deixa de exigir a
+    # instância — por isso ele não aparece na condição NEEDS_EC2 do
+    # select-runner.
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -550,8 +745,8 @@ jobs:
 
   docker-build-python:
     name: Docker Build (Crew worker)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     permissions:
       contents: read
@@ -600,8 +795,8 @@ jobs:
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
     name: Docker Build (Script executor sidecar)
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
@@ -635,8 +830,22 @@ jobs:
   # tests/e2e/** nunca disparava este job (achado ao mesclar a PR #122).
   e2e-integration:
     name: Integration E2E (Docker Compose + Mock LLM)
-    runs-on: ubuntu-latest
-    needs: [changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, docker-build-rust, docker-build-java, docker-build-frontend, docker-build-python]
+    # issue #359: os runners da EC2 são containers em DooD (Docker-outside-of-
+    # Docker) sobre o daemon do host, e dois jobs E2E concorrentes derivam o
+    # mesmo COMPOSE_PROJECT_NAME do diretório — o segundo recria os containers
+    # do primeiro, que morre com "No such container". Com o split de pool
+    # liberando slots no EC2, a chance de dois E2E coincidirem aumenta, então a
+    # serialização deixa de ser opcional. cancel-in-progress: false porque o run
+    # que já está de pé precisa terminar seu teardown (`down -v`); o
+    # concurrency de workflow (topo do arquivo, por ref) já impede acúmulo de
+    # runs obsoletos na fila. O grupo é global ao repositório porque
+    # `runner.name` não existe no contexto concurrency (avaliado antes da
+    # atribuição do runner) — aceitável com o E2E médio em ~2 min.
+    concurrency:
+      group: e2e-integration
+      cancel-in-progress: false
     # Explícito e não ambíguo de propósito (em vez de depender do
     # comportamento implícito de success() com deps "skipped"): roda quando
     # `changes` teve sucesso, cada docker-build-* OU teve sucesso OU foi
@@ -735,7 +944,7 @@ jobs:
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml pull \
             --ignore-pull-failures \
-            postgres redis minio rabbitmq \
+            postgres minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker frontend
 
       - name: Set up Docker Buildx
@@ -769,7 +978,7 @@ jobs:
       - name: Start full stack (imagens publicadas + script-executor local, sem rebuild dos demais)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml up -d --wait --wait-timeout 300 \
-            postgres redis minio rabbitmq \
+            postgres minio rabbitmq \
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker \
             script-executor \
             frontend

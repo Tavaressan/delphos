@@ -59,7 +59,13 @@ public class ExecutionController {
         try {
             String prompt = request.getOrDefault("prompt", "Simular execução cognitiva corporativa.");
             String tenantStr = request.get("tenantId");
-            UUID tenantId = (tenantStr != null) ? UUID.fromString(tenantStr) : UUID.randomUUID();
+            // tenantId omitido usa o mesmo UUID zero padrão dos demais controllers
+            // (AgentController, ChatController), consistente com o default usado por
+            // GET /api/executions - um UUID aleatório deixaria a execução órfã e
+            // impossível de listar sem o tenantId exato (issue #313).
+            UUID tenantId = (tenantStr != null && !tenantStr.isEmpty())
+                    ? UUID.fromString(tenantStr)
+                    : UUID.fromString("00000000-0000-0000-0000-000000000000");
 
             // 0. agentId é opcional: chat genérico sem agente selecionado é um caso
             // suportado (ver issue #124), cai para agent = null / fallback no crew-worker.
