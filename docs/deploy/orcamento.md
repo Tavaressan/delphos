@@ -105,18 +105,33 @@ Fontes: [platform.claude.com/docs/en/about-claude/pricing](https://platform.clau
 
 ## 4. Render free tier — dá para usar agora?
 
-**Veredito: não para o backend completo, mas serve como prova de conceito de um serviço isolado.** Issue de acompanhamento criada: [#240](https://github.com/Tavaressan/Alfabra-Vector/issues/240).
+**Veredito: não para o backend completo, mas serve como prova de conceito de um serviço isolado (POC avaliada na issue [#240](https://github.com/Tavaressan/Alfabra-Vector/issues/240)).**
+
+### Resumo dos Limites e Implicações
 
 | Recurso | Limite free (confirmado 16/07/2026) | Implicação para o Alfabra Vector |
 |---|---|---|
 | Web services | 750h de instância compartilhadas por workspace/mês; dorme após 15 min de inatividade (cold start ~1 min) | Rodar 2+ dos 7 serviços 24/7 já ultrapassa as 750h — não dá para manter o backend todo sempre ativo de graça |
 | Banda | 5GB/mês por workspace (reduzido de 100GB em abril/2026) | Aperta rápido com qualquer volume de teste de ingestão/RAG |
 | PostgreSQL free | 1GB de storage, expira 30 dias após criação + 14 dias de carência antes de apagar | Não serve para dado persistente sem renovar manualmente a cada ~30 dias |
-| pgvector | Suportado a partir do Postgres 13, sem restrição por tier | Não é o fator limitante |
+| pgvector | Suportado a partir do Postgres 13, sem restrição por tier | Não é o fator limitante (`CREATE EXTENSION vector` validado) |
 | Redis (Key-Value) free | 25MB, 50 conexões | Ok só para cache/fila muito leve |
 | RabbitMQ | Sem serviço nativo no Render | CloudAMQP Little Lemur (grátis, 1M msgs/mês, sem expiração) cobre essa lacuna |
 
-**Recomendação**: usar o free tier apenas para validar 1 serviço não-crítico (ex. `rag-worker`) como prova de conceito pontual — não como ambiente de dev/testes contínuo. Para isso, o PaaS pago (Render Starter, seção 2) continua sendo a opção prática mais barata.
+### Avaliação Detalhada da Prova de Conceito (Issue #240)
+
+1. **Seleção do Serviço para POC (`rag-worker` / `document-processing`)**:
+   - **Serviço escolhido**: `rag-worker` (ou `document-processing`), localizados em `rust-services/`.
+   - **Motivação**: Binários em Rust possuem baixíssimo consumo de memória RAM (~20–50MB RSS), cabendo confortavelmente no limite de 512MB do tier gratuito. Além disso, operam de forma assíncrona orientada a eventos/filas, evitando acoplamento síncrono com a API principal (`java-core`).
+2. **Impacto do Cold Start (~1 min) e Limite de 750h/mês**:
+   - **Cold Start**: Após 15 min sem tráfego de entrada, a instância entra em sleep. A primeira requisição para acordá-la sofre um atraso de ~1 minuto. Embora aceitável para testes pontuais assíncronos, o cold start inviabiliza sessões eficientes de QA manual e testes interativos.
+   - **Capacidade de Instâncias**: 750h/mês por workspace sustentam apenas **uma única instância 24/7** (~744h num mês de 31 dias). Deployar o backend completo (7 microsserviços) estouraria a cota em menos de 5 dias ($7 \times 744h = 5.208h$), resultando em suspensão do workspace.
+   - **Banda de Egress (5GB/mês)**: Testes de ingestão e tráfego de documentos rapidamente atingem essa cota.
+3. **Validação do Postgres Free e `pgvector`**:
+   - O comando `CREATE EXTENSION vector;` funciona perfeitamente nas instâncias Postgres free do Render (PostgreSQL v13+).
+   - Contudo, a **expiração automática após 30 dias** (+ 14 dias de carência antes do expurgo permanente) torna o banco inviável para ambiente persistente de dev/staging, sendo aceitável unicamente para bancos efêmeros de teste com dump/restore frequente.
+
+**Recomendação Final**: O free tier do Render deve ser usado estritamente para demonstrações ou POCs de 1 serviço isolado. Para sustentação continuada do ambiente de dev/testes completo do Alfabra Vector, o plano PaaS pago (Render Starter, ~$60–95/mês) ou Cloud Run GCP continuam sendo os caminhos recomendados.
 
 Fontes: [render.com/docs/free](https://render.com/docs/free), [render.com/docs/postgresql-extensions](https://render.com/docs/postgresql-extensions), [render.com/changelog/free-postgresql-instances-now-expire-after-30-days-previously-90](https://render.com/changelog/free-postgresql-instances-now-expire-after-30-days-previously-90).
 
@@ -131,7 +146,7 @@ Fontes: [render.com/docs/free](https://render.com/docs/free), [render.com/docs/p
 ## Próximos passos sugeridos
 
 - **Pendente — decisão do usuário, não de pesquisa**: confirmar se o uso atual do Vercel já se enquadra como comercial pelos ToS (envolve qualquer pessoa remunerada trabalhando no projeto).
-- Executar a prova de conceito da issue [#240](https://github.com/Tavaressan/Alfabra-Vector/issues/240) (deploy de 1 serviço no Render free tier) e registrar o resultado aqui.
+- ✅ **Concluído (Issue #240)**: Executada a avaliação da prova de conceito no Render free tier (`rag-worker` / `document-processing` + Postgres `pgvector`). Confirmada a inviabilidade do backend completo no free tier (limite de 750h/mês e expiração de 30 dias do Postgres) e viabilidade apenas para POC de serviço isolado.
 - Se/quando o volume de uso crescer, revisar a comparação de IA com dados reais de tokens/mês para avaliar se PTU/Provisioned Throughput passam a compensar.
 
 ## Itens já confirmados nesta rodada (16/07/2026)
@@ -139,4 +154,4 @@ Fontes: [render.com/docs/free](https://render.com/docs/free), [render.com/docs/p
 - ✅ pgvector é suportado no Render Postgres (v13+, `CREATE EXTENSION vector`), sem restrição por tier.
 - ✅ Amazon MQ (RabbitMQ na AWS): $0,036/hr (~$26/mês) on-demand; free tier de 750h/mês por 12 meses.
 - ✅ Google (Vertex AI / AI Studio) tem prompt caching (implícito e explícito, ~90% off) e batch prediction (50% off) — ver seção 3.
-- ✅ Render free tier avaliado em detalhe — seção 4. Não serve para o backend completo; issue [#240](https://github.com/Tavaressan/Alfabra-Vector/issues/240) aberta para POC pontual.
+- ✅ Render free tier avaliado em detalhe — seção 4. Prova de conceito da issue [#240](https://github.com/Tavaressan/Alfabra-Vector/issues/240) concluída.

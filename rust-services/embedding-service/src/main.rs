@@ -66,7 +66,7 @@ async fn handle_embeddings(
 
     let provider = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
     let model =
-        std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "text-embedding-004".to_string());
+        std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "gemini-embedding-001".to_string());
     let dimensions = payload.dimensions.unwrap_or(768);
 
     if provider == "mock" {
@@ -314,7 +314,7 @@ mod tests {
     async fn test_embeddings_mock() {
         let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("EMBEDDING_PROVIDER", "mock");
-        std::env::set_var("EMBEDDING_MODEL", "text-embedding-004");
+        std::env::set_var("EMBEDDING_MODEL", "gemini-embedding-001");
 
         let state = AppState {
             authenticator: None,
@@ -339,7 +339,7 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
         assert_eq!(json["object"], "list");
-        assert_eq!(json["model"], "text-embedding-004");
+        assert_eq!(json["model"], "gemini-embedding-001");
         assert!(json["data"].is_array());
         assert_eq!(json["data"][0]["index"], 0);
         assert!(json["data"][0]["embedding"].is_array());

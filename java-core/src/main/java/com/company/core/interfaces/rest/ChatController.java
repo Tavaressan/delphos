@@ -1,9 +1,11 @@
 package com.company.core.interfaces.rest;
 
 import com.company.core.domain.entities.Agent;
+import com.company.core.domain.entities.AgentExecution;
 import com.company.core.domain.entities.Conversation;
 import com.company.core.domain.entities.Message;
 import com.company.core.domain.entities.User;
+import com.company.core.domain.repositories.AgentExecutionRepository;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.ConversationRepository;
 import com.company.core.domain.repositories.UserRepository;
@@ -21,13 +23,16 @@ public class ChatController {
     private final ConversationRepository conversationRepository;
     private final AgentRepository agentRepository;
     private final UserRepository userRepository;
+    private final AgentExecutionRepository agentExecutionRepository;
 
     public ChatController(ConversationRepository conversationRepository,
                           AgentRepository agentRepository,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          AgentExecutionRepository agentExecutionRepository) {
         this.conversationRepository = conversationRepository;
         this.agentRepository = agentRepository;
         this.userRepository = userRepository;
+        this.agentExecutionRepository = agentExecutionRepository;
     }
 
     @GetMapping
@@ -90,6 +95,15 @@ public class ChatController {
         if (!conversationRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
+
+        // agent_executions.conversation_id não tem ON DELETE CASCADE (diferente de
+        // messages.conversation_id) - excluir as execuções associadas explicitamente
+        // evita uma FK violation não tratada (issue #315).
+        List<AgentExecution> executions = agentExecutionRepository.findByConversationId(id);
+        if (!executions.isEmpty()) {
+            agentExecutionRepository.deleteAll(executions);
+        }
+
         conversationRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }

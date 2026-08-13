@@ -10,12 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -121,5 +123,24 @@ class AgentExecutionEventListenerTest {
 
         assertThat(execution.getStatus()).isEqualTo("STARTED");
         assertThat(execution.getStartedAt()).isNotNull();
+    }
+
+    // Issue #271: um payload de AgentExecutionFinished sem "tokensConsumed" (ex.: produtor
+    // que só envia "reason" em cenários de falha) causava NPE em execution.setTokensConsumed(...)
+    // que era engolida pelo catch genérico, deixando a execução travada em silêncio com ack
+    // automático da mensagem. Agora a mensagem deve ser rejeitada (nack, sem requeue — cai na
+    // DLQ) e a execução deve ser marcada em estado terminal FAILED, nunca travada.
+    @Test
+    void malformedAgentExecutionFinishedIsRejectedAndMarksExecutionFailed() {
+        String message = """
+                {"eventType":"AgentExecutionFinished","executionId":"%s","payload":{"outputResult":"partial answer"}}
+                """.formatted(executionId);
+
+        assertThatThrownBy(() -> listener.handleExecutionEvent(message))
+                .isInstanceOf(AmqpRejectAndDontRequeueException.class);
+
+        assertThat(execution.getStatus()).isEqualTo("FAILED");
+        assertThat(execution.getFinishedAt()).isNotNull();
+        assertThat(execution.getErrorMessage()).isNotNull();
     }
 }

@@ -12,3 +12,5 @@ _reversa_forward
 **/build
 **/.gradle
 **/.next
+.turbo
+**/.turbo
