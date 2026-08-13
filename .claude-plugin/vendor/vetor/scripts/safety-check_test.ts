@@ -104,6 +104,30 @@ Deno.test("issue-worker escrevendo dentro do seu próprio worktree continua perm
   }
 });
 
+Deno.test("issue-worker só pode escrever seu status Markdown na raiz — issue #71", async () => {
+  const { root, worktreePath } = await makeLinkedWorktree("feat-x");
+  try {
+    const status = await runHook({
+      tool_name: "Write",
+      tool_input: { file_path: `${root}/.claude/vetor/status/feat-x.md` },
+      cwd: worktreePath,
+      agent_type: "vetor:issue-worker",
+    });
+    assertEquals(status.code, 0, status.stderr);
+
+    const nonMarkdown = await runHook({
+      tool_name: "Write",
+      tool_input: { file_path: `${root}/.claude/vetor/status/feat-x.json` },
+      cwd: worktreePath,
+      agent_type: "vetor:issue-worker",
+    });
+    assertEquals(nonMarkdown.code, 2);
+    assertStringIncludes(nonMarkdown.stderr, "escrita fora do worktree bloqueada");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
 Deno.test("issue-worker escrevendo fora do próprio worktree (outro diretório) continua bloqueado", async () => {
   const { root, worktreePath } = await makeLinkedWorktree("feat-x");
   try {
@@ -116,6 +140,99 @@ Deno.test("issue-worker escrevendo fora do próprio worktree (outro diretório) 
 
     assertEquals(code, 2);
     assertStringIncludes(stderr, "escrita fora do worktree bloqueada");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+function applyPatchCommand(...ops: string[]): string[] {
+  return ["apply_patch", `*** Begin Patch\n${ops.join("\n")}\n*** End Patch\n`];
+}
+
+Deno.test("apply_patch (Codex) fora de um worktree linkado (cwd = raiz) é bloqueado — issue #76", async () => {
+  const root = await makeRepo("main");
+  try {
+    const { code, stderr } = await runHook({
+      tool_name: "apply_patch",
+      tool_input: { command: applyPatchCommand("*** Update File: README.md\n@@\n-a\n+b") },
+      cwd: root,
+      agent_type: "vetor:issue-worker",
+    });
+
+    assertEquals(code, 2);
+    assertStringIncludes(stderr, "fora de um worktree linkado");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("apply_patch (Codex) escrevendo dentro do próprio worktree continua permitido — issue #76", async () => {
+  const { root, worktreePath } = await makeLinkedWorktree("feat-x");
+  try {
+    const { code } = await runHook({
+      tool_name: "apply_patch",
+      tool_input: { command: applyPatchCommand("*** Update File: README.md\n@@\n-a\n+b") },
+      cwd: worktreePath,
+      agent_type: "vetor:issue-worker",
+    });
+
+    assertEquals(code, 0);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("apply_patch (Codex) escrevendo fora do próprio worktree (path absoluto de outro dir) é bloqueado — issue #76", async () => {
+  const { root, worktreePath } = await makeLinkedWorktree("feat-x");
+  try {
+    const { code, stderr } = await runHook({
+      tool_name: "apply_patch",
+      tool_input: {
+        command: applyPatchCommand(`*** Update File: ${root}/README.md\n@@\n-a\n+b`),
+      },
+      cwd: worktreePath,
+      agent_type: "vetor:issue-worker",
+    });
+
+    assertEquals(code, 2);
+    assertStringIncludes(stderr, "escrita fora do worktree bloqueada");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("apply_patch (Codex) multi-arquivo: um Add File fora do worktree é suficiente para bloquear — issue #76", async () => {
+  const { root, worktreePath } = await makeLinkedWorktree("feat-x");
+  try {
+    const { code, stderr } = await runHook({
+      tool_name: "apply_patch",
+      tool_input: {
+        command: applyPatchCommand(
+          "*** Update File: README.md\n@@\n-a\n+b",
+          `*** Add File: ${root}/outside.txt\n+conteudo`,
+        ),
+      },
+      cwd: worktreePath,
+      agent_type: "vetor:issue-worker",
+    });
+
+    assertEquals(code, 2);
+    assertStringIncludes(stderr, "escrita fora do worktree bloqueada");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("apply_patch (Codex) sem agent_type (sessão normal) na raiz não é afetado — issue #76", async () => {
+  const root = await makeRepo("main");
+  try {
+    const { code } = await runHook({
+      tool_name: "apply_patch",
+      tool_input: { command: applyPatchCommand("*** Update File: README.md\n@@\n-a\n+b") },
+      cwd: root,
+    });
+
+    assertEquals(code, 0);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -136,7 +253,7 @@ Deno.test("safety-check.ts (integração): worktree válido dentro de .claude/wo
   await Deno.remove(repo, { recursive: true });
 });
 
-Deno.test("safety-check.ts (integração): worktree fora de .claude/worktrees é bloqueado", async () => {
+Deno.test("safety-check.ts (integração): worktree fora de .claude/worktrees é bloqueado (com agent_type)", async () => {
   const repo = await makeRepo("main");
   const outside = `${repo}-outside-wt`;
   await git(["worktree", "add", "-q", "-b", "outside-branch", outside], repo);
@@ -145,6 +262,7 @@ Deno.test("safety-check.ts (integração): worktree fora de .claude/worktrees é
     tool_name: "Bash",
     tool_input: { command: "echo hi" },
     cwd: outside,
+    agent_type: "vetor:issue-worker",
   });
 
   assertEquals(result.code, 2);
@@ -154,7 +272,7 @@ Deno.test("safety-check.ts (integração): worktree fora de .claude/worktrees é
   await Deno.remove(outside, { recursive: true });
 });
 
-Deno.test("safety-check.ts (integração): worktree movido no disco sem atualizar o registro (stale) é bloqueado", async () => {
+Deno.test("safety-check.ts (integração): worktree movido no disco sem atualizar o registro (stale) é bloqueado (com agent_type)", async () => {
   const repo = await makeRepo("main");
   const original = `${repo}/.claude/worktrees/stale-wt`;
   const moved = `${repo}/.claude/worktrees/stale-wt-moved`;
@@ -167,12 +285,50 @@ Deno.test("safety-check.ts (integração): worktree movido no disco sem atualiza
     tool_name: "Bash",
     tool_input: { command: "echo hi" },
     cwd: moved,
+    agent_type: "vetor:issue-worker",
   });
 
   assertEquals(result.code, 2);
   assertMatch(result.stderr, /stale/i);
 
   await Deno.remove(repo, { recursive: true });
+});
+
+Deno.test("issue #114: sessão sem agent_type com cwd num worktree stale NÃO é mais bloqueada por frescor", async () => {
+  const repo = await makeRepo("main");
+  const original = `${repo}/.claude/worktrees/stale-no-agent`;
+  const moved = `${repo}/.claude/worktrees/stale-no-agent-moved`;
+  await git(["worktree", "add", "-q", "-b", "stale-no-agent-branch", original], repo);
+
+  // Move só no filesystem — git worktree list continua apontando para o path antigo.
+  await Deno.rename(original, moved);
+
+  const result = await runHook({
+    tool_name: "Bash",
+    tool_input: { command: "echo hi" },
+    cwd: moved,
+  });
+
+  assertEquals(result.code, 0, result.stderr);
+
+  await Deno.remove(repo, { recursive: true });
+});
+
+Deno.test("issue #114: sessão sem agent_type com cwd fora de .claude/worktrees NÃO é mais bloqueada por frescor", async () => {
+  const repo = await makeRepo("main");
+  const outside = `${repo}-outside-wt-no-agent`;
+  await git(["worktree", "add", "-q", "-b", "outside-no-agent-branch", outside], repo);
+
+  const result = await runHook({
+    tool_name: "Bash",
+    tool_input: { command: "echo hi" },
+    cwd: outside,
+  });
+
+  assertEquals(result.code, 0, result.stderr);
+
+  await Deno.remove(repo, { recursive: true });
+  await Deno.remove(outside, { recursive: true });
 });
 
 Deno.test("cwd contaminado: mesmo agent_id, worktree diferente na segunda chamada é bloqueado — issue #63", async () => {
@@ -246,6 +402,72 @@ Deno.test("cwd contaminado: sem agent_id no payload, a checagem de binding não 
     assertEquals(code, 0);
   } finally {
     await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("issue #123: git push multi-linha para branch não-protegida não é bloqueado por menção a branch protegida em outra linha", async () => {
+  const repo = await makeRepo("main");
+  try {
+    const result = await runHook({
+      tool_name: "Bash",
+      tool_input: {
+        command:
+          "git push -u origin bug/123-push-destination-regex\ngh pr create --title x --base master",
+      },
+      cwd: repo,
+    });
+
+    assertEquals(result.code, 0, result.stderr);
+  } finally {
+    await Deno.remove(repo, { recursive: true });
+  }
+});
+
+Deno.test("issue #123: git push direto para master continua bloqueado (sem regressão)", async () => {
+  const repo = await makeRepo("main");
+  try {
+    const result = await runHook({
+      tool_name: "Bash",
+      tool_input: { command: "git push origin master" },
+      cwd: repo,
+    });
+
+    assertEquals(result.code, 2);
+    assertStringIncludes(result.stderr, "protected branches");
+  } finally {
+    await Deno.remove(repo, { recursive: true });
+  }
+});
+
+Deno.test("issue #123: git push para master combinado com && continua bloqueado (sem regressão)", async () => {
+  const repo = await makeRepo("main");
+  try {
+    const result = await runHook({
+      tool_name: "Bash",
+      tool_input: { command: "echo hi && git push origin master" },
+      cwd: repo,
+    });
+
+    assertEquals(result.code, 2);
+    assertStringIncludes(result.stderr, "protected branches");
+  } finally {
+    await Deno.remove(repo, { recursive: true });
+  }
+});
+
+Deno.test("issue #123 (review): git push com continuação de linha (\\) para master continua bloqueado", async () => {
+  const repo = await makeRepo("main");
+  try {
+    const result = await runHook({
+      tool_name: "Bash",
+      tool_input: { command: "git push \\\norigin master" },
+      cwd: repo,
+    });
+
+    assertEquals(result.code, 2);
+    assertStringIncludes(result.stderr, "protected branches");
+  } finally {
+    await Deno.remove(repo, { recursive: true });
   }
 });
 

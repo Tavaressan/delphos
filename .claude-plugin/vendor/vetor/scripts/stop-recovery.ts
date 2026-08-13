@@ -35,6 +35,37 @@ function readFile(path: string): string | null {
   }
 }
 
+/** Root do repositório git atual, ou `undefined` se não for possível determiná-lo. */
+function repoRoot(): string | undefined {
+  try {
+    const { success, stdout } = new Deno.Command("git", {
+      args: ["rev-parse", "--show-toplevel"],
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+    if (!success) return undefined;
+    return new TextDecoder().decode(stdout).trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** True se o arquivo não tem modificações pendentes no git (untracked, modified, staged). */
+function isGitClean(filePath: string, root: string): boolean {
+  try {
+    const { success, stdout } = new Deno.Command("git", {
+      args: ["status", "--porcelain", "--", filePath],
+      cwd: root,
+      stdout: "piped",
+      stderr: "null",
+    }).outputSync();
+    if (!success) return false;
+    return new TextDecoder().decode(stdout).trim() === "";
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   const raw = new TextDecoder().decode(await new Response(Deno.stdin.readable).arrayBuffer());
 
@@ -54,8 +85,11 @@ async function main() {
   const transcript = readFile(transcriptPath);
   if (transcript === null) quiet();
 
-  const records = parseTranscript(transcript);
-  const divergences = findDivergences(records, readFile);
+  const root = repoRoot();
+  const { edits: records, bashCommands } = parseTranscript(transcript);
+  const divergences = findDivergences(records, readFile, root, (path) => {
+    return root ? isGitClean(path, root) : false;
+  }, bashCommands);
 
   if (divergences.length === 0) quiet();
 

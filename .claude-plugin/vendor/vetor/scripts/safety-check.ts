@@ -16,7 +16,11 @@
 //   Edit/Write  — dentro de um worktree, não escrever fora dele; um agente vetor:issue-worker
 //                 nunca deveria escrever com cwd resolvendo para a raiz do projeto (fora de
 //                 qualquer worktree linkado) — se acontecer, é sinal de cwd mal resolvido pelo
-//                 harness, não uma escrita legítima (ver issue #57).
+//                 harness, não uma escrita legítima (ver issue #57). No Codex, edição de arquivo
+//                 chega como tool_name "apply_patch" (nunca "Edit"/"Write" — só aliases de
+//                 matcher no hooks.json) com um patch multi-arquivo em tool_input.command, em
+//                 vez de tool_input.file_path — mesma política, paths extraídos do patch
+//                 (ver issue #76).
 //   Binding     — segunda camada, independente do guard acima: com múltiplos workers em
 //                 paralelo (ver issue #63), o cwd recebido no payload pode contaminar entre
 //                 subagentes — o cwd resolve para um worktree real, só que de OUTRO worker
@@ -40,12 +44,31 @@ const PROTECTED_BRANCHES = ["main", "master", "production"];
 
 interface HookInput {
   tool_name?: string;
-  tool_input?: { command?: string; file_path?: string };
+  /** command é string no Bash; array (["apply_patch", "<patch>"]) no apply_patch do Codex. */
+  tool_input?: { command?: string | string[]; file_path?: string };
   cwd?: string;
   /** Presente quando o hook dispara dentro de um subagente (ex.: "vetor:issue-worker"). */
   agent_type?: string;
   /** Identificador único da instância do subagente — estável entre chamadas, ao contrário de agent_type. */
   agent_id?: string;
+}
+
+const APPLY_PATCH_PATH_RE = /^\*\*\* (?:Add File|Delete File|Update File|Move to): (.+)$/gm;
+
+/**
+ * Extrai os paths tocados por um patch do apply_patch (formato descrito em
+ * https://github.com/openai/codex/blob/main/codex-rs/core/gpt_5_2_prompt.md): um envelope com
+ * uma ou mais operações "Add/Delete/Update File" e "Move to" opcional por operação.
+ */
+function extractApplyPatchPaths(command: string | string[] | undefined): string[] {
+  const patchText = Array.isArray(command) ? command.at(-1) : command;
+  if (!patchText) return [];
+
+  return [...patchText.matchAll(APPLY_PATCH_PATH_RE)].map((match) => match[1].trim());
+}
+
+function resolveAgainstCwd(path: string, cwd: string): string {
+  return path.startsWith("/") ? path : `${cwd}/${path}`;
 }
 
 function blocked(message: string): never {
@@ -55,7 +78,11 @@ function blocked(message: string): never {
 
 /** Extrai a branch de destino de um `git push [flags] [remote] <branch>[:<remote-branch>]`. */
 function pushDestination(command: string): string | null {
-  const push = command.match(/git push[^&|;]*/)?.[0];
+  // Continuações de linha (`\` + newline) fazem parte do mesmo comando shell — junte-as antes de
+  // isolar por quebra de linha real, senão `git push \` seguido de `origin master` escaparia do
+  // regex abaixo e o destino real (`master`) nunca seria capturado.
+  const joined = command.replace(/\\\r?\n/g, " ");
+  const push = joined.match(/git push[^&|;\n]*/)?.[0];
   if (!push) return null;
 
   const last = push.trim().split(/\s+/).pop();
@@ -64,12 +91,14 @@ function pushDestination(command: string): string | null {
 }
 
 /**
- * Só se aplica dentro de um worktree linkado (`wt.isLinked`): a raiz do repositório
- * principal não tem essa restrição, senão o próprio uso legítimo do hook lá quebraria.
+ * Só se aplica dentro de um worktree linkado (`wt.isLinked`) E com `agentType` presente
+ * (chamada por um subagente, ex.: `vetor:issue-worker`): a raiz do repositório principal
+ * — e qualquer sessão normal do usuário, mesmo que o cwd resolva para um worktree linkado —
+ * não tem essa restrição, senão o próprio uso legítimo do hook lá quebraria (issue #114).
  */
-async function checkFreshness(wt: WorktreeInfo): Promise<void> {
+async function checkFreshness(wt: WorktreeInfo, agentType: string): Promise<void> {
   const list = await run("git", ["worktree", "list", "--porcelain"], wt.root);
-  const message = evaluateFreshness(wt.toplevel, wt.root, list.stdout);
+  const message = evaluateFreshness(wt.toplevel, wt.root, list.stdout, agentType);
   if (message) blocked(message);
 }
 
@@ -141,7 +170,22 @@ async function checkWrite(
   agentType?: string,
   agentId?: string,
 ): Promise<void> {
-  const wt = await resolveWorktree(cwd);
+  let wt = await resolveWorktree(cwd);
+
+  // Issue #103: If the payload's cwd is contaminated, but the agent provides an absolute filePath
+  // that points to its bound worktree, we should override the contaminated cwd and use the bound worktree.
+  if (agentId && wt?.root && filePath.startsWith("/")) {
+    const path = agentBindingPath(wt.root, agentId);
+    try {
+      const bound = Deno.readTextFileSync(path).trim();
+      if (bound && bound !== wt.toplevel && filePath.startsWith(bound)) {
+        const boundWt = await resolveWorktree(bound);
+        if (boundWt) wt = boundWt;
+      }
+    } catch {
+      // No binding yet
+    }
+  }
 
   if (!wt?.isLinked) {
     // Um vetor:issue-worker deveria estar sempre dentro do seu worktree isolado. cwd
@@ -183,10 +227,12 @@ async function main() {
   const cwd = input.cwd ?? Deno.cwd();
   const wt = await resolveWorktree(cwd);
 
-  // A checagem de frescor só faz sentido dentro de um worktree linkado — na raiz do
-  // repositório principal (isLinked === false) o hook segue liberando normalmente.
-  if (wt?.isLinked) {
-    await checkFreshness(wt);
+  // A checagem de frescor só faz sentido dentro de um worktree linkado E chamada por um
+  // subagente identificado (agent_type presente) — na raiz do repositório principal
+  // (isLinked === false), ou numa sessão normal do usuário cujo cwd resolva para um
+  // worktree linkado (sem agent_type), o hook segue liberando normalmente (issue #114).
+  if (wt?.isLinked && input.agent_type) {
+    await checkFreshness(wt, input.agent_type);
   }
 
   if (input.tool_name === "Edit" || input.tool_name === "Write") {
@@ -195,8 +241,15 @@ async function main() {
     Deno.exit(0);
   }
 
+  if (input.tool_name === "apply_patch") {
+    for (const path of extractApplyPatchPaths(input.tool_input?.command)) {
+      await checkWrite(resolveAgainstCwd(path, cwd), cwd, input.agent_type, input.agent_id);
+    }
+    Deno.exit(0);
+  }
+
   const command = input.tool_input?.command;
-  if (command) checkBash(command, wt);
+  if (typeof command === "string") checkBash(command, wt);
   Deno.exit(0);
 }
 

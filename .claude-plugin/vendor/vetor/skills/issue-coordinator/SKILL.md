@@ -56,17 +56,26 @@ Antes de qualquer outra fase, avalie o argumento recebido:
 
 - **Sem argumento** (`/coordinator` puro) ou **`--resume`**: entre em **modo de retomada**.
   1. Rode `bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-status.sh"` para listar os worktrees ativos com
-     status file.
+     status file. O script cruza os status files com `gh pr list` para detectar se branches em
+     `GREEN` já possuem PR aberta (`GREEN (PR #N aberta)`) ou mergeada (`GREEN (já mergeado via #N)`).
   2. Se houver ao menos um status file ativo: **pule as Fases 1–3** e faça a pergunta de workers
      (Fase 2, seção "Pergunta sobre teto de workers") — o estado em memória de `N` não sobrevive a
      um reinício da sessão. Depois, vá para o monitoramento — monte a tabela de status (equivalente
-     à Fase 5.a) e, para cada grupo em `GREEN`, ofereça o ship via `AskUserQuestion` ("Fazer ship do
-     grupo `<slug>` (Issue #<N>), que está GREEN?"). Prossiga o restante do fluxo a partir da
-     Fase 5/6 normalmente.
+     à Fase 5.a) e, para cada grupo em `GREEN` (que não esteja anotado como `PR #N aberta` ou `já mergeado via #N`),
+     ofereça o ship via `AskUserQuestion` ("Fazer ship do grupo `<slug>` (Issue #<N>), que está GREEN?").
+     Se já estiver mergeado (`GREEN (já mergeado via #N)`), apenas informe no relatório e não ofereça ship.
+     Prossiga o restante do fluxo a partir da Fase 5/6 normalmente.
      Em `--headless`: não pergunte o teto (use `N_rec`) e não ofereça ship — apenas monte a tabela
      de status e reporte os grupos `GREEN` como prontos para ship.
   3. Se **não houver** nenhum worktree ativo com status file: caia no fluxo padrão — trate como se
-     fosse `/coordinator backlog` (Fase 1, label default `backlog`).
+     fosse `/coordinator backlog` (Fase 1, label default `backlog`). **Antes de prosseguir**, rode
+     `gh issue list --label backlog --state open --json number,title` (como faria na Fase 1). Se
+     retornar vazio **e** rodar `gh issue list --state open --json number,title` sem filtro de label
+     retornar resultados, **avise explicitamente no chat:** "_Nenhuma issue encontrada com label
+     `backlog`, mas há <N> issues abertas sem label. Use `/coordinator <N>,<M>,...` para despachar
+     específicas, ou aplique a label `backlog` às issues que deseja coordenar, ou use
+     `/coordinator --label <label>` para listar por outro critério._" Isto evita a falsa impressão
+     de "nada a despachar" quando há trabalho pendente.
 - **Lista de números** (`^[0-9]+(,[0-9]+)*$`) ou **label explícito**: siga o fluxo padrão a partir
   da Fase 1, sem passar pelo modo de retomada.
 
@@ -75,7 +84,9 @@ Antes de qualquer outra fase, avalie o argumento recebido:
 A flag `--headless` (em qualquer posição do argumento) ativa a execução não-interativa. Ela existe
 porque rotinas agendadas e pipelines de CI rodam **sem humano para responder**: uma
 `AskUserQuestion` ou um `ExitPlanMode` nesse contexto não é respondido e o coordinator trava antes
-de despachar qualquer worker — planeja e não executa.
+de despachar qualquer worker — planeja e não executa. É o mesmo modo de falha já documentado na
+Fase 4 para o worker preso em plan mode (issue #121), uma camada acima: sem interlocutor, todo
+gate de aprovação vira deadlock silencioso.
 
 Em `--headless`, os quatro pontos de interação humana do fluxo são substituídos por decisões
 determinísticas:
@@ -90,16 +101,33 @@ determinísticas:
 Além disso, em `--headless`:
 
 - **A Fase 6 (merge) não roda.** O coordinator despacha, monitora e reporta; nunca invoca
-  `worktree-ship`, `gh pr ready` ou `gh pr merge`. Entregar código ao `master` sem revisão humana é
-  precisamente o que um modo não supervisionado não deve decidir sozinho. Grupos em `GREEN` são
-  reportados como prontos para ship, e o ship fica para uma sessão interativa ou para uma rotina
-  dedicada.
+  `worktree-ship`, `gh pr ready` ou `gh pr merge`. Entregar código à branch default sem revisão
+  humana é precisamente o que um modo não supervisionado não deve decidir sozinho — ainda mais em
+  repositórios sem required status check configurado, onde não há barreira nenhuma depois do merge.
+  Grupos em `GREEN` são reportados como prontos para ship, e o ship fica para uma sessão interativa
+  ou para uma rotina dedicada.
 - **Nenhuma permissão é auto-aprovada.** Um worker que bloqueia pedindo permissão permanece
   `BLOCKED_WAITING` e aparece no relatório final. Conceder permissão sem humano anularia a razão de
   o worker ter parado.
 - **Ausência de trabalho não é falha.** Se não houver issue elegível, ou se todo grupo candidato já
   tiver PR aberto, encerre com um relatório de uma linha dizendo isso. Não force dispatch para
   parecer produtivo.
+
+### 0.4 — Nota sobre Comportamento de Fallback de Label
+
+O fluxo padrão do `/coordinator` (sem argumento, modo de retomada) usa `backlog` como label
+padrão de busca (Fase 1). **Este é um critério de conveniência, não uma restrição obrigatória.**
+
+- **Issues com label `backlog`:** entram automaticamente na fila de dispatch ao rodar `/coordinator` sem
+  argumento. Este é o caminho esperado para issues criadas pelo fluxo de planejamento.
+- **Issues abertas sem label:** não aparecem na listagem default da Fase 1. Elas podem ter sido
+  abertas por outros canais (ex.: `/retro`, criação manual, ou integração externa). O comportamento
+  atual (Fase 0, passo 3) **detecta e avisa explicitamente** quando há issues abertas sem label,
+  evitando a falsa impressão de "nada a despachar".
+- **Resgate manual de issues sem label:** use `/coordinator <N>,<M>,...` (lista de números) para
+  despachar issues específicas sem label, ou aplique a label `backlog` e retrigger o `/coordinator`.
+
+Isto garante transparência e evita que trabalho pendente passe despercebido.
 
 ### 1 — Listar issues candidatas e analisar afinidades
 
@@ -114,23 +142,30 @@ como **lista de issues por número**; caso contrário, como **label** (fluxo pad
   ```bash
   gh issue list --label <label> --state open --json number,title,labels,body
   ```
+  **Comportamento de fallback (Fase 0, label default `backlog`):** Se o label usado for `backlog`
+  (default em modo de retomada sem worktrees) e a busca retornar vazio, rode também
+  `gh issue list --state open --json number,title` sem filtro de label. Se houver resultados,
+  avise explicitamente: "_Nenhuma issue com label `backlog`, mas há <N> issues abertas sem label.
+  Use `/coordinator <N>,<M>,...` para despachar específicas, ou aplique a label `backlog`._"
+  Isto garante que o usuário é informado de trabalho pendente mesmo quando falta a label padrão.
 
 O restante do fluxo (verificação de PR já aberto, análise de afinidade, dispatch) é **idêntico** nos
 dois modos.
 
-Para cada issue, verifique se já há PR aberto:
+Para cada issue, verifique se já há PR aberto ou se a branch correspondente já foi entregue:
 ```bash
 gh pr list --search "closes:#<N>" --state open --json number,title
 ```
 
-Se já houver PR: pule a issue e registre na tabela como "PR já aberto (#<PR>)".
+Se já houver PR (ou se `vetor-status.sh` reportar `GREEN (PR #N aberta)` ou `GREEN (já mergeado via #N)`):
+pule a issue e registre na tabela como "PR já aberto (#<PR>)" ou "Já mergeado (#<PR>)".
 
 #### Análise de Afinidade e Agrupamento Sequencial (Delegação ao Gemini):
 Com as candidatas válidas em mãos, se o CLI `agy` estiver disponível (verifique via `command -v agy`) e houver mais de 3 issues a processar, você pode delegar a proposta de agrupamento de afinidade:
 1. Imprima o log: `echo "[Vetor:Gemini] Delegando tarefa: Propondo agrupamento de afinidade de issues"`
-2. Execute o comando passando o JSON das candidatas:
+2. Execute o comando passando o JSON das candidatas (use command substitution pois pipe direto não funciona — issue #111):
    ```bash
-   gh issue list --label <label> --state open --json number,title,labels,body | agy -p "Analise estas issues em formato JSON e sugira um agrupamento de afinidade. Retorne o resultado em formato markdown estruturado indicando para cada grupo a Lead Issue (principal/mais antiga), as issues secundárias subsequentes do grupo, o slug sugerido e se o modelo ideal de execução deve ser haiku (ajustes simples/chore) ou sonnet (features complexas/refactor)."
+   agy -p "Analise estas issues em formato JSON e sugira um agrupamento de afinidade. Retorne o resultado em formato markdown estruturado indicando para cada grupo a Lead Issue (principal/mais antiga), as issues secundárias subsequentes do grupo, o slug sugerido e se o modelo ideal de execução deve ser haiku (ajustes simples/chore) ou sonnet (features complexas/refactor). JSON: $(gh issue list --label <label> --state open --json number,title,labels,body)"
    ```
 3. O Claude analisa a proposta sugerida, corrige quaisquer desvios de escopo e define a distribuição final.
 
@@ -255,7 +290,10 @@ também conta). Se qualquer issue do grupo já aparecer em um worktree ativo:
   sessões do coordinator.
 
 Despache um sub-agente por grupo de issues (respeitando o teto acima) utilizando a chamada do
-subagente nativo `issue-worker` com isolamento de worktree nativo (`isolation: "worktree"`):
+subagente nativo `issue-worker` com isolamento de worktree nativo (`isolation: "worktree"`).
+**Antes de invocar `Agent()`, o coordenador DEVE criar o status file** (caminho derivado na Fase 3) com
+`Status: RUNNING`, pois o sandbox de isolamento do worker pode impedi-lo de criar o arquivo fora do worktree (issue #110).
+Exemplo: `echo -e "# Agent Status - <branch>\nStatus: RUNNING\nIteration: 1/5 (Issue #<M>)" > <path>`.
 
 ```javascript
 Agent({
@@ -278,11 +316,30 @@ arquivos com o mesmo número de versão após o sync com a branch default.
 
 ⚠️ **`isolation: "worktree"` é só para dispatch inicial (worktree ainda não existe).** Se o worktree já
 existe — retomada de uma sessão anterior, redespacho após resposta a um `BLOCKED_WAITING` (Fase 5.b)
-ou redespacho após `FAILED_MAX_ITERATIONS` — **NÃO** passe `isolation: "worktree"`: isso cria um
-worktree novo e desconectado do path pretendido, e a ferramenta `Write` recusa gravar no caminho
-correto quando o agente descobre a inconsistência. Nesse caso, despache **sem** o parâmetro
-`isolation` e instrua um `cd` explícito para o path real do worktree existente (obtenha via
-`git worktree list`) no prompt do worker.
+ou redespacho após `FAILED_MAX_ITERATIONS` — **NÃO use `vetor:issue-worker`**. O `vetor:issue-worker`
+força isolamento em worktree novo via frontmatter, ignorando a omissão do parâmetro (issue #104).
+Nesse caso, despache um subagente padrão sem `subagent_type` específico, instruindo-o com a skill
+`fix-loop-agent` no prompt e um `cd` explícito para o path real do worktree existente (obtenha via
+`git worktree list`). Exemplo:
+```javascript
+Agent({
+  description: "Grupo Lead #<N>: <título> (Resumo)",
+  prompt: "Entre no diretório <path> e retome o trabalho usando a skill fix-loop-agent...",
+  model: "<haiku|sonnet>",
+  run_in_background: true
+})
+```
+
+⚠️ **Worker preso em Plan Mode (issue #121).** Sintoma: um `issue-worker` despachado via `Agent()`
+entra em plan mode por conta própria (heurística padrão do Claude Code para "tarefa não-trivial") e
+fica travado — sem `ExitPlanMode` disponível na sessão isolada (agente headless, sem interlocutor
+para aprovar a saída), e a escrita do plan file (fora do worktree) bloqueada pelo próprio
+`scripts/safety-check.ts`. O status file desse worker fica parado em `RUNNING` sem progresso
+(nenhuma iteração nova, nenhum commit). Recuperação: **descarte a sessão travada** e redespache como
+agente genérico no mesmo worktree, seguindo exatamente o procedimento acima (`isolation: "worktree"`
+só serve para dispatch inicial) — não use `vetor:issue-worker` de novo para esse worktree, pois o
+frontmatter do agente não impede reincidência por si só; a mitigação primária é a instrução explícita
+em `agents/issue-worker.md` e `skills/fix-loop-agent/SKILL.md` para nunca chamar `EnterPlanMode`.
 
 **Nota (Antigravity):** o `issue-worker` também é registrado para o Google Antigravity via
 `agents/issue-worker/agent.json` (`customAgentSpec`), complementando `agents/issue-worker.md`
@@ -298,6 +355,18 @@ Envie ao `issue-worker` a lista de tarefas a realizar:
    iteração de cada issue do grupo, refletindo a issue atual (ex.: `Iteration: 2/5 (Issue #<M1>)`).
    O arquivo fica fora do worktree — sem risco de commit acidental.
 
+   ⚠️ **Fallback de status file (issue #94).** Instrua o worker explicitamente:
+   > Escreva o status file no path absoluto `<status-file-path>`. Se a plataforma rejeitar com
+   > mensagem como *"Edit the worktree copy..."* ou qualquer bloqueio de escrita fora do worktree,
+   > salve também uma cópia dentro do worktree em `.claude/vetor-status.md` (relativo ao worktree).
+   > Se apenas a cópia local foi gravada, sinalize no chat que o status está no worktree para que o
+   > coordinator saiba ler de lá.
+
+   O coordinator (Fase 5) ao ler o status, verifica primeiro o path absoluto; se não existir ou
+   estiver desatualizado, tenta `.claude/vetor-status.md` dentro do worktree correspondente
+   (obtido via `git worktree list`). Isso garante que o monitoramento funcione mesmo quando a
+   plataforma bloqueia a escrita fora do worktree.
+
 Quando o worker concluir todas as issues do grupo com sucesso, ele deve marcar o status final como `GREEN`. Caso falhe em alguma, para e marca como `FAILED_MAX_ITERATIONS` especificando qual issue do grupo falhou.
 
 ### 5 — Monitoramento
@@ -311,8 +380,11 @@ bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-status.sh"
 ```
 
 O script lê `.claude/vetor/status/*.md`, cruza com `git worktree list` (worktree removido
-manualmente → `cancelled (worktree removed)`; não recrie) e imprime a tabela pronta. Reproduza-a
+manualmente → `cancelled (worktree removed)`; não recrie) e com `gh pr list --state all`
+(anotando branches `GREEN` com `(PR #N aberta)` ou `(já mergeado via #N)`), e imprime a tabela pronta. Reproduza-a
 no chat acrescentando as linhas dos grupos ainda `QUEUED` (aguardando vaga no teto da Fase 4).
+
+⚠️ **Fallback de leitura de status (issue #94).** Se o status file no path absoluto (`.claude/vetor/status/`) não existir ou estiver desatualizado para um worktree ativo, verifique se existe `.claude/vetor-status.md` dentro desse worktree. O worker pode ter escrito apenas localmente quando a plataforma bloqueou a escrita fora do worktree. Ao ler do worktree, extraia a branch via `git worktree list` e leia `<path-do-worktree>/.claude/vetor-status.md`.
 
 ⚠️ **Detecção de workers duplicados na mesma issue.** Ao montar a tabela, extraia o número de issue
 de cada linha `Iteration: N/5 (Issue #<M>)` de todos os status files ativos (`RUNNING`,
@@ -334,9 +406,8 @@ instrua-o via `SendMessage` a gravar o `BLOCKED_WAITING` estruturado (`Blocked o
 **Em `--headless`: não escale.** Leia o bloco `Blocked on` / `Options` / `Recommendation` do status
 file, mantenha o grupo em `BLOCKED_WAITING` e registre no relatório final o agente (`<slug>` /
 Issue `#<N>`), o motivo do bloqueio e a recomendação do próprio worker — para que o humano decida
-depois, em sessão interativa. Não conceda permissão, não escolha opção técnica e não redespache. A
-vaga ocupada pelo grupo bloqueado conta para o teto `N`; se houver grupo `QUEUED`, prefira liberar
-a vaga cancelando nada e simplesmente reportando — nunca mate um worker bloqueado para abrir vaga.
+depois, em sessão interativa. Não conceda permissão, não escolha opção técnica e não redespache.
+Nunca mate um worker bloqueado para abrir vaga no teto `N`: o bloqueio é informação, não lixo.
 
 Fora do headless, se um agente estiver em `BLOCKED_WAITING`, leia o bloco `Blocked on` / `Options` /
 `Recommendation` do status file e escale ao usuário via `AskUserQuestion`, identificando o agente
@@ -350,7 +421,8 @@ agente" foi escolhido, registre a permissão expandida em memória e auto-aprove
 do mesmo tipo daquele agente.
 
 Se a resposta exigir **redespachar** um novo `Agent()` para um worktree que já existe, **NÃO**
-passe `isolation: "worktree"` — ver a nota de redispatch na Fase 4.
+use `vetor:issue-worker` (que força isolamento novo). Despache um agente genérico — ver a nota
+de redispatch na Fase 4.
 
 **5.c — Circuit Breaker (Disjuntor de Falhas)**
 - Se 2 ou mais agentes falharem na mesma iteração com o status `FAILED_MAX_ITERATIONS` apresentando assinaturas de erro idênticas (ex.: falha de rede do gerenciador de pacotes, erro de linkagem em arquivo global, etc.), acione o circuit breaker.
