@@ -17,11 +17,13 @@ public class RabbitMQConfig {
     public static final String QUEUE_RETRY = "agent.execution.retry";
     public static final String QUEUE_DLQ = "agent.execution.dlq";
     public static final String QUEUE_EVENTS = "agent.execution.events";
+    public static final String QUEUE_EVENTS_DLQ = "agent.execution.events.dlq";
 
     public static final String ROUTING_KEY_JOBS = "agent.execution.jobs";
     public static final String ROUTING_KEY_RETRY = "agent.execution.retry";
     public static final String ROUTING_KEY_DLQ = "agent.execution.dlq";
     public static final String ROUTING_KEY_EVENTS = "agent.execution.events";
+    public static final String ROUTING_KEY_EVENTS_DLQ = "agent.execution.events.dlq";
 
     // O workflow-worker (Rust) publica eventos de conclusão/falha usando eventType
     // como routing key (ver rust-services/workflow-worker/src/rabbitmq.rs::publish_event),
@@ -82,12 +84,27 @@ public class RabbitMQConfig {
 
     @Bean
     public Queue eventsQueue() {
-        return new Queue(QUEUE_EVENTS, true, false, false);
+        Map<String, Object> args = new HashMap<>();
+        // Mensagens rejeitadas (nack sem requeue, ex.: payload malformado) vão para uma DLQ
+        // dedicada em vez de serem descartadas silenciosamente — issue #271.
+        args.put("x-dead-letter-exchange", DLX_NAME);
+        args.put("x-dead-letter-routing-key", ROUTING_KEY_EVENTS_DLQ);
+        return new Queue(QUEUE_EVENTS, true, false, false, args);
     }
 
     @Bean
     public Binding bindingEventsQueue(Queue eventsQueue, DirectExchange agentExchange) {
         return BindingBuilder.bind(eventsQueue).to(agentExchange).with(ROUTING_KEY_EVENTS);
+    }
+
+    @Bean
+    public Queue eventsDlqQueue() {
+        return new Queue(QUEUE_EVENTS_DLQ, true, false, false);
+    }
+
+    @Bean
+    public Binding bindingEventsDlqQueue(Queue eventsDlqQueue, DirectExchange agentDlx) {
+        return BindingBuilder.bind(eventsDlqQueue).to(agentDlx).with(ROUTING_KEY_EVENTS_DLQ);
     }
 
     @Bean

@@ -11,6 +11,9 @@ pub struct Config {
     /// API key do Google AI Studio, usada como fallback quando o Vertex AI
     /// (autenticado via ADC) estiver indisponível ou não configurado.
     pub google_ai_studio_api_key: Option<String>,
+    /// Número máximo de chunks a recuperar em buscas de retrieval (pgvector).
+    /// Configurável via env var RAG_TOP_K, default 5.
+    pub rag_top_k: usize,
 }
 
 impl Config {
@@ -34,6 +37,11 @@ impl Config {
 
         let google_ai_studio_api_key = env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
 
+        let rag_top_k = env::var("RAG_TOP_K")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+
         Ok(Config {
             rabbitmq_url,
             database_url,
@@ -42,6 +50,7 @@ impl Config {
             gcp_location,
             gcp_chat_model_id,
             google_ai_studio_api_key,
+            rag_top_k,
         })
     }
 }
