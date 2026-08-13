@@ -331,19 +331,19 @@ mod tests {
 
     #[test]
     fn test_vertex_ai_url_format() {
-        let url = vertex_ai_url("us-central1", "alfabra-platform", "text-embedding-004");
+        let url = vertex_ai_url("us-central1", "alfabra-platform", "gemini-embedding-001");
         assert_eq!(
             url,
-            "https://us-central1-aiplatform.googleapis.com/v1/projects/alfabra-platform/locations/us-central1/publishers/google/models/text-embedding-004:predict"
+            "https://us-central1-aiplatform.googleapis.com/v1/projects/alfabra-platform/locations/us-central1/publishers/google/models/gemini-embedding-001:predict"
         );
     }
 
     #[test]
     fn test_ai_studio_url_format() {
-        let url = ai_studio_url(AI_STUDIO_DEFAULT_BASE_URL, "text-embedding-004");
+        let url = ai_studio_url(AI_STUDIO_DEFAULT_BASE_URL, "gemini-embedding-001");
         assert_eq!(
             url,
-            "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents"
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents"
         );
     }
 
@@ -376,7 +376,7 @@ mod tests {
             Some("fake-api-key"),
             &texts,
             2,
-            "text-embedding-004",
+            "gemini-embedding-001",
         )
         .await;
 
@@ -419,7 +419,7 @@ mod tests {
             Some("fake-api-key"),
             &texts,
             2,
-            "text-embedding-004",
+            "gemini-embedding-001",
         )
         .await;
 
@@ -455,7 +455,7 @@ mod tests {
             Some("fake-api-key"),
             &texts,
             1,
-            "text-embedding-004",
+            "gemini-embedding-001",
         )
         .await;
 
@@ -487,7 +487,7 @@ mod tests {
             None,
             &texts,
             1,
-            "text-embedding-004",
+            "gemini-embedding-001",
         )
         .await;
 
@@ -510,7 +510,7 @@ mod tests {
             None,
             &texts,
             1,
-            "text-embedding-004",
+            "gemini-embedding-001",
         )
         .await;
 
