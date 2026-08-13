@@ -1,5 +1,6 @@
 package com.company.core.interfaces.rest;
 
+import com.company.core.application.FileTypeValidator;
 import com.company.core.domain.entities.Agent;
 import com.company.core.domain.entities.Document;
 import com.company.core.domain.entities.User;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.List;
@@ -36,6 +38,7 @@ public class DocumentController {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final com.company.core.application.AuditService auditService;
+    private final FileTypeValidator fileTypeValidator;
 
     @Value("${minio.bucket:agents-data}")
     private String minioBucket;
@@ -46,7 +49,8 @@ public class DocumentController {
                               MinioClient minioClient,
                               RabbitTemplate rabbitTemplate,
                               ObjectMapper objectMapper,
-                              com.company.core.application.AuditService auditService) {
+                              com.company.core.application.AuditService auditService,
+                              FileTypeValidator fileTypeValidator) {
         this.documentRepository = documentRepository;
         this.agentRepository = agentRepository;
         this.userRepository = userRepository;
@@ -54,6 +58,7 @@ public class DocumentController {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.fileTypeValidator = fileTypeValidator;
     }
 
     @PostMapping("/upload")
@@ -82,18 +87,33 @@ public class DocumentController {
                 agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
             }
 
-            // Create document UUID
-            UUID docId = UUID.randomUUID();
             String name = file.getOriginalFilename();
+            if (name == null || name.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Nome do arquivo é obrigatório."));
+            }
+            if (name.length() > 255) {
+                name = name.substring(name.length() - 255);
+            }
             String ext = getFileExtension(name).toLowerCase();
-            
+
+            byte[] fileBytes = file.getBytes();
+            try {
+                fileTypeValidator.validate(fileBytes, ext);
+            } catch (FileTypeValidator.ValidationException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            }
+
+            // Create document UUID e object key baseado em UUID (nome original vira só metadado)
+            UUID docId = UUID.randomUUID();
+            String storedFileName = docId + "." + ext;
+
             // Upload to MinIO
-            String objectPath = "documents/" + docId + "/" + name;
-            try (InputStream is = file.getInputStream()) {
+            String objectPath = "documents/" + docId + "/" + storedFileName;
+            try (InputStream is = new ByteArrayInputStream(fileBytes)) {
                 minioClient.putObject(PutObjectArgs.builder()
                         .bucket(minioBucket)
                         .object(objectPath)
-                        .stream(is, file.getSize(), -1L)
+                        .stream(is, (long) fileBytes.length, -1L)
                         .contentType(getContentType(ext))
                         .build());
             }

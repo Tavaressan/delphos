@@ -28,6 +28,7 @@ pub struct ServiceConfig {
     pub chunk_size: usize,
     pub chunk_overlap: usize,
     pub max_document_size_mb: usize,
+    pub max_pdf_pages: usize,
     pub ocr_enabled: bool,
     pub ocr_lang: String,
 }
@@ -46,6 +47,10 @@ impl ServiceConfig {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(50);
+        let max_pdf_pages = std::env::var("MAX_PDF_PAGES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(2000);
         let ocr_enabled = std::env::var("OCR_ENABLED")
             .ok()
             .map(|v| v.to_lowercase() == "true")
@@ -56,6 +61,7 @@ impl ServiceConfig {
             chunk_size,
             chunk_overlap,
             max_document_size_mb,
+            max_pdf_pages,
             ocr_enabled,
             ocr_lang,
         }
@@ -276,6 +282,7 @@ pub struct ParsedDocument {
 pub struct ParserConfig {
     pub ocr_enabled: bool,
     pub ocr_lang: String,
+    pub max_pdf_pages: usize,
 }
 
 pub trait DocumentParser {
@@ -320,6 +327,40 @@ impl DocType {
     }
 }
 
+// Chaves de dicionário PDF associadas a JavaScript embutido e ações automáticas
+// (issue #178) — presentes em Action Dictionaries (/S /JavaScript /JS ...), na
+// árvore /Names/JavaScript, no /OpenAction do catalog ou em Additional Actions (/AA).
+const UNSAFE_PDF_ACTION_KEYS: [(&[u8], &str); 4] = [
+    (b"JS", "/JS (JavaScript embutido)"),
+    (
+        b"Launch",
+        "/Launch (ação de lançamento de programa externo)",
+    ),
+    (
+        b"OpenAction",
+        "/OpenAction (ação automática ao abrir o documento)",
+    ),
+    (b"AA", "/AA (ação adicional automática)"),
+];
+
+fn detect_unsafe_pdf_action(doc: &lopdf::Document) -> Option<&'static str> {
+    for object in doc.objects.values() {
+        let dict = match object {
+            lopdf::Object::Dictionary(dict) => Some(dict),
+            lopdf::Object::Stream(stream) => Some(&stream.dict),
+            _ => None,
+        };
+        if let Some(dict) = dict {
+            for (key, description) in UNSAFE_PDF_ACTION_KEYS {
+                if dict.has(key) {
+                    return Some(description);
+                }
+            }
+        }
+    }
+    None
+}
+
 pub struct PdfParser;
 
 impl DocumentParser for PdfParser {
@@ -340,9 +381,24 @@ impl DocumentParser for PdfParser {
             }
         };
 
+        if let Some(reason) = detect_unsafe_pdf_action(&doc) {
+            return Err(anyhow::anyhow!(
+                "PDF rejeitado por conter ação potencialmente perigosa: {}",
+                reason
+            ));
+        }
+
         let mut pages = Vec::new();
         let mut page_numbers: Vec<u32> = doc.get_pages().keys().cloned().collect();
         page_numbers.sort();
+
+        if page_numbers.len() > config.max_pdf_pages {
+            return Err(anyhow::anyhow!(
+                "PDF excede o limite de {} páginas ({} encontradas)",
+                config.max_pdf_pages,
+                page_numbers.len()
+            ));
+        }
 
         for page_num in page_numbers {
             if let Ok(page_text) = doc.extract_text(&[page_num]) {
@@ -503,6 +559,7 @@ pub async fn process_document(
     let parser_config = ParserConfig {
         ocr_enabled: config.ocr_enabled,
         ocr_lang: config.ocr_lang.clone(),
+        max_pdf_pages: config.max_pdf_pages,
     };
 
     let parsed_doc = match doc_type {

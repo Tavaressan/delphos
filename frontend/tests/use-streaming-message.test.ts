@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { applyStreamChunk, parseSseDataLine } from '../src/hooks/useStreamingMessage';
+import { applyStreamChunk, parseSseDataLine, isStreamingEnabled } from '../src/hooks/useStreamingMessage';
 
 describe('useStreamingMessage streaming assembly (issue #142 — streaming real de mensagens)', () => {
   test('applyStreamChunk concatenates incoming chunks incrementally', () => {
@@ -36,6 +36,12 @@ describe('useStreamingMessage streaming assembly (issue #142 — streaming real 
     assert.strictEqual(parseSseDataLine(':heartbeat'), null);
     assert.strictEqual(parseSseDataLine('event: done'), null);
     assert.strictEqual(parseSseDataLine(''), null);
+  });
+
+  test('streaming is disabled until the backend exposes GET /api/executions/{id}/stream (issue #276)', () => {
+    // ExecutionController (java-core) ainda não expõe endpoint de streaming
+    // (issue #276) — start() não deve abrir uma conexão fadada a 404.
+    assert.strictEqual(isStreamingEnabled(), false);
   });
 
   test('simulated SSE stream of chunks assembles the full message incrementally, in order', () => {
