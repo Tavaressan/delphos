@@ -51,12 +51,11 @@
       "Bash(ssh-keygen:*)",
       "Bash(aws ec2-instance-connect:*)",
       "Agent(vetor:issue-worker)",
-      "Agent(vetor:code-review)"
-    ],
-    "deny": [
+      "Agent(vetor:code-review)",
       "Bash(gh pr merge:*)",
       "Bash(gh pr ready:*)"
-    ]
+    ],
+    "deny": []
   },
   "hooks": {
     "Stop": [

@@ -91,6 +91,7 @@ async fn test_healthz() {
         chunk_size: 100,
         chunk_overlap: 10,
         max_document_size_mb: 5,
+        max_pdf_pages: 2000,
         ocr_enabled: false,
         ocr_lang: "por+eng".to_string(),
     };
@@ -211,6 +212,7 @@ fn test_html_parser() {
     let config = ParserConfig {
         ocr_enabled: false,
         ocr_lang: "por".to_string(),
+        max_pdf_pages: 2000,
     };
 
     let parsed = parser.parse(html_bytes, &config).unwrap();
@@ -228,11 +230,85 @@ fn test_pdf_parser_success() {
     let config = ParserConfig {
         ocr_enabled: false,
         ocr_lang: "por".to_string(),
+        max_pdf_pages: 2000,
     };
 
     let parsed = parser.parse(&pdf_bytes, &config).unwrap();
     assert!(!parsed.pages.is_empty());
     assert!(parsed.pages[0].text.contains("Alfabra Vector"));
+}
+
+fn create_test_pdf_with_open_action_javascript() -> Vec<u8> {
+    let mut doc = lopdf::Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+
+    let mut page_dict = lopdf::Dictionary::new();
+    page_dict.set("Type", lopdf::Object::Name("Page".as_bytes().to_vec()));
+    page_dict.set("Parent", pages_id);
+    page_dict.set(
+        "MediaBox",
+        lopdf::Object::Array(vec![0.into(), 0.into(), 612.into(), 792.into()]),
+    );
+    let page_id = doc.add_object(page_dict);
+
+    let mut pages_dict = lopdf::Dictionary::new();
+    pages_dict.set("Type", lopdf::Object::Name("Pages".as_bytes().to_vec()));
+    pages_dict.set("Kids", lopdf::Object::Array(vec![page_id.into()]));
+    pages_dict.set("Count", lopdf::Object::Integer(1));
+    doc.objects
+        .insert(pages_id, lopdf::Object::Dictionary(pages_dict));
+
+    let mut js_action_dict = lopdf::Dictionary::new();
+    js_action_dict.set("Type", lopdf::Object::Name("Action".as_bytes().to_vec()));
+    js_action_dict.set("S", lopdf::Object::Name("JavaScript".as_bytes().to_vec()));
+    js_action_dict.set("JS", lopdf::Object::string_literal("app.alert('pwned');"));
+    let action_id = doc.add_object(js_action_dict);
+
+    let mut catalog_dict = lopdf::Dictionary::new();
+    catalog_dict.set("Type", lopdf::Object::Name("Catalog".as_bytes().to_vec()));
+    catalog_dict.set("Pages", pages_id);
+    catalog_dict.set("OpenAction", action_id);
+    let catalog_id = doc.add_object(catalog_dict);
+
+    doc.trailer.set("Root", catalog_id);
+
+    let mut buf = Vec::new();
+    doc.save_to(&mut buf).unwrap();
+    buf
+}
+
+#[test]
+fn test_pdf_parser_rejects_openaction_javascript() {
+    let pdf_bytes = create_test_pdf_with_open_action_javascript();
+    let parser = PdfParser;
+    let config = ParserConfig {
+        ocr_enabled: false,
+        ocr_lang: "por".to_string(),
+        max_pdf_pages: 2000,
+    };
+
+    let result = parser.parse(&pdf_bytes, &config);
+    match result {
+        Err(e) => assert!(e.to_string().contains("ação potencialmente perigosa")),
+        Ok(_) => panic!("esperava erro de PDF com ação potencialmente perigosa"),
+    }
+}
+
+#[test]
+fn test_pdf_parser_rejects_pdf_exceeding_page_limit() {
+    let pdf_bytes = create_test_pdf();
+    let parser = PdfParser;
+    let config = ParserConfig {
+        ocr_enabled: false,
+        ocr_lang: "por".to_string(),
+        max_pdf_pages: 0,
+    };
+
+    let result = parser.parse(&pdf_bytes, &config);
+    match result {
+        Err(e) => assert!(e.to_string().contains("excede o limite")),
+        Ok(_) => panic!("esperava erro de PDF excedendo limite de páginas"),
+    }
 }
 
 #[tokio::test]
@@ -241,6 +317,7 @@ async fn test_process_endpoint_success() {
         chunk_size: 100,
         chunk_overlap: 10,
         max_document_size_mb: 5,
+        max_pdf_pages: 2000,
         ocr_enabled: false,
         ocr_lang: "por+eng".to_string(),
     };
@@ -308,6 +385,7 @@ async fn test_process_endpoint_payload_too_large() {
         chunk_overlap: 10,
         // Limita o tamanho maximo a 0 MB (ou seja, qualquer arquivo maior que 0 bytes excede)
         max_document_size_mb: 0,
+        max_pdf_pages: 2000,
         ocr_enabled: false,
         ocr_lang: "por+eng".to_string(),
     };

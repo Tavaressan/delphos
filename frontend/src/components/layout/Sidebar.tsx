@@ -147,13 +147,13 @@ export const Sidebar: React.FC = () => {
   return (
     <>
       {/* Desktop: inline sidebar */}
-      <div className="hidden md:flex h-full">
+      <div data-testid="sidebar-desktop" className="hidden md:flex h-full">
         {sidebarContent}
       </div>
 
       {/* Mobile: overlay drawer */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 flex md:hidden">
+        <div data-testid="sidebar-mobile-drawer" className="fixed inset-0 z-50 flex md:hidden">
           <div
             className="absolute inset-0 bg-black/60"
             onClick={() => setMobileOpen(false)}

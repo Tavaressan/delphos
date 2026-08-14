@@ -1,6 +1,7 @@
 package com.company.core.interfaces.rest;
 
 import com.company.core.application.AuditService;
+import com.company.core.application.FileTypeValidator;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
 import com.company.core.domain.repositories.UserRepository;
@@ -26,6 +27,7 @@ class DocumentControllerTest {
     private RabbitTemplate rabbitTemplate;
     private ObjectMapper objectMapper;
     private AuditService auditService;
+    private FileTypeValidator fileTypeValidator;
     private DocumentController documentController;
 
     @BeforeEach
@@ -37,6 +39,7 @@ class DocumentControllerTest {
         rabbitTemplate = Mockito.mock(RabbitTemplate.class);
         objectMapper = Mockito.mock(ObjectMapper.class);
         auditService = Mockito.mock(AuditService.class);
+        fileTypeValidator = new FileTypeValidator();
 
         documentController = new DocumentController(
                 documentRepository,
@@ -45,7 +48,8 @@ class DocumentControllerTest {
                 minioClient,
                 rabbitTemplate,
                 objectMapper,
-                auditService
+                auditService,
+                fileTypeValidator
         );
     }
 

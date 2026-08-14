@@ -1,4 +1,5 @@
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 import main
@@ -21,15 +22,16 @@ def _job_body(agent_id="agent-does-not-exist"):
     ).encode()
 
 
-def test_process_job_with_nonexistent_agent_id_nacks_without_crashing(capsys):
+def test_process_job_with_nonexistent_agent_id_nacks_without_crashing(caplog):
     """Issue #124: defesa em profundidade no crew-worker.
 
     Mesmo que um agent_id inexistente chegue até a fila (por exemplo, uma
     mensagem antiga publicada antes da correção da issue #100, ou qualquer
     outro produtor que não valide o agentId), o worker não deve travar o
-    processo consumidor nem vazar um stack trace cru: deve capturar o erro,
-    logar uma mensagem clara e enviar NACK (sem reenfileirar) para a
-    mensagem, mantendo o consumo da fila saudável para a próxima mensagem.
+    processo consumidor: deve capturar o erro, logar com nível ERROR
+    preservando o stacktrace (Issue #244) e enviar NACK (sem reenfileirar)
+    para a mensagem, mantendo o consumo da fila saudável para a próxima
+    mensagem.
     """
     ch = MagicMock()
     method = _make_method(delivery_tag=42)
@@ -42,14 +44,18 @@ def test_process_job_with_nonexistent_agent_id_nacks_without_crashing(capsys):
         MockAdapter.side_effect = ValueError("Agent 'agent-does-not-exist' not found")
 
         # Não deve propagar a exceção para fora de process_job.
-        main.process_job(ch, method, None, body)
+        with caplog.at_level(logging.ERROR, logger="main"):
+            main.process_job(ch, method, None, body)
 
     ch.basic_nack.assert_called_once_with(delivery_tag=42, requeue=False)
     ch.basic_ack.assert_not_called()
 
-    captured = capsys.readouterr()
-    assert "Traceback" not in captured.out
-    assert "not found" in captured.out
+    error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert error_records, "esperava um log de nível ERROR em process_job"
+    assert "not found" in error_records[0].getMessage()
+    # exc_info preservado: o stacktrace continua disponível para diagnóstico,
+    # diferente do print() anterior que descartava a exceção.
+    assert error_records[0].exc_info is not None
 
 
 def test_process_job_with_valid_agent_id_executes_and_acks():
