@@ -139,6 +139,94 @@ fn test_dev_fallback_enabled_defaults_to_false_and_respects_opt_in() {
     assert!(!dev_fallback_enabled());
 }
 
+// Regressão da issue #272: a URL de download deve usar o bucket configurável
+// (default "agents-data", igual ao default de `minio.bucket` no java-core) e o
+// `file_path` completo (chave do objeto), sem truncar para o basename via
+// `rfind('/')`. Antes do fix, um file_path como "agents-data/agent-<id>/doc.pdf"
+// virava "http://host:port/documents/doc.pdf" — bucket errado e path truncado.
+#[test]
+fn test_build_minio_url_uses_configurable_bucket_and_full_path() {
+    let url = build_minio_url(
+        "minio",
+        "9000",
+        "agents-data",
+        "agents-data/agent-123/doc.pdf",
+    );
+    assert_eq!(
+        url,
+        "http://minio:9000/agents-data/agents-data/agent-123/doc.pdf"
+    );
+}
+
+#[test]
+fn test_build_minio_url_does_not_truncate_nested_paths_to_basename() {
+    let url = build_minio_url(
+        "minio",
+        "9000",
+        "agents-data",
+        "documents/doc-id-456/relatorio.pdf",
+    );
+    assert_eq!(
+        url,
+        "http://minio:9000/agents-data/documents/doc-id-456/relatorio.pdf"
+    );
+}
+
+// Testa o fluxo completo de `download_file_with_fallback` contra um servidor
+// HTTP local que só responde 200 no path exato "/<bucket>/<file_path>" —
+// simulando a URL path-style do MinIO. Isso comprova que, dado um `file_path`
+// completo (com diretórios) como gravado pelo java-core, o worker monta a URL
+// correta e baixa o conteúdo com sucesso, em vez de truncar para o basename.
+#[tokio::test]
+async fn test_download_file_with_fallback_downloads_using_full_object_path() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let expected_path = "/agents-data/agent-abc-123/doc.pdf";
+    let body = b"conteudo-do-documento-de-teste";
+
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = vec![0u8; 4096];
+        let n = socket.read(&mut buf).await.unwrap();
+        let request = String::from_utf8_lossy(&buf[..n]);
+        let request_line = request.lines().next().unwrap_or("");
+
+        let response = if request_line.contains(expected_path) {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                String::from_utf8_lossy(body)
+            )
+        } else {
+            "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+        };
+
+        socket.write_all(response.as_bytes()).await.unwrap();
+        socket.shutdown().await.unwrap();
+    });
+
+    std::env::set_var("MINIO_HOST", addr.ip().to_string());
+    std::env::set_var("MINIO_PORT", addr.port().to_string());
+    std::env::set_var("MINIO_BUCKET", "agents-data");
+
+    let res = download_file_with_fallback("agent-abc-123/doc.pdf", false).await;
+
+    std::env::remove_var("MINIO_HOST");
+    std::env::remove_var("MINIO_PORT");
+    std::env::remove_var("MINIO_BUCKET");
+    server.await.unwrap();
+
+    assert!(
+        res.is_ok(),
+        "esperava sucesso ao baixar com o file_path completo e bucket configurado"
+    );
+    assert_eq!(res.unwrap(), body.to_vec());
+}
+
 #[tokio::test]
 async fn test_get_embeddings_from_service_fallback() {
     std::env::set_var("EMBEDDING_PROVIDER", "mock");

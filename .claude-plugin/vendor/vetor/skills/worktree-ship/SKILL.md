@@ -5,7 +5,7 @@ license: MIT
 compatibility: Claude Code
 metadata:
   author: vitortavares
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 Você é o pipeline de entrega do Vetor. Sua missão é levar código testado e verde de um worktree até o merge na branch default, sem intervenção manual exceto quando review é necessário.
@@ -234,6 +234,34 @@ do push, volte a observar com o mesmo `gh pr checks <PR-number> --watch` deste p
 Se o orçamento de 3 iterações (somando as do passo 8 e as deste passo) se esgotar sem o gate
 completo ficar verde, use a mesma mensagem de falha e parada do passo 8 — não tente mergear.
 
+### 8.5 — Revisão de código nativa (consultiva, não bloqueante)
+
+Substitui o antigo GitHub Action `code-review@claude-code-plugins` (desativado por custar por
+execução independente do risco/tamanho da mudança). Roda **só quando há mudança real de
+código-fonte** — o mesmo filtro do passo 3 já resolve isso: se `git diff "$DEFAULT_BRANCH"
+--name-only` (passo 3) não mapeou nenhum módulo (ex.: PR só de docs, lockfile ou config), **pule
+este passo**.
+
+Caso haja módulo alterado, despache o subagente nativo:
+
+```javascript
+Agent({
+  description: "Code review: PR #<PR-number>",
+  prompt: "PR #<PR-number>, branch <branch>, base $DEFAULT_BRANCH.",
+  subagent_type: "vetor:code-review",
+  model: "sonnet",
+  run_in_background: false
+})
+```
+
+O subagente é somente leitura sobre o código (nunca `push`/`commit`/`merge`) e publica os achados
+como comentário na PR (`gh pr comment`). **Nunca pare o pipeline por causa dos achados** — mesmo
+com itens `blocker`, prossiga para o passo 9. A revisão é consultiva: quem decide agir sobre um
+achado é o humano, ao ler o comentário na PR (antes ou depois do merge).
+
+Se o dispatch do subagente falhar por qualquer motivo (rate limit, erro de ferramenta), registre a
+falha no sumário e prossiga mesmo assim — este passo nunca bloqueia o ship.
+
 ### 9 — Verificar review
 
 ```bash
@@ -336,9 +364,11 @@ cleanup automaticamente:
 ```bash
 git worktree remove "<path-do-worktree>"
 git branch -d <branch>
+rm -f .claude/vetor/status/<branch>.md
 ```
 
-Se invocado manualmente pelo usuário: pergunte antes de remover.
+Se invocado manualmente pelo usuário: pergunte antes de remover (a confirmação cobre worktree,
+branch e arquivo de status).
 
 ---
 
@@ -348,3 +378,4 @@ Se invocado manualmente pelo usuário: pergunte antes de remover.
 - Nunca entra em loop de merge se review é necessário
 - Máximo 3 iterações de fix de CI
 - Preserva worktree intacto em caso de falha (para inspeção manual)
+- A revisão de código nativa (passo 8.5) é sempre consultiva — achados nunca bloqueiam o merge

@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import time
@@ -9,6 +10,12 @@ import pika
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from runtime.crewai_adapter import CrewAiRuntimeAdapter
 
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 
 def get_rabbitmq_connection():
     host = os.environ.get("RABBITMQ_HOST", "rabbitmq")
@@ -16,7 +23,7 @@ def get_rabbitmq_connection():
     user = os.environ.get("RABBITMQ_USER", "guest")
     password = os.environ.get("RABBITMQ_PASS", "guest")
 
-    print(f"Connecting to RabbitMQ at {host}:{port} as user '{user}'...")
+    logger.info("Connecting to RabbitMQ at %s:%s as user '%s'...", host, port, user)
 
     credentials = pika.PlainCredentials(user, password)
     parameters = pika.ConnectionParameters(
@@ -31,7 +38,7 @@ def get_rabbitmq_connection():
 
 def process_job(ch, method, properties, body):
     try:
-        print(f"Received job: {body.decode()}")
+        logger.info("Received job: %s", body.decode())
         job_data = json.loads(body.decode())
         execution_id = job_data.get("execution_id")
         tenant_id = job_data.get("tenant_id", "default-tenant")
@@ -40,7 +47,9 @@ def process_job(ch, method, properties, body):
         manifest_config = job_data.get("manifest_config")
 
         if not execution_id:
-            print("Missing execution_id in job payload, acknowledging and dropping")
+            logger.warning(
+                "Missing execution_id in job payload, acknowledging and dropping"
+            )
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
 
@@ -57,22 +66,27 @@ def process_job(ch, method, properties, body):
 
         # Manual Acknowledge (ACK) to remove message from queue
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        print(
-            f"Successfully processed and acknowledged job {execution_id} via CrewAI runtime"
+        logger.info(
+            "Successfully processed and acknowledged job %s via CrewAI runtime",
+            execution_id,
         )
 
     except Exception as e:
-        print(f"Error processing job: {str(e)}")
+        # logger.exception preserva o stacktrace completo (exc_info), ao
+        # contrário do print() anterior que descartava o traceback.
+        logger.exception("Error processing job: %s", str(e))
         # In case of failure, send negative acknowledgement (NACK) without requeue
         try:
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-            print("Job negative acknowledged (NACK), sent to retry/dlq channel")
+            logger.warning(
+                "Job negative acknowledged (NACK), sent to retry/dlq channel"
+            )
         except Exception as nack_ex:
-            print(f"Failed to NACK message: {str(nack_ex)}")
+            logger.error("Failed to NACK message: %s", str(nack_ex))
 
 
 def main():
-    print("Python Crew Worker starting with CrewAI Runtime...")
+    logger.info("Python Crew Worker starting with CrewAI Runtime...")
     while True:
         try:
             connection = get_rabbitmq_connection()
@@ -102,7 +116,7 @@ def main():
             # Pre-fetch limit
             channel.basic_qos(prefetch_count=1)
 
-            print("Listening to 'agent.execution.jobs' queue...")
+            logger.info("Listening to 'agent.execution.jobs' queue...")
             channel.basic_consume(
                 queue="agent.execution.jobs", on_message_callback=process_job
             )
@@ -110,15 +124,18 @@ def main():
             channel.start_consuming()
 
         except pika.exceptions.AMQPConnectionError as conn_err:
-            print(
-                f"RabbitMQ connection failed: {str(conn_err)}. Retrying in 5 seconds..."
+            logger.error(
+                "RabbitMQ connection failed: %s. Retrying in 5 seconds...",
+                str(conn_err),
             )
             time.sleep(5)
         except KeyboardInterrupt:
-            print("Shutting down worker...")
+            logger.info("Shutting down worker...")
             break
         except Exception as ex:
-            print(f"Unexpected error: {str(ex)}. Restarting consumer in 5 seconds...")
+            logger.exception(
+                "Unexpected error: %s. Restarting consumer in 5 seconds...", str(ex)
+            )
             time.sleep(5)
 
 

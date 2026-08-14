@@ -4,3 +4,8 @@ ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+
+# Playwright (issue #231) — relatórios/artefatos locais de execução
+playwright-report/
+test-results/
+blob-report/

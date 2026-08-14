@@ -545,21 +545,27 @@ async fn download_file(file_path: &str) -> Result<Vec<u8>> {
 /// real por padrão. Somente quando `allow_dev_fallback` for `true` (opt-in via
 /// `INGESTION_DEV_FALLBACK=true`) um texto mock de desenvolvimento é retornado —
 /// isso nunca deve acontecer silenciosamente em produção.
+/// Monta a URL de download no MinIO (path-style: `http://host:port/bucket/object`)
+/// usando o bucket configurável e o `file_path` completo (chave do objeto) tal
+/// como gravado pelo java-core, sem truncar para o basename.
+fn build_minio_url(
+    minio_host: &str,
+    minio_port: &str,
+    minio_bucket: &str,
+    file_path: &str,
+) -> String {
+    format!(
+        "http://{}:{}/{}/{}",
+        minio_host, minio_port, minio_bucket, file_path
+    )
+}
+
 async fn download_file_with_fallback(file_path: &str, allow_dev_fallback: bool) -> Result<Vec<u8>> {
     let minio_host = env::var("MINIO_HOST").unwrap_or_else(|_| "minio".to_string());
     let minio_port = env::var("MINIO_PORT").unwrap_or_else(|_| "9000".to_string());
+    let minio_bucket = env::var("MINIO_BUCKET").unwrap_or_else(|_| "agents-data".to_string());
 
-    // Tratamento para extrair apenas o nome do arquivo se o file_path contiver diretórios
-    let clean_path = if let Some(pos) = file_path.rfind('/') {
-        &file_path[pos + 1..]
-    } else {
-        file_path
-    };
-
-    let url = format!(
-        "http://{}:{}/documents/{}",
-        minio_host, minio_port, clean_path
-    );
+    let url = build_minio_url(&minio_host, &minio_port, &minio_bucket, file_path);
     println!("Tentando baixar arquivo de: {}", url);
 
     match reqwest::get(&url).await {

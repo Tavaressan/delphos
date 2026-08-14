@@ -34,7 +34,12 @@ gh api \
       "Rust Check, Lint, Format & Test",
       "Java Core Build & Test",
       "Frontend Lint, Test & Build",
-      "Python Lint & Test"
+      "Python Lint & Test",
+      "Docker Build (Rust services)",
+      "Docker Build (Java core)",
+      "Docker Build (Frontend)",
+      "Docker Build (Crew worker)",
+      "Docker Build (Script executor sidecar)"
     ]
   },
   "enforce_admins": true,
