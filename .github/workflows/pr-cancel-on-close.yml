@@ -1,12 +1,27 @@
-name: Cancel PR runs on close
+name: PR cleanup on close
 
-# O GitHub não cancela runs em vôo quando um PR é mergeado ou fechado, e o
-# `concurrency` do ci.yml não alcança esse caso: em `pull_request` o grupo é
-# derivado de `refs/pull/<n>/merge`, enquanto o push de merge usa
-# `refs/heads/master` — grupos disjuntos, então o run do PR sobrevive ao
-# próprio PR. Com o pool self-hosted de 2 slots, esse run zumbi trava a fila
-# do run de master que valida o commit real (observado no #265: 26 min de
-# slot ocupado por um PR já mergeado e de branch já deletada).
+# Duas limpezas que o GitHub não faz sozinho quando um PR fecha:
+#
+# 1. Runs em vôo. O `concurrency` do ci.yml não alcança esse caso: em
+#    `pull_request` o grupo é derivado de `refs/pull/N/merge`, enquanto o push
+#    de merge usa `refs/heads/master` — grupos disjuntos, então o run do PR
+#    sobrevive ao próprio PR. Com o pool self-hosted de 2 slots, esse run
+#    zumbi trava a fila do run de master que valida o commit real (observado
+#    no #265: 26 min de slot ocupado por um PR já mergeado, branch já
+#    deletada).
+#
+# 2. Caches do merge ref. Cache gravado por run de PR fica escopado a
+#    `refs/pull/N/merge` e não pode ser restaurado por `master` nem por outro
+#    PR — é inútil no instante em que o PR fecha, mas continua ocupando a cota
+#    de 10 GB do repositório até evictar por LRU o cache de `master`, que é o
+#    único de leitura universal. Fechar o PR ou deletar a branch não remove
+#    nada: a única garantia do GitHub é a expiração por 7 dias sem acesso.
+#    Medição de 14/08: 5,22 GB dos 9,44 GB em uso eram caches de PR, contra
+#    4,51 GB de `master` — com entradas de PRs mergeados dias antes.
+#
+# O ci.yml só exporta cache em push para a default branch, o que estanca a
+# origem; este job recolhe o que já foi gravado antes disso e o que os PRs
+# em curso ainda gravarem.
 
 on:
   pull_request:
@@ -16,20 +31,20 @@ permissions:
   actions: write
 
 jobs:
-  cancel:
-    name: Cancel in-flight runs for the closed PR
+  cleanup:
+    name: Cancel runs and purge caches of the closed PR
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      MERGE_REF: refs/pull/${{ github.event.pull_request.number }}/merge
     steps:
       - name: Cancel queued and in-progress runs of this PR's branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
 
-          # `--jq` filtra pelos dois estados que ainda consomem (ou disputam)
-          # um runner. Runs já concluídos são ignorados.
+          # Só os dois estados que ainda consomem (ou disputam) um runner.
           for status in queued in_progress; do
             gh api "repos/$REPO/actions/runs?branch=$HEAD_REF&status=$status" \
               --jq '.workflow_runs[].id' \
@@ -40,3 +55,32 @@ jobs:
                 gh api -X POST "repos/$REPO/actions/runs/$run_id/cancel" || true
               done
           done
+
+      - name: Delete caches scoped to this PR's merge ref
+        run: |
+          set -euo pipefail
+
+          # A rota de delete por `key` exige a chave exata; como as chaves do
+          # buildx são geradas (index-<scope>-N-<hash>, buildkit-blob-*), a via
+          # praticável é listar por ref e apagar por id. `--paginate` cobre os
+          # casos de PR grande, que chega a dezenas de entradas.
+          ids=$(gh api --paginate \
+            "repos/$REPO/actions/caches?ref=$MERGE_REF&per_page=100" \
+            --jq '.actions_caches[].id')
+
+          if [ -z "$ids" ]; then
+            echo "Nenhum cache em $MERGE_REF"
+            exit 0
+          fi
+
+          count=0
+          for id in $ids; do
+            # `|| true` pelo mesmo motivo do cancel: a entrada pode ter
+            # expirado entre o list e o delete.
+            if gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null; then
+              count=$((count + 1))
+            else
+              echo "::warning::Falha ao apagar cache $id (provavelmente já expirado)"
+            fi
+          done
+          echo "::notice::$count cache(s) removido(s) de $MERGE_REF"

@@ -658,7 +658,15 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # Export só em push para a default branch. Cache gravado por run de
+          # PR é escopado ao merge ref (refs/pull/N/merge) e, por regra do
+          # GitHub, não pode ser restaurado nem por `master` nem por outro PR
+          # — só infla a cota de 10 GB do repo até evictar por LRU o cache de
+          # `master`, que é o único de leitura universal. Medição de 14/08:
+          # 5,22 GB dos 9,44 GB em uso eram exatamente esse lixo, contra
+          # 4,51 GB de `master`. O PR continua com hit porque pode ler o
+          # cache da base branch.
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}', matrix.service) || '' }}
 
   docker-build-java:
     name: Docker Build (Java core)
@@ -709,7 +717,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=java-core
-          cache-to: type=gha,mode=max,scope=java-core
+          # Export só em push (ver docker-build-rust): cache de PR é
+          # escopado ao merge ref e inutilizável fora dele.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=java-core' || '' }}
 
   docker-build-frontend:
     name: Docker Build (Frontend)
@@ -761,7 +771,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          # Export só em push (ver docker-build-rust): cache de PR é
+          # escopado ao merge ref e inutilizável fora dele.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=frontend' || '' }}
 
   docker-build-python:
     name: Docker Build (Crew worker)
@@ -815,7 +827,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha,scope=crew-worker
-          cache-to: type=gha,mode=max,scope=crew-worker
+          # Export só em push (ver docker-build-rust): cache de PR é
+          # escopado ao merge ref e inutilizável fora dele.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=crew-worker' || '' }}
 
   # Imagem do sidecar de execução isolada de scripts (issue #148). Mesmo path-filter
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
@@ -842,7 +856,9 @@ jobs:
           file: ./python-services/crew-worker/Dockerfile.executor
           push: false
           cache-from: type=gha,scope=script-executor
-          cache-to: type=gha,mode=max,scope=script-executor
+          # Export só em push (ver docker-build-rust): cache de PR é
+          # escopado ao merge ref e inutilizável fora dele.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=script-executor' || '' }}
 
   # Job de integração cross-container (issue interna: gate de mock LLM no CI).
   # Diferente dos jobs docker-build-*, que só validam que cada imagem builda
@@ -1001,7 +1017,9 @@ jobs:
           push: false
           load: true
           cache-from: type=gha,scope=script-executor
-          cache-to: type=gha,mode=max,scope=script-executor
+          # Export só em push (ver docker-build-rust): cache de PR é
+          # escopado ao merge ref e inutilizável fora dele.
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=script-executor' || '' }}
 
       # --wait: espera os serviços com healthcheck ficarem "healthy" (não só
       # "running") e os sem healthcheck alcançarem "running" — substitui o
