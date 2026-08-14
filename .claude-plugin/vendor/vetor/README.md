@@ -80,7 +80,7 @@ Sobre o servidor `docker`:
 | `/vetor:fix-loop <descrição>` | Loop autônomo reproduce → fix → rebuild → test (máx. 5 iterações) |
 | `/vetor:backlog [tema]` | Ideação guiada ancorada em docs do projeto → batch de issues GitHub com aprovação humana |
 | `/vetor:guardian [--cron]` | Audit + auto-fix de gaps que o pre-commit não cobre (JSON, migrations, worktrees, Dependabot) |
-| `/vetor:coordinator [label] [--dry-run]` | Despacho paralelo de issues para sub-agentes com escalação de permissões e merge serializado |
+| `/vetor:coordinator [label] [--headless]` | Despacho paralelo de issues para sub-agentes com escalação de permissões e merge serializado. `--headless` roda sem interação humana (rotinas agendadas, CI): não pergunta, não pede aprovação e não faz merge |
 | `/vetor:retro` | Avalia o uso do Vetor na sessão e propõe issues de melhoria no repositório do próprio plugin (não do projeto) |
 
 > ⚠️ A skill `worktree-session` foi **aposentada** (monolítica demais, perdia contexto). Use a composição `worktree-create` + `worktree-ship` (e `coordinator` para orquestração). O arquivo legado fica em `legacy/worktree-session/` só como referência histórica e **não é carregado** pelo plugin.
@@ -230,11 +230,45 @@ mecanismo que aplica uma política de fato — instrução em prompt o agente po
 | `SubagentStop` | `vetor:issue-worker` | `check-status.ts` | Impede o worker de encerrar sem status file em estado terminal |
 | `SessionStart` | — | `session-check.ts` | Avisa se o projeto ainda não rodou `/vetor` |
 | `WorktreeCreate` | — | `prepare-worktree.ts` | Cria o worktree e prepara as dependências |
+| `Stop` | — | `stop-recovery.ts` | Compara o transcript da sessão com o estado em disco; bloqueia o encerramento e reporta (nunca corrige sozinho) quando detecta Edit/Write registrado no transcript sem correspondência em disco — sinal de sessão interrompida no meio da chamada |
 
 O `check-edit.ts` existe para poupar iterações do fix-loop: sem ele, um erro de tipo ou import quebrado
 só apareceria ao **rodar o teste**, e cada descoberta dessas queima uma das 5 iterações do worker.
 Com ele, o erro volta junto com o resultado do próprio `Edit`. Só age em `.ts`/`.tsx`, tem timeout de
 20s e **fica em silêncio quando não há erro**.
+
+#### Reutilizando a detecção de worktree em hooks externos ao plugin
+
+`scripts/vetor-checks.sh in-worktree` é um **contrato estável** e pode ser chamado a partir de
+qualquer hook/script de projeto que precise saber "estou num worktree linkado ou no repositório
+principal?" — não é uso interno exclusivo das skills do Vetor.
+
+- `exit 0`: o cwd é um worktree linkado.
+- `exit 1`: o cwd é o repositório principal (root), ou não é um repositório git.
+- Sem saída em stdout (mensagens de diagnóstico, se houver, vão para stderr).
+
+A checagem compara `git rev-parse --git-dir` com `git rev-parse --git-common-dir` (ambos
+normalizados via `cd ... && pwd`) — **não** compare `pwd` com a primeira linha de
+`git worktree list`: no Windows com Git Bash os dois formatos de path nunca coincidem
+(`/c/Projetos/...` vs `C:/Projetos/...`), o que faz essa comparação ingênua concluir "estou em
+worktree" mesmo estando no root, disparando lógica destinada só a worktrees (ex.: auto-commit de
+WIP) direto na branch principal (issue #129).
+
+Exemplo de uso a partir de um hook `Stop` externo ao plugin:
+
+```bash
+#!/usr/bin/env bash
+# hooks/stop-wip-snapshot.sh (exemplo hipotético de um projeto consumidor)
+VETOR_CHECKS="$CLAUDE_PLUGIN_ROOT/scripts/vetor-checks.sh"
+
+if bash "$VETOR_CHECKS" in-worktree; then
+  # cwd é um worktree linkado — seguro fazer auto-snapshot de WIP aqui.
+  git add -A && git commit -m "wip: auto-snapshot" --no-verify
+else
+  # cwd é o repositório principal — não commitar automaticamente.
+  exit 0
+fi
+```
 
 #### Compatibilidade com Antigravity
 
@@ -254,11 +288,12 @@ Para usar o Vetor com Antigravity, a restrição crítica é que workers podem e
 
 #### Compatibilidade com OpenAI Codex
 
-Investigação feita em 2026-07-20 contra a documentação pública do Codex CLI
+Investigação feita em 2026-07-20/21 contra a documentação pública do Codex CLI
 ([`developers.openai.com/codex`](https://developers.openai.com/codex/cli), espelhada em
-`learn.chatgpt.com/docs/*`) — sem acesso a uma instância real do `codex` CLI neste ambiente para
-validar o payload exato dos hooks. Trate o que segue como verificado **contra a doc**, não contra
-comportamento em produção; valide antes de mergear em um projeto que dependa disto.
+`learn.chatgpt.com/docs/*`), o CLI `codex` v0.144.6 instalado nesta máquina, e logs locais em
+`~/.codex/logs_2.sqlite`. Trate o que segue como verificado **contra a doc e comportamento observado
+em máquina local**; valide a cobertura de eventos do hook contra uma sessão real antes de mergear em
+um projeto que dependa de `/vetor:coordinator` com Codex.
 
 Ao contrário do Antigravity, o Codex tem hooks de ciclo de vida com o **mesmo formato de arquivo**
 do Claude Code (`hooks.json` com `hooks.<Evento>[].matcher`/`hooks[].type: "command"`) e uma lista
@@ -317,6 +352,137 @@ compartilhada), só que sem o guard `PreToolUse` de escrita fora do worktree par
 porque esse guard depende do payload não verificado. **Não usar `/vetor:coordinator` com dispatch
 em background no Codex** até essa validação ser feita contra uma sessão real.
 
+**Rate-limit/quota — nenhum sinal observável (investigação #85).** Explorados comandos `codex --help`,
+`codex exec --help`, `codex debug --help`, `codex doctor --help`, `codex features --help` e o banco
+de logs em `~/.codex/logs_2.sqlite`. Achados:
+- JSONL events do `codex exec --json` incluem tipos: `thread.started`, `turn.started`,
+  `item.completed`, `turn.completed`
+- `turn.completed` expõe `usage` com `input_tokens`, `cached_input_tokens`, `output_tokens`,
+  `reasoning_output_tokens` — informação de consumo, mas **não há limite ou quota nesse event**
+- HTTP logs registram requests/responses com headers completos (status code, x-oai-request-id,
+  etc.), mas **nenhum header de rate-limit** (`x-ratelimit-*` ou similar) observado
+- `codex doctor` não expõe stats de rate-limit ou quota
+- Nenhum comando de CLI para `stats` ou `quota` descoberto (diferente do esperado na OpenCode/OpenAI
+  SDK)
+- Limitação de plataforma: **Codex não expõe sinal viável de rate-limit ou quota ao cliente** —
+  diferente da OpenAI API que inclui headers `x-ratelimit-limit-requests`, `x-ratelimit-remaining-requests`,
+  `retry-after` em respostas HTTP. Se o Codex exceder quota, o CLI retorna um error na websocket ou
+  uma resposta HTTP 429/503, mas sem contexto útil de "quantos requests me restam" —
+  recomendação: **não é viável implementar detecção de rate-limit/quota no Vetor sem mudança no
+  Codex CLI ou API** (issue para OpenAI abrir, não escopo do Vetor).
+
+#### Compatibilidade com OpenCode
+
+Investigação feita em 2026-07-21 contra a **documentação oficial** (`opencode.ai/docs/plugins`,
+`/docs/agents`, `/docs/config`, `/docs/skills`), o **código-fonte real** (via Context7,
+`/anomalyco/opencode`) e o **CLI `opencode` v1.18.4 instalado neste ambiente** (`opencode --help`,
+`opencode agent --help`, inspeção do SDK em `node_modules/@opencode-ai/{sdk,plugin}`) — nível de
+confiança mais alto do que o alcançado para o Codex, que não teve CLI real disponível para validar.
+
+**Diferença estrutural central:** o OpenCode **não tem manifesto de plugin único**. Skills, agentes,
+plugin (hooks) e MCP são descobertos separadamente, cada um no seu diretório: `.opencode/skills/`,
+`.opencode/agent/`, `.opencode/plugin/*.ts`, e o campo `mcp` de `opencode.json`. E hooks são
+**código TS/JS** (`tool.execute.before`/`tool.execute.after`, recebem `(input, output)`, bloqueiam
+com `throw new Error()`), não JSON declarativo como no Claude Code e no Codex.
+
+**Isolamento de worktree por worker — o ponto verificado nesta investigação.** O OpenCode **não**
+tem equivalente a `isolation: worktree` nem à tool nativa `task` com cwd isolado por chamada: um
+subagente disparado via `task` herda o cwd/sandbox da sessão pai (confirmado no código-fonte —
+`Tool.Context` não carrega um diretório por chamada, só `sessionID`/`agent`/`callID`). Existe uma
+API `/experimental/worktree` (create/list/remove/reset) no SDK instalado, mas ela é
+sessão/projeto-level, não amarrada ao dispatch de subagente por `task`.
+
+A forma **verificada e funcional** de garantir isolamento: `opencode run --dir <path> --agent
+<nome>` inicia um **processo `opencode` inteiro** com o cwd fixado em `<path>` para toda a sessão
+— não uma tool call isolada. Por isso `opencode/agent/issue-worker.md` instrui o `issue-coordinator`
+a despachar cada worker como `opencode run --dir "<worktree>" --agent issue-worker "<prompt>"` (um
+processo do SO por worker, análogo ao que o `worktree-create` já faz hoje antes de despachar),
+em vez de usar a tool `task` in-process. Consequência prática: a classe de bug da issue #63
+(cwd contaminado entre workers paralelos no Claude Code) **não se aplica** a esse modelo — cada
+worker é um processo isolado do SO, não uma chamada dentro da mesma sessão.
+
+**Plugin de segurança — implementado, não só um template.** `opencode/plugin/vetor.ts` reimplementa
+as políticas de `scripts/safety-check.ts` (branch protegida, push/PR de worker não-`GREEN`, escrita
+fora do worktree) e `scripts/check-edit.ts` (typecheck pós-edição) via `tool.execute.before` /
+`tool.execute.after`. A lógica **não foi duplicada**: o plugin só traduz o payload confirmado do
+OpenCode (`{tool, sessionID, args, agent}`) para o JSON que os scripts Deno originais já esperam no
+stdin, e invoca `deno run -A` — os scripts em `opencode/scripts/` são cópias diretas (sem alteração)
+dos de `scripts/`, porque o OpenCode não define uma variável equivalente a `$CLAUDE_PLUGIN_ROOT`/
+`$PLUGIN_ROOT` para resolver caminho de plugin-root; a cópia viaja com o projeto-alvo (incluindo
+para dentro de cada worktree, já que `git worktree` só contém arquivos rastreados). **Trade-off
+assumido:** os scripts em `opencode/scripts/` podem divergir de `scripts/` ao longo do tempo — não
+há build/sync automático entre as duas cópias nesta versão.
+
+**Detecção reativa de rate-limit/quota (issue #83).** `opencode/plugin/vetor.ts` também escuta o
+hook `event` para `session.error`. Confirmado contra o SDK instalado (`@opencode-ai/plugin`
+v1.18.4, `dist/index.d.ts:175` `Hooks.event`; `@opencode-ai/sdk`, `dist/gen/types.gen.d.ts:86`
+`ApiError`, `:518` `EventSessionError`): o campo `error` pode ser um `ApiError` com
+`data.statusCode` (429/529 tratados como rate limit/quota), `data.isRetryable` e
+`data.responseHeaders` (tipicamente `retry-after`). Como `EventSessionError.properties` só carrega
+`sessionID` (sem provider/model), o plugin correlaciona `sessionID -> "<providerID>/<modelID>"` via
+`chat.params` (que recebe `model: { providerID, id }`) antes de gravar. O sinal é persistido —
+via `opencode/scripts/model-health.ts` (`deno run -A`, mesmo padrão do restante) — em
+`.claude/vetor/status/model-health.json`, na raiz do repositório, porque cada worker é um processo
+separado sem estado compartilhado. Entradas com `until` no passado são tratadas como saudáveis por
+quem lê o arquivo (`isHealthy` em `opencode/scripts/lib/model-health.ts`).
+
+**Fallback de modelo/provedor no coordinator (issue #84).** Antes de montar cada comando
+`opencode run --dir ... --model <provider/model>`, o `issue-coordinator` portado
+(`opencode/skills/issue-coordinator/SKILL.md`) roda `opencode/scripts/resolve-model.ts`, que lê a
+lista ordenada `modelFallback.<simple|complex>` de `.claude/vetor/config.json` (default embutido no
+script se a chave não existir — `anthropic/claude-haiku-4-5` → `anthropic/claude-sonnet-4-5` para
+`simple`, ordem invertida para `complex`) e devolve o primeiro modelo não-`degraded`/não-expirado
+em `model-health.json`. Se todos os modelos do tier estiverem `degraded`, o script sai com código 1
+e o grupo correspondente fica `QUEUED` em vez de ser despachado sabendo que vai falhar.
+
+**Gaps confirmados (sem hook equivalente):**
+- `SubagentStop` (obrigar status file em estado terminal) — sem cobertura; não há evento
+  específico de fim de subagente entre os ~26 eventos documentados.
+- `SessionStart`/`WorktreeCreate` (avisar `/vetor` não rodado; preparar deps do worktree) — sem
+  cobertura automática; rodar manualmente `deno run -A scripts/session-check.ts` /
+  `scripts/prepare-worktree.ts` antes de despachar workers.
+- Sem `tools:`/`toolNames` allowlist por agente como no Claude Code/Antigravity — mitigado
+  parcialmente pelo campo `permission` (wildcard por comando de `bash`, `edit`/`webfetch`
+  allow/ask/deny), usado em `opencode/agent/issue-worker.md` para negar `git push`/`gh pr
+  create|ready|merge` como camada extra além do hook.
+
+**Skills — `issue-coordinator` portado (issue #82); as demais 7 seguem bloqueadas pelo mesmo
+motivo do Codex.** O formato `SKILL.md` do OpenCode é compatível (frontmatter `name`/`description`;
+campos extras são ignorados) e o OpenCode até escaneia `.claude/skills/*/SKILL.md` nativamente —
+mas isso não ajudava por si só, porque as skills do Vetor (`skills/*/SKILL.md`) referenciam
+`$CLAUDE_PLUGIN_ROOT` no corpo do texto para localizar `scripts/` e
+`skills/shared/references/`, variável que o OpenCode não define. `opencode/skills/issue-coordinator/
+SKILL.md` é uma cópia auto-contida (sem `$CLAUDE_PLUGIN_ROOT` em nenhum ponto) que resolve todas as
+referências como caminho relativo à raiz do repositório onde `.opencode/` foi copiado — inclusive
+`.opencode/scripts/vetor-status.sh` e `.opencode/scripts/vetor-checks.sh` (cópias diretas de
+`scripts/vetor-status.sh`/`vetor-checks.sh`, adicionadas junto com o skill). O modelo de dispatch
+foi reescrito para o processo `opencode run --dir <worktree> --agent issue-worker`, já que não há
+`Agent()`/`isolation: "worktree"` nem `SendMessage` no OpenCode — a escalação de `BLOCKED_WAITING`
+e o acompanhamento de progresso acontecem por **polling do status file**
+(`.opencode/scripts/vetor-status.sh`), não por canal de mensagens entre processos. Ver
+`opencode/skills/issue-coordinator/SKILL.md`, seção "Validação manual", para o procedimento de teste
+contra uma instalação real do OpenCode (não executado nesta investigação por falta de CLI
+interativo disponível). Portar as 7 skills restantes (mesmo ajuste de referências, sem a
+complexidade adicional do modelo de dispatch multi-processo) segue como trabalho futuro — igual ao
+que foi feito para o Codex.
+
+**Instalação manual** (sem marketplace de primeira classe no OpenCode — plugins/agentes/skills são
+arquivos copiados, não um pacote instalável em um comando):
+
+```bash
+cp -r opencode/. <projeto-alvo>/.opencode/
+```
+
+Depois, mescle o bloco `mcp` de `opencode/mcp.jsonc` no `opencode.json` do projeto-alvo (ajuste o
+path do `docker-catalog.yaml` se for usar o servidor `docker`).
+
+**Resumo:** isolamento de worktree por worker é **verificado e resolvido** (via `opencode run
+--dir`, testado contra o CLI real instalado). Hooks de segurança são **reais e funcionais**
+(reaproveitando os scripts Deno existentes). O `issue-coordinator` está **portado**
+(`opencode/skills/issue-coordinator/SKILL.md`) — hoje os dois subagentes nativos, o plugin de
+segurança e o coordinator estão prontos para uso; as demais 7 skills seguem bloqueadas pela mesma
+limitação de path do Codex.
+
 ### Convenções do projeto (`.claude/rules/vetor/`)
 
 O `/vetor` gera rules com frontmatter `paths`, que o Claude Code carrega **apenas** quando lê um
@@ -361,7 +527,11 @@ Para habilitar, adicione ao `.claude/settings.json` do projeto (ou exporte no sh
 }
 ```
 
+**Limitação conhecida: mensagem de bloqueio de escrita fora do worktree em workers com `isolation: "worktree"` (issue #94).** Quando um `issue-worker` despachado com `isolation: "worktree"` tenta escrever no path absoluto do status file fora do worktree (`.claude/vetor/status/*.md`), a plataforma Claude Code pode retornar a mensagem *"Edit the worktree copy of this file instead of the shared-checkout path"* — mesmo que o safety hook do Vetor permita esse caminho. A mensagem **não vem do Vetor** (confirmado: ausente em `guard.ts`, `safety-check.ts` e qualquer outro script do plugin). Trata-se de uma restrição de sandbox da plataforma que aparece de forma não determinística (observado em 1 de 5 workers concorrentes na mesma sessão). Mitigação: o coordinator instrui os workers a escreverem o status file tanto no path absoluto (funciona na maioria dos casos) quanto a manterem uma cópia local dentro do worktree como fallback; o coordinator lê de qualquer um dos dois locais. Ver `issue-coordinator/SKILL.md` Fase 4 para os detalhes da orientação de fallback.
+
 **Limitação conhecida: cwd contaminado entre workers paralelos (issue #63).** Com múltiplos `vetor:issue-worker` despachados em paralelo pelo `issue-coordinator`, já foi observado o `cwd` recebido por `PreToolUse` resolver para o worktree de **outro** worker ativo na mesma sessão — não uma cwd inválida (isso `isLinked` já cobre, issue #57), mas um worktree real, só que do agente errado. Investigação confirmou que `safety-check.ts` não tem estado de módulo compartilhado entre invocações (cada evento de hook spawna um processo `deno run` novo, conforme `hooks/hooks.json`), o que descarta uma causa dentro do plugin — o payload `cwd` em si chega inconsistente do harness sob paralelismo. Como o plugin não controla esse payload, a mitigação implementada é uma segunda camada em `checkAgentBinding` (`scripts/safety-check.ts`): correlaciona `agent_id` (estável por instância de subagente, ao contrário de `agent_type`) com o worktree resolvido na primeira chamada de `Edit`/`Write`; uma mudança de worktree para o mesmo `agent_id` é bloqueada com mensagem específica. Não elimina a causa raiz (fora do controle do plugin), mas impede que a escrita vaze silenciosamente para o worktree errado.
+
+**Limitação conhecida: worktrees aninhados pelo harness (issue #95).** Em um dispatch paralelo, o harness alocou o worktree do grupo #86 dentro do diretório do worktree ainda ativo do grupo #85. Ao limpar o pai, `git worktree remove` apagou recursivamente o filho, incluindo qualquer trabalho não commitado; os commits sobreviveram, mas o worktree precisou ser recriado e a entrada ficou `prunable` até `git worktree prune`. A causa provável é a alocação do harness sob `.claude/worktrees/agent-<id>` sem impedir que o diretório pai já seja outro worktree ativo; isso está fora do controle do plugin. Como mitigação, o cleanup usa `vetor-checks.sh safe-remove-worktree`, que lê `git worktree list --porcelain` e bloqueia a remoção se qualquer worktree ativo tiver path `<pai>/...`, apontando os filhos. O pai, sua branch e status são preservados até os filhos serem realocados ou removidos com segurança.
 
 ---
 
@@ -394,6 +564,18 @@ Alavancas para manter o custo baixo no dispatch paralelo:
 └── marketplace.json         # listagem do marketplace
 .codex-plugin/
 └── plugin.json              # manifesto do plugin (Codex) — sem campo "skills" (ver Compatibilidade)
+opencode/                    # camada de compatibilidade (OpenCode) — copiar para .opencode/ no projeto-alvo
+├── agent/
+│   ├── issue-worker.md      # subagente (OpenCode) — instrui dispatch via `opencode run --dir`
+│   └── code-review.md       # subagente (OpenCode) — permission.edit: deny
+├── skills/issue-coordinator/
+│   └── SKILL.md              # coordinator portado (issue #82) — auto-contido, sem $CLAUDE_PLUGIN_ROOT
+├── plugin/vetor.ts          # plugin real: tool.execute.before/after + event (rate-limit, #83)
+├── scripts/                 # cópia de scripts/{safety-check,check-edit,vetor-status,vetor-checks,lib/*}
+│   ├── model-health.ts        # CLI: grava .claude/vetor/status/model-health.json (#83)
+│   ├── resolve-model.ts       # CLI: fallback de modelo/provedor (#84)
+│   └── lib/model-health.ts    # computeUntil/isHealthy/pickHealthyModel — sem $CLAUDE_PLUGIN_ROOT
+└── mcp.jsonc                # tradução de .mcp.json para o campo "mcp" de opencode.json
 agents/
 ├── issue-worker.md          # subagente nativo (Claude Code) — worker isolado despachado pelo coordinator
 ├── issue-worker/

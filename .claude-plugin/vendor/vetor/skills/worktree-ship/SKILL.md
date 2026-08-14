@@ -28,6 +28,11 @@ Você é o pipeline de entrega do Vetor. Sua missão é levar código testado e 
 
 **Branch default e comandos de teste.** Leia `$CLAUDE_PLUGIN_ROOT/skills/shared/references/project-conventions.md` — resolva `$DEFAULT_BRANCH` e o `module-test-map` conforme descrito lá. Use `$DEFAULT_BRANCH` em todos os comandos abaixo.
 
+**Checagem e2e leve (opcional).** Se os módulos alterados (passo 3) envolverem UI/frontend, leia
+`$CLAUDE_PLUGIN_ROOT/skills/shared/references/mcp-availability.md` (seção "Browser
+(chrome-devtools)") e, se o MCP estiver disponível, use-o no passo 4 como checagem e2e leve
+adicional aos testes automatizados — nunca como substituto deles.
+
 ---
 
 ## Comportamento
@@ -78,7 +83,7 @@ Projetos sem migrations versionadas: no-op. Mesma convenção Flyway do `guardia
 ### 3 — Detecção de módulos alterados
 
 ```bash
-git diff "$DEFAULT_BRANCH" --name-only
+git diff "origin/$DEFAULT_BRANCH" --name-only
 ```
 
 Mapeie os arquivos alterados aos módulos usando a tabela de detecção do module-test-map.
@@ -86,6 +91,8 @@ Mapeie os arquivos alterados aos módulos usando a tabela de detecção do modul
 ### 4 — Testes locais
 
 Para cada módulo alterado, execute o comando headless correspondente do `module-test-map.md`.
+Quando o comando do módulo for `sem suíte de testes`, não execute nada e registre
+`skipped (no test suite)` no sumário; esse estado não bloqueia o ship.
 
 **Regra sandbox:**
 - Tente docker uma vez (se aplicável ao módulo, ex.: testes de integração)
@@ -103,7 +110,7 @@ Saída: <últimas 30 linhas do log>
 ### 4.b — Scan de debugging
 
 ```bash
-bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-checks.sh" debug-scan "$DEFAULT_BRANCH"
+bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-checks.sh" debug-scan "origin/$DEFAULT_BRANCH"
 ```
 
 Se sair não-zero, remova os padrões apontados (debug temporário, `it.only` etc.) e commite antes
@@ -177,6 +184,29 @@ estiverem verdes.
 Para cada falha detectada no monitoramento do CI:
 
 1. **Classificação de Erro:**
+
+   **8.a — Circuit Breaker de Infraestrutura (executa ANTES da análise de logs):**
+
+   Antes de ler logs detalhados, verifique se a falha é de infraestrutura da plataforma
+   (billing, outage, job not started) — cenário que nenhum fix de código resolve:
+
+   ```bash
+   deno run -A scripts/detect-infra-failure.ts <run-id>
+   ```
+
+   Se o script retornar exit 0 (saída JSON com `isInfrastructureFailure: true`):
+   - **Pule inteiramente** as iterações de fix de código (§8.1 abaixo).
+   - **Pare** e escreva o status file com `Status: BLOCKED_INFRA` e o motivo:
+     ```markdown
+     Status: BLOCKED_INFRA
+     Motivo: Falha de infraestrutura da plataforma — <reason do script>.
+     Ação necessária: resolver billing/outage no GitHub antes de retomar.
+     ```
+   - **Escale ao usuário** via AskUserQuestion:
+     `⚠️ Falha de infraestrutura detectada no CI (billing/outage). Não é possível resolver com fix de código. Deseja aguardar a resolução ou prosseguir sem CI (merge manual)?`
+   - **Pare.** Não consuma iterações de fix-loop.
+
+   **8.b — Classificação de Erro (apenas se NÃO for infraestrutura):**
    Leia o log de erro do CI:
    ```bash
    gh run view <run-id> --log-failed
@@ -184,7 +214,7 @@ Para cada falha detectada no monitoramento do CI:
    **Opcional (economia de tokens):** use o agy CLI para condensar os logs, se disponível:
    ```bash
    echo "[Vetor:Gemini] Delegando tarefa: Condensando logs de CI do PR"
-   gh run view <run-id> --log-failed | agy -p "Resuma a causa raiz das falhas neste log de CI em até 15 linhas, citando arquivo:linha quando houver."
+   agy -p "Resuma a causa raiz das falhas neste log de CI em até 15 linhas, citando arquivo:linha quando houver. Log: $(gh run view <run-id> --log-failed)"
    ```
    Se a chamada ao `agy` for **negada pelo classificador de permissão** do ambiente, **não retente** — leia 
    o log bruto diretamente e proceda à análise manual. Essa negação não é transiente; é uma política. 
@@ -238,7 +268,7 @@ completo ficar verde, use a mesma mensagem de falha e parada do passo 8 — não
 
 Substitui o antigo GitHub Action `code-review@claude-code-plugins` (desativado por custar por
 execução independente do risco/tamanho da mudança). Roda **só quando há mudança real de
-código-fonte** — o mesmo filtro do passo 3 já resolve isso: se `git diff "$DEFAULT_BRANCH"
+código-fonte** — o mesmo filtro do passo 3 já resolve isso: se `git diff "origin/$DEFAULT_BRANCH"
 --name-only` (passo 3) não mapeou nenhum módulo (ex.: PR só de docs, lockfile ou config), **pule
 este passo**.
 
@@ -261,6 +291,27 @@ achado é o humano, ao ler o comentário na PR (antes ou depois do merge).
 
 Se o dispatch do subagente falhar por qualquer motivo (rate limit, erro de ferramenta), registre a
 falha no sumário e prossiga mesmo assim — este passo nunca bloqueia o ship.
+
+### 8.6 — Gate de segurança de aplicação (consultivo, não bloqueante, opcional)
+
+Cobre segurança da *aplicação* (OWASP: injeção, XSS, segredos expostos etc.) — diferente do
+`agents/code-review.md`, focado em bugs/correção/arquitetura, e do `safety-check.ts`/`guardian`,
+focados em segurança *estrutural* do próprio Vetor. Roda no mesmo ponto do passo 8.5, só quando
+houve módulo alterado (mesmo filtro).
+
+Verifique se a skill nativa `security-review` está disponível nesta sessão (procure pelo nome entre
+as skills carregáveis). **Se não estiver disponível, pule este passo silenciosamente** — é aditivo,
+nunca bloqueia o fluxo.
+
+Se disponível, invoque-a sobre o diff da PR (`gh pr diff <PR-number>`) e publique os achados como
+comentário na PR, no mesmo formato consultivo do passo 8.5:
+
+```bash
+gh pr comment <PR-number> --body "<achados de security-review em markdown>"
+```
+
+**Nunca pare o pipeline por causa dos achados** — mesmo com vulnerabilidades reportadas, prossiga
+para o passo 9. A decisão de agir é sempre humana, lendo o comentário na PR.
 
 ### 9 — Verificar review
 
@@ -337,24 +388,19 @@ motivo tipo "merge sem review") — barreira independente do `reviewDecision` j�
 
 ### 11 — Sincronizar root
 
-Volte para o root do repositório e sincronize com a branch default. Descubra o path do root
-(não assuma) e vá até ele:
+Volte para o root do repositório e sincronize com a branch default. Para lidar com cenários onde
+o trabalho ocorreu diretamente na raiz, ou para garantir um estado limpo no root, use o script de 
+sincronização compartilhada:
 
 ```bash
-ROOT=$(git rev-parse --path-format=absolute --git-common-dir | xargs dirname)
-cd "$ROOT"
-git checkout "$DEFAULT_BRANCH"
-git pull origin "$DEFAULT_BRANCH"
+bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-checks.sh" sync-root
 ```
 
 (Só numa sessão manual em que você entrou no worktree com `EnterWorktree` é preciso sair com
-`ExitWorktree` antes do `cd`; no fluxo orquestrado do `issue-coordinator`, sub-agentes nunca usam
-`EnterWorktree`/`ExitWorktree`.)
+`ExitWorktree` antes da sincronização; no fluxo orquestrado do `issue-coordinator`, sub-agentes
+nunca usam `EnterWorktree`/`ExitWorktree`.)
 
-Confirme:
-```
-Root sincronizado com <default-branch>. Branch <branch> mergeada e deletada remotamente.
-```
+Confirme que o Root foi sincronizado se a mensagem de sucesso for exibida.
 
 ### 12 — Cleanup
 
@@ -362,13 +408,21 @@ Descubra o path real do worktree via `git worktree list` (não assuma a convenç
 localização é do harness). Se invocado pelo `issue-coordinator` (modo headless), execute o
 cleanup automaticamente:
 ```bash
-git worktree remove "<path-do-worktree>"
+bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-checks.sh" safe-remove-worktree "<path-do-worktree>"
 git branch -d <branch>
 rm -f .claude/vetor/status/<branch>.md
+rm -f .claude/vetor/status/<branch>-touched-files.json
 ```
 
+Se a checagem falhar, **pare o cleanup**: ela encontrou um worktree ativo dentro do path alvo e
+removê-lo apagaria também o filho. Mostre os paths listados e preserve o worktree pai, branch e
+arquivos de status/cache até os filhos serem realocados ou removidos com segurança.
+
+A última linha remove o cache de arquivos tocados gravado pelo `fix-loop-agent` (issue #81) — ele é
+efêmero por branch/worktree e nunca deve persistir entre PRs.
+
 Se invocado manualmente pelo usuário: pergunte antes de remover (a confirmação cobre worktree,
-branch e arquivo de status).
+branch, arquivo de status e cache de arquivos tocados).
 
 ---
 
@@ -379,3 +433,9 @@ branch e arquivo de status).
 - Máximo 3 iterações de fix de CI
 - Preserva worktree intacto em caso de falha (para inspeção manual)
 - A revisão de código nativa (passo 8.5) é sempre consultiva — achados nunca bloqueiam o merge
+- **Circuit Breaker de Infraestrutura (§8.a):** distinto do circuit breaker de falhas
+  recorrentes do `issue-coordinator` (§5.c). Este detecta falhas da *plataforma* CI
+  (billing, outage, job not started) via anotações de job e pausa imediatamente sem
+  consumir iterações de fix — o problema não é resolvível por alteração de código. O
+  circuit breaker do `issue-coordinator` agrega múltiplos workers com falhas idênticas
+  de código (padrão textual repetido) e pergunta se deve pausar ou prosseguir.

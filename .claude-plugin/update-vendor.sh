@@ -16,20 +16,32 @@ CACHE_ROOT="$HOME/.claude/plugins/cache/vetor/vetor"
 echo "Atualizando marketplace remoto 'vetor'..."
 claude plugin marketplace update vetor
 
-LATEST_DIR="$(ls -td "$CACHE_ROOT"/*/ 2>/dev/null | head -1)"
-if [ -z "$LATEST_DIR" ]; then
+# O update do marketplace só atualiza o índice: a versão nova do plugin não é
+# materializada em CACHE_ROOT até um update do próprio plugin. Sem este passo o
+# script sincroniza silenciosamente a versão anterior. O nome precisa ser
+# qualificado — "claude plugin update vetor" falha com "Plugin not found".
+echo "Materializando a versão nova no cache do plugin..."
+claude plugin update vetor@vetor
+
+# Seleciona por ordem de versão, não por mtime: uma versão antiga rematerializada
+# depois tem mtime maior e venceria a ordenação por data.
+LATEST_VERSION="$(ls -1 "$CACHE_ROOT" 2>/dev/null | sort -V | tail -1)"
+if [ -z "$LATEST_VERSION" ]; then
   echo "Erro: nenhuma versão encontrada em $CACHE_ROOT. O plugin 'vetor' está instalado em escopo user?" >&2
   exit 1
 fi
-
-LATEST_VERSION="$(basename "$LATEST_DIR")"
+LATEST_DIR="$CACHE_ROOT/$LATEST_VERSION"
 echo "Versão mais recente no cache local: $LATEST_VERSION"
 
-rsync -a --delete \
-  --exclude='.in_use' \
-  --exclude='AGENT_STATUS.md' \
-  --exclude='.claude/vetor/status/' \
-  "$LATEST_DIR" "$VENDOR_DEST/"
+# Equivalente portável a "rsync -a --delete --exclude=...": o Git Bash do Windows
+# não traz rsync. Espelha o source apagando o destino antes de copiar; os caminhos
+# excluídos são removidos da cópia depois.
+rm -rf "$VENDOR_DEST"
+mkdir -p "$VENDOR_DEST"
+cp -a "$LATEST_DIR/." "$VENDOR_DEST/"
+rm -rf "$VENDOR_DEST/.in_use" \
+       "$VENDOR_DEST/AGENT_STATUS.md" \
+       "$VENDOR_DEST/.claude/vetor/status"
 
 echo "Vendorizado a partir de: $LATEST_DIR"
 echo ""
