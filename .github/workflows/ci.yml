@@ -16,10 +16,21 @@ on:
       - main
       - master
       - develop
+  # Sem isto não há como re-disparar o pipeline sobre um SHA já mergeado. Foi
+  # exatamente o que faltou quando o run de `cfd7bf5` (#265) morreu cancelado
+  # pelo merge seguinte e os jobs pendentes ficaram sem cobertura alguma.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Em PR, cancelar o run anterior a cada push é economia pura. Em `master`
+  # (e nas demais branches de push) é perda de cobertura: dois merges em
+  # sequência caem no mesmo grupo `refs/heads/master` e o segundo cancela a
+  # validação do primeiro — que, sendo um commit já mergeado, nunca mais será
+  # revalidado. Aconteceu com `cfd7bf5`: 5 jobs (Rust Check, Docker Java,
+  # Crew worker, BDD, E2E) cancelados pelo merge de `4ddae3e`, e o run de
+  # `4ddae3e` os pulou por path-filter. Mesma classe de furo da issue #87.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -754,8 +765,14 @@ jobs:
 
   docker-build-python:
     name: Docker Build (Crew worker)
-    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
-    needs: [select-runner, changes]
+    # Pool GitHub-hosted, mesma razão do docker-build-rust/frontend: o cache é
+    # type=gha (trafega pela rede, não ganha com o disco do EC2) e a imagem vai
+    # para o GHCR, de onde o e2e a consome via pull. Além disso este era o job
+    # mais lento do pool self-hosted — 31 min sem terminar em `cfd7bf5` e
+    # 14 min em #367, monopolizando um dos 2 slots enquanto Rust/Java/BDD
+    # esperavam na fila.
+    runs-on: ubuntu-latest
+    needs: changes
     if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     permissions:
       contents: read
@@ -804,8 +821,12 @@ jobs:
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
     name: Docker Build (Script executor sidecar)
-    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
-    needs: [select-runner, changes]
+    # Hosted pela mesma razão do docker-build-python acima. O cache
+    # scope=script-executor que este job aquece é consumido depois pelo
+    # e2e-integration; sendo type=gha (remoto), o reaproveitamento independe
+    # de os dois jobs estarem no mesmo pool.
+    runs-on: ubuntu-latest
+    needs: changes
     if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     steps:
       - name: Checkout code

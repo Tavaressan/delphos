@@ -1,0 +1,42 @@
+name: Cancel PR runs on close
+
+# O GitHub não cancela runs em vôo quando um PR é mergeado ou fechado, e o
+# `concurrency` do ci.yml não alcança esse caso: em `pull_request` o grupo é
+# derivado de `refs/pull/<n>/merge`, enquanto o push de merge usa
+# `refs/heads/master` — grupos disjuntos, então o run do PR sobrevive ao
+# próprio PR. Com o pool self-hosted de 2 slots, esse run zumbi trava a fila
+# do run de master que valida o commit real (observado no #265: 26 min de
+# slot ocupado por um PR já mergeado e de branch já deletada).
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cancel:
+    name: Cancel in-flight runs for the closed PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel queued and in-progress runs of this PR's branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          # `--jq` filtra pelos dois estados que ainda consomem (ou disputam)
+          # um runner. Runs já concluídos são ignorados.
+          for status in queued in_progress; do
+            gh api "repos/$REPO/actions/runs?branch=$HEAD_REF&status=$status" \
+              --jq '.workflow_runs[].id' \
+            | while read -r run_id; do
+                echo "Cancelando run $run_id ($status) da branch $HEAD_REF"
+                # `|| true`: entre o list e o cancel o run pode ter terminado
+                # sozinho, e um 409 aqui não deve reprovar o workflow.
+                gh api -X POST "repos/$REPO/actions/runs/$run_id/cancel" || true
+              done
+          done
