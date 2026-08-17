@@ -738,7 +738,7 @@ jobs:
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan ${{ matrix.service }} image (Trivy)
         if: needs.changes.outputs.rust == 'true'
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -800,7 +800,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan java-core image (Trivy)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -863,7 +863,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan frontend image (Trivy)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -928,7 +928,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan crew-worker image (Trivy)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -971,7 +971,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem (SO + deps do binário).
       - name: Scan script-executor image (Trivy)
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: script-executor:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
