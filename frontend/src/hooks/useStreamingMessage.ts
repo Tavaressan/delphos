@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { BASE_URL } from '../infrastructure/api/apiClient';
+import { getBaseUrl } from '../infrastructure/api/apiClient';
 
 /**
  * Concatena um novo chunk de texto ao texto já montado. Extraído como
@@ -73,7 +73,7 @@ export const useStreamingMessage = () => {
     }
 
     setIsStreaming(true);
-    const url = `${BASE_URL.replace(/\/$/, '')}/api/executions/${executionId}/stream`;
+    const url = `${getBaseUrl().replace(/\/$/, '')}/api/executions/${executionId}/stream`;
     const source = new EventSource(url);
     eventSourceRef.current = source;
 

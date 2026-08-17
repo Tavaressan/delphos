@@ -1,6 +1,23 @@
 import { ErrorResponse } from '../../types';
 
-export const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://rag-corporativo.duckdns.org';
+export function getBaseUrl(): string {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+  if (backendUrl) {
+    return backendUrl;
+  }
+
+  // In production, NEXT_PUBLIC_BACKEND_URL must be explicitly set
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'NEXT_PUBLIC_BACKEND_URL environment variable is required in production'
+    );
+  }
+
+  // In development, fallback to localhost
+  return 'http://localhost:8000';
+}
+
 const DEFAULT_TIMEOUT = 15000; // 15 seconds
 
 export class ApiError extends Error {
@@ -21,7 +38,9 @@ interface RequestOptions extends RequestInit {
 
 async function request<T>(path: string, options: RequestOptions = {}, isMultipart = false): Promise<T> {
   const { timeout = DEFAULT_TIMEOUT, headers, ...rest } = options;
-  const url = `${BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+  // Resolvido a cada request: avaliar no import faria o build de produção
+  // falhar no prerender quando NEXT_PUBLIC_BACKEND_URL ainda não está definida.
+  const url = `${getBaseUrl().replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
