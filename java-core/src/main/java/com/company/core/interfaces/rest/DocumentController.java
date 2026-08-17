@@ -7,6 +7,7 @@ import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
 import com.company.core.domain.repositories.UserRepository;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
 import tools.jackson.databind.ObjectMapper;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -158,7 +159,7 @@ public class DocumentController {
 
         } catch (Exception e) {
             log.error("Failed to upload document", e);
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(Map.of("error", GlobalExceptionHandler.GENERIC_ERROR_MESSAGE));
         }
     }
 
