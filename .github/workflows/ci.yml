@@ -351,9 +351,14 @@ jobs:
     # Postgres efêmero para os testes marcados com #[sqlx::test] (issue #266): o
     # sqlx cria um banco por teste a partir de DATABASE_URL e aplica as migrações
     # do próprio crate.
+    #
+    # Os testes de integração do ingestion-worker, por outro lado, são
+    # #[tokio::test] comuns que leem DATABASE_URL direto e esperam o schema do
+    # java-core — daí o step que aplica as migrações do Flyway abaixo, e daí a
+    # imagem com pgvector (V1 faz CREATE EXTENSION vector).
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           # Banco efêmero de CI, acessível apenas de dentro do job: trust evita
           # carregar uma credencial no workflow só para os testes.
@@ -404,6 +409,48 @@ jobs:
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
+
+      # Os testes de integração do ingestion-worker esperam a tabela `documents`,
+      # que só existe depois das migrações do Flyway — aplicadas em runtime pelo
+      # `core`, que não sobe neste job. Sem este step eles conectam, não acham a
+      # tabela e pulam: o job fica verde sem ter exercitado nada (issue #376).
+      #
+      # psql roda via container (mesma imagem do service) porque o cliente não é
+      # garantido no runner self-hosted; --network host alcança a porta efêmera
+      # publicada pelo service.
+      - name: Aplicar migrações do java-core no Postgres de teste
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          set -euo pipefail
+          cd java-core/src/main/resources/db/migration
+
+          # Ordem numérica de versão: `sort` lexicográfico poria V10 antes de V2.
+          # Iteração por linha (não por word-splitting) para não depender do IFS
+          # nem quebrar num nome de arquivo com espaço.
+          printf '%s\n' V*.sql \
+            | sed -E 's/^V([0-9]+)__.*/\1 &/' | sort -n -k1,1 | cut -d' ' -f2- \
+            | while IFS= read -r f; do
+            echo "-> $f"
+            # `embedding.dimension` é placeholder do Flyway, resolvido pelo Spring
+            # a partir de EMBEDDING_DIMENSIONS (default 768 em application.yml).
+            # Aqui o SQL é aplicado cru, então o mesmo default entra por sed.
+            sed 's/${embedding.dimension}/768/g' "$f" \
+              | docker run --rm -i --network host pgvector/pgvector:pg16 \
+                  psql -h localhost -p "$PGPORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f -
+          done
+
+          # Guard explícito: os testes pulam quando `documents` não existe, então
+          # sem esta checagem uma migração que falhasse voltaria a produzir o
+          # mesmo verde vazio que este step existe para eliminar.
+          applied=$(docker run --rm --network host pgvector/pgvector:pg16 \
+            psql -h localhost -p "$PGPORT" -U postgres -d postgres -tAc \
+            "SELECT to_regclass('public.documents') IS NOT NULL")
+          if [ "$applied" != "t" ]; then
+            echo "::error::Migrações aplicadas mas a tabela documents não existe - os testes de integração pulariam silenciosamente"
+            exit 1
+          fi
+          echo "OK: schema do java-core aplicado no Postgres de teste"
 
       - name: Run Tests (cargo nextest)
         # O contexto `job` não existe em env de nível de job — só dentro de
