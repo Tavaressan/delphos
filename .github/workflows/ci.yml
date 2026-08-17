@@ -371,8 +371,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    env:
-      DATABASE_URL: postgres://postgres@localhost:${{ job.services.postgres.ports['5432'] }}/postgres
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -408,6 +406,11 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Run Tests (cargo nextest)
+        # O contexto `job` não existe em env de nível de job — só dentro de
+        # steps —, e usá-lo lá invalida o workflow inteiro (o CI Pipeline deixa
+        # de disparar). A porta sorteada para o Postgres é lida aqui.
+        env:
+          DATABASE_URL: postgres://postgres@localhost:${{ job.services.postgres.ports['5432'] }}/postgres
         run: |
           cd rust-services
           cargo nextest run --workspace
