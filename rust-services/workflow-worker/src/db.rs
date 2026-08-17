@@ -79,7 +79,7 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "INSERT INTO workflow_versions (workflow_id, version, created_by) VALUES ($1, $2, $3)"
+            "INSERT INTO workflow_versions (workflow_id, version, created_by) VALUES ($1, $2, $3)",
         )
         .bind(workflow_id)
         .bind(1)
@@ -102,7 +102,11 @@ mod tests {
         .unwrap();
 
         let (nodes, _) = load_dag(&pool, tenant_a, workflow_id, 1).await.unwrap();
-        assert_eq!(nodes.len(), 1, "Should return 1 node for the correct tenant");
+        assert_eq!(
+            nodes.len(),
+            1,
+            "Should return 1 node for the correct tenant"
+        );
 
         let (nodes, _) = load_dag(&pool, tenant_b, workflow_id, 1).await.unwrap();
         assert_eq!(nodes.len(), 0, "Should return 0 nodes for another tenant");

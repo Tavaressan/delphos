@@ -210,10 +210,17 @@ async fn process_delivery(pool: &PgPool, channel: &Channel, body: &str) -> Resul
         job.workflow_id, job.workflow_version
     );
 
-    let parsed_tenant_id = Uuid::parse_str(&job.tenant_id)
-        .map_err(|_| anyhow::anyhow!("INVALID_TENANT_ID"))?;
+    let parsed_tenant_id =
+        Uuid::parse_str(&job.tenant_id).map_err(|_| anyhow::anyhow!("INVALID_TENANT_ID"))?;
 
-    let (nodes, edges) = match load_dag(pool, parsed_tenant_id, job.workflow_id, job.workflow_version).await {
+    let (nodes, edges) = match load_dag(
+        pool,
+        parsed_tenant_id,
+        job.workflow_id,
+        job.workflow_version,
+    )
+    .await
+    {
         Ok(res) => res,
         Err(err) => {
             let error_msg = format!("Failed to load DAG from Postgres: {}", err);
