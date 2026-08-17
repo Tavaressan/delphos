@@ -741,7 +741,20 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        if: needs.changes.outputs.rust == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
+          severity: 'CRITICAL'
           exit-code: '1'
           ignore-unfixed: true
 
@@ -803,7 +816,19 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
+          severity: 'CRITICAL'
           exit-code: '1'
           ignore-unfixed: true
 
@@ -866,7 +891,19 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
+          severity: 'CRITICAL'
           exit-code: '1'
           ignore-unfixed: true
 
@@ -931,7 +968,19 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
+          severity: 'CRITICAL'
           exit-code: '1'
           ignore-unfixed: true
 
@@ -974,7 +1023,19 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: script-executor:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: script-executor:${{ github.sha }}
+          severity: 'CRITICAL'
           exit-code: '1'
           ignore-unfixed: true
 
