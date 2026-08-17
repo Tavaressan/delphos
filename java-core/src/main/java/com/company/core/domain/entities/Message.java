@@ -1,5 +1,6 @@
 package com.company.core.domain.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -15,6 +16,10 @@ public class Message {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
+    // Quebra o ciclo de serialização com Conversation.messages (issue #242):
+    // sem @JsonIgnore, Jackson recursa infinitamente entre Message.conversation
+    // e Conversation.messages, causando StackOverflowError.
+    @JsonIgnore
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "conversation_id", nullable = false)
