@@ -18,7 +18,6 @@ export function getBaseUrl(): string {
   return 'http://localhost:8000';
 }
 
-export const BASE_URL = getBaseUrl();
 const DEFAULT_TIMEOUT = 15000; // 15 seconds
 
 export class ApiError extends Error {
@@ -39,7 +38,9 @@ interface RequestOptions extends RequestInit {
 
 async function request<T>(path: string, options: RequestOptions = {}, isMultipart = false): Promise<T> {
   const { timeout = DEFAULT_TIMEOUT, headers, ...rest } = options;
-  const url = `${BASE_URL.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+  // Resolvido a cada request: avaliar no import faria o build de produção
+  // falhar no prerender quando NEXT_PUBLIC_BACKEND_URL ainda não está definida.
+  const url = `${getBaseUrl().replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
