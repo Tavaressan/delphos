@@ -360,15 +360,19 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_DB: postgres
           POSTGRES_HOST_AUTH_METHOD: trust
+        # Porta efêmera, não 5432 fixa: no runner self-hosted a 5432 do host já
+        # está ocupada (stack local / job paralelo) e o container falhava com
+        # "Bind for 0.0.0.0:5432 failed: port is already allocated", derrubando
+        # todo job que toca Rust. A porta sorteada é lida via job.services.
         ports:
-          - 5432:5432
+          - 5432/tcp
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgres://postgres@localhost:5432/postgres
+      DATABASE_URL: postgres://postgres@localhost:${{ job.services.postgres.ports['5432'] }}/postgres
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
