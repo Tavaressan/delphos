@@ -616,8 +616,19 @@ jobs:
       # dependências pinadas em requirements.txt.
       - name: Audit dependencies (pip-audit)
         run: |
+          # Exceções temporárias: as três dependências abaixo são pinadas
+          # transitivamente pelo crewai e não têm upgrade viável hoje —
+          # forçar mcp>=1.28.1/json-repair>=0.60.1 exige uma faixa de crewai
+          # que conflita com o pin PyYAML==6.0.1, e chromadb 1.1.1 não tem
+          # versão corrigida publicada. Tratadas em PR de remediação próprio;
+          # revisar esta lista a cada bump do crewai.
           if [ -f python-services/crew-worker/requirements.txt ]; then
-            pip-audit -r python-services/crew-worker/requirements.txt
+            pip-audit -r python-services/crew-worker/requirements.txt \
+              --ignore-vuln PYSEC-2026-311 \
+              --ignore-vuln GHSA-xf7x-x43h-rpqh \
+              --ignore-vuln PYSEC-2026-3481 \
+              --ignore-vuln PYSEC-2026-3482 \
+              --ignore-vuln PYSEC-2026-3483
           fi
 
       - name: Run Linter (Flake8)
@@ -727,7 +738,7 @@ jobs:
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan ${{ matrix.service }} image (Trivy)
         if: needs.changes.outputs.rust == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -789,7 +800,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan java-core image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -852,7 +863,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan frontend image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -917,7 +928,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan crew-worker image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
           severity: 'CRITICAL,HIGH'
@@ -960,7 +971,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem (SO + deps do binário).
       - name: Scan script-executor image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: script-executor:${{ github.sha }}
           severity: 'CRITICAL,HIGH'

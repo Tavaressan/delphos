@@ -1,6 +1,27 @@
 [advisories]
 version = 2
 yanked = "deny"
+# Exceções temporárias: cada uma exige um upgrade que quebra API e por isso é
+# tratada em PR próprio, não neste (que apenas introduz o gate). Ver issue de
+# remediação (issue #377). Revisar esta lista a cada upgrade — entrada que sobra sem motivo
+# esvazia o gate.
+ignore = [
+  # sqlx 0.7 -> 0.8.1 muda a API usada por ingestion-worker, rag-worker e
+  # workflow-worker.
+  "RUSTSEC-2024-0363",
+  # rustls-webpki fica preso à cadeia do sqlx 0.7; sai junto com o upgrade acima.
+  "RUSTSEC-2026-0104",
+  "RUSTSEC-2026-0098",
+  "RUSTSEC-2026-0099",
+  # lopdf 0.31 -> 0.42 muda a API usada por ingestion-worker e document-processing.
+  "RUSTSEC-2026-0187",
+  # rsa: sem versão corrigida publicada até hoje (2026-08-17).
+  "RUSTSEC-2023-0071",
+  # Crates sem manutenção, puxadas transitivamente — sem vulnerabilidade associada.
+  "RUSTSEC-2024-0384",
+  "RUSTSEC-2024-0436",
+  "RUSTSEC-2025-0134",
+]
 
 [licenses]
 version = 2
