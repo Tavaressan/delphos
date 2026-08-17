@@ -348,6 +348,27 @@ jobs:
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
     needs: [select-runner, changes]
     if: needs.changes.outputs.rust == 'true'
+    # Postgres efêmero para os testes marcados com #[sqlx::test] (issue #266): o
+    # sqlx cria um banco por teste a partir de DATABASE_URL e aplica as migrações
+    # do próprio crate.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          # Banco efêmero de CI, acessível apenas de dentro do job: trust evita
+          # carregar uma credencial no workflow só para os testes.
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres@localhost:5432/postgres
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

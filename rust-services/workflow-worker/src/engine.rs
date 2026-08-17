@@ -76,7 +76,7 @@ impl WorkflowEngine {
     }
 
     /// Executes the sorted nodes in sequence under the configured timeout.
-    pub async fn execute(&self) -> Result<String> {
+    pub async fn execute(&self, channel: &lapin::Channel, execution_id: Uuid) -> Result<String> {
         let sorted_nodes = self.sort_nodes()?;
         println!("Executing DAG containing {} nodes.", sorted_nodes.len());
 
@@ -92,8 +92,23 @@ impl WorkflowEngine {
 
                 match node.node_type.to_uppercase().as_str() {
                     "RAG" => {
-                        println!("Processing RAG search semantic calculations...");
-                        sleep(Duration::from_millis(800)).await;
+                        println!("Dispatching RAG node to agent.retrieval.requested...");
+                        let payload = serde_json::to_vec(&serde_json::json!({
+                            "executionId": execution_id,
+                            "nodeId": node.id,
+                            "config": node.config
+                        }))
+                        .unwrap();
+                        channel
+                            .basic_publish(
+                                "agent.execution.exchange",
+                                "agent.retrieval.requested",
+                                lapin::options::BasicPublishOptions::default(),
+                                &payload,
+                                lapin::BasicProperties::default(),
+                            )
+                            .await
+                            .map_err(|e| anyhow!("Failed to publish RAG node: {}", e))?;
                     }
                     "TOOL" => {
                         let tool_name = node
@@ -102,12 +117,31 @@ impl WorkflowEngine {
                             .and_then(|c| c.get("toolName"))
                             .and_then(|t| t.as_str())
                             .unwrap_or("generic_tool");
-                        println!("Calling tool: {}", tool_name);
-                        sleep(Duration::from_millis(1200)).await;
+                        println!(
+                            "Dispatching TOOL node ({}) to agent.tool.requested...",
+                            tool_name
+                        );
+                        let payload = serde_json::to_vec(&serde_json::json!({
+                            "executionId": execution_id,
+                            "nodeId": node.id,
+                            "toolName": tool_name,
+                            "config": node.config
+                        }))
+                        .unwrap();
+                        channel
+                            .basic_publish(
+                                "agent.execution.exchange",
+                                "agent.tool.requested",
+                                lapin::options::BasicPublishOptions::default(),
+                                &payload,
+                                lapin::BasicProperties::default(),
+                            )
+                            .await
+                            .map_err(|e| anyhow!("Failed to publish TOOL node: {}", e))?;
                     }
                     _ => {
                         println!("Simulating execution of generic node...");
-                        sleep(Duration::from_millis(500)).await;
+                        sleep(Duration::from_millis(50)).await;
                     }
                 }
             }
