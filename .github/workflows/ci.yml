@@ -422,7 +422,20 @@ jobs:
       - name: Audit dependencies (cargo audit)
         run: |
           cd rust-services
-          cargo audit
+          # cargo-audit não lê deny.toml (é outra ferramenta), então as mesmas
+          # exceções do gate do cargo-deny precisam ser repetidas aqui. Cada
+          # uma exige um upgrade que quebra API, ou não tem correção publicada
+          # — remediação rastreada na issue #377. Revisar a cada upgrade.
+          cargo audit \
+            --ignore RUSTSEC-2024-0363 \
+            --ignore RUSTSEC-2026-0104 \
+            --ignore RUSTSEC-2026-0098 \
+            --ignore RUSTSEC-2026-0099 \
+            --ignore RUSTSEC-2026-0187 \
+            --ignore RUSTSEC-2023-0071 \
+            --ignore RUSTSEC-2024-0384 \
+            --ignore RUSTSEC-2024-0436 \
+            --ignore RUSTSEC-2025-0134
 
       # Issue #176: licenças incompatíveis, crates banidas/duplicadas e
       # fontes não confiáveis (config em rust-services/deny.toml).
