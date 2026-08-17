@@ -146,17 +146,14 @@ struct AiStudioContent {
 }
 
 #[derive(Serialize, Debug)]
-struct AiStudioEmbedConfig {
-    #[serde(rename = "outputDimensionality")]
-    output_dimensionality: usize,
-}
-
-#[derive(Serialize, Debug)]
 struct AiStudioEmbedRequest {
     model: String,
     content: AiStudioContent,
-    #[serde(rename = "embedContentConfig")]
-    embed_content_config: AiStudioEmbedConfig,
+    // A REST API batchEmbedContents espera outputDimensionality no topo de cada request.
+    // Aninhá-lo em "embedContentConfig" (nome do wrapper do SDK Python) faz a API ignorar
+    // o campo silenciosamente e devolver as 3072 dimensões nativas do modelo.
+    #[serde(rename = "outputDimensionality")]
+    output_dimensionality: usize,
 }
 
 #[derive(Serialize, Debug)]
@@ -191,9 +188,7 @@ pub async fn call_ai_studio_embeddings(
                 content: AiStudioContent {
                     parts: vec![AiStudioContentPart { text: t.clone() }],
                 },
-                embed_content_config: AiStudioEmbedConfig {
-                    output_dimensionality: dimensions,
-                },
+                output_dimensionality: dimensions,
             })
             .collect(),
     };
@@ -515,5 +510,51 @@ mod tests {
         .await;
 
         assert!(result.is_err());
+    }
+
+    /// Regressão da issue #382: o campo de dimensão precisa ir no TOPO de cada request.
+    ///
+    /// A REST API batchEmbedContents ignora silenciosamente campos desconhecidos, então
+    /// aninhar outputDimensionality em "embedContentConfig" (nome do wrapper do SDK Python)
+    /// fazia a API devolver as 3072 dimensões nativas do modelo em vez das 768 pedidas —
+    /// e todo INSERT em document_chunks.embedding vector(768) falhava.
+    #[tokio::test]
+    async fn test_ai_studio_request_sends_output_dimensionality_at_top_level() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/ai-studio"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(ai_studio_success_body(vec![0.1])),
+            )
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+
+        call_ai_studio_embeddings(
+            &client,
+            &ai_studio_url,
+            "fake-api-key",
+            &sample_texts(),
+            768,
+            "gemini-embedding-001",
+        )
+        .await
+        .expect("chamada ao mock deve suceder");
+
+        let requests = mock_server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        let entry = &body["requests"][0];
+
+        assert_eq!(
+            entry["outputDimensionality"], 768,
+            "outputDimensionality deve estar no topo do request"
+        );
+        assert!(
+            entry.get("embedContentConfig").is_none(),
+            "embedContentConfig é do SDK Python e é ignorado pela REST API — não deve ser enviado"
+        );
     }
 }
