@@ -622,8 +622,8 @@ jobs:
           # que conflita com o pin PyYAML==6.0.1, e chromadb 1.1.1 não tem
           # versão corrigida publicada. Tratadas em PR de remediação próprio;
           # revisar esta lista a cada bump do crewai.
-          if [ -f python-services/crew-worker/requirements.txt ]; then
-            pip-audit -r python-services/crew-worker/requirements.txt \
+          if [ -f python-services/crew-worker/requirements.lock.txt ]; then
+            pip-audit -r python-services/crew-worker/requirements.lock.txt \
               --ignore-vuln PYSEC-2026-311 \
               --ignore-vuln GHSA-xf7x-x43h-rpqh \
               --ignore-vuln PYSEC-2026-3481 \
