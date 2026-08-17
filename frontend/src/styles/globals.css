@@ -1,13 +1,14 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Dark mode via classe `.dark` no elemento raiz (equivalente ao antigo darkMode: 'class'). */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /*
  * As variáveis de cor abaixo usam o formato de tripla RGB ("R G B", sem
- * vírgulas) em vez de hex, porque o tailwind.config.js as consome como
- * `rgb(var(--x) / <alpha-value>)` — isso é necessário para que os
- * modificadores de opacidade do Tailwind (ex.: `bg-secondary/20`) funcionem
- * corretamente. Ver issue #109.
+ * vírgulas) em vez de hex; o bloco @theme abaixo as consome via
+ * `rgb(var(--x))` — o Tailwind v4 aplica automaticamente os modificadores
+ * de opacidade (ex.: `bg-secondary/20`) via color-mix(), sem precisar do
+ * placeholder `<alpha-value>` do v3. Ver issue #109.
  */
 :root {
   --primary: 34 64 154; /* #22409A */
@@ -59,6 +60,59 @@
   --text-primary: 229 234 242; /* #E5EAF2 */
   --text-secondary: 163 175 191; /* #A3AFBF */
   --border-color: 31 41 55; /* #1F2937 */
+}
+
+/* Equivalente ao antigo tailwind.config.js (theme.extend). */
+@theme inline {
+  --color-primary: rgb(var(--primary));
+  --color-primary-dark: rgb(var(--primary-dark));
+  --color-primary-light: rgb(var(--primary-light));
+  --color-secondary: rgb(var(--secondary));
+  --color-secondary-dark: rgb(var(--secondary-dark));
+  --color-secondary-light: rgb(var(--secondary-light));
+  --color-accent: rgb(var(--accent));
+  --color-accent-dark: rgb(var(--accent-dark));
+  --color-accent-light: rgb(var(--accent-light));
+  --color-success: rgb(var(--success));
+  --color-success-dark: rgb(var(--success-dark));
+  --color-success-light: rgb(var(--success-light));
+  --color-warning: rgb(var(--warning));
+  --color-warning-dark: rgb(var(--warning-dark));
+  --color-warning-light: rgb(var(--warning-light));
+  --color-danger: rgb(var(--danger));
+  --color-danger-dark: rgb(var(--danger-dark));
+  --color-danger-light: rgb(var(--danger-light));
+  --color-background: rgb(var(--background));
+  --color-surface: rgb(var(--surface));
+  --color-text-primary: rgb(var(--text-primary));
+  --color-text-secondary: rgb(var(--text-secondary));
+  --color-border-color: rgb(var(--border-color));
+
+  --font-heading: var(--font-inter), Inter, sans-serif;
+  --font-body: var(--font-inter), Inter, sans-serif;
+
+  --font-weight-light: 200;
+  --font-weight-regular: 400;
+  --font-weight-bold: 600;
+
+  --shadow-discrete: 0 2px 8px -1px rgba(0, 0, 0, 0.05), 0 1px 3px -1px rgba(0, 0, 0, 0.03);
+  --shadow-card: 0 4px 20px -2px rgba(34, 64, 154, 0.05);
+}
+
+/*
+ * v4 muda o default de `border`/`divide` (bare, sem cor explícita) de
+ * gray-200 para currentColor. Este projeto usa `border` sem cor em vários
+ * componentes esperando o cinza neutro do design system — preserva esse
+ * comportamento em vez de caçar cada ocorrência.
+ */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border-color);
+  }
 }
 
 @layer base {
