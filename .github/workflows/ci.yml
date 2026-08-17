@@ -554,13 +554,17 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-          cache-dependency-path: 'python-services/crew-worker/requirements.txt'
+          cache-dependency-path: 'python-services/crew-worker/requirements.lock.txt'
 
+      # Instala o mesmo conjunto pinado que a imagem do crew-worker (ver
+      # python-services/crew-worker/Dockerfile): mantém teste e imagem no mesmo
+      # conjunto de versões e evita o backtracking do resolver sobre as faixas
+      # abertas de requirements.txt.
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f python-services/crew-worker/requirements.txt ]; then
-            pip install -r python-services/crew-worker/requirements.txt
+          if [ -f python-services/crew-worker/requirements.lock.txt ]; then
+            pip install -r python-services/crew-worker/requirements.lock.txt
           fi
           pip install black flake8 pytest
 
