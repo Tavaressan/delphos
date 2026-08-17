@@ -2,6 +2,7 @@ package com.company.core.interfaces.rest;
 
 import com.company.core.application.AuditService;
 import com.company.core.application.FileTypeValidator;
+import com.company.core.domain.entities.Document;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
 import com.company.core.domain.repositories.UserRepository;
@@ -12,14 +13,22 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class DocumentControllerTest {
 
@@ -58,10 +67,40 @@ class DocumentControllerTest {
 
     @Test
     void listDocuments_WithoutTenantId_ShouldReturnBadRequestAndNeverQueryRepository() {
-        ResponseEntity<?> response = documentController.listDocuments(null);
+        ResponseEntity<?> response = documentController.listDocuments(null, Pageable.unpaged());
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         verifyNoInteractions(documentRepository);
+    }
+
+    @Test
+    void listDocuments_withMoreRecordsThanPageSize_returnsPaginatedResponse() {
+        UUID tenantId = UUID.randomUUID();
+        int pageSize = 20;
+        int totalElements = 25;
+
+        List<Document> pageContent = new ArrayList<>();
+        for (int i = 0; i < pageSize; i++) {
+            Document doc = new Document();
+            doc.setId(UUID.randomUUID());
+            doc.setTenantId(tenantId);
+            pageContent.add(doc);
+        }
+
+        Pageable defaultPageable = PageRequest.of(0, pageSize);
+        when(documentRepository.findByTenantId(eq(tenantId), eq(defaultPageable)))
+                .thenReturn(new PageImpl<>(pageContent, defaultPageable, totalElements));
+
+        ResponseEntity<?> response = documentController.listDocuments(tenantId.toString(), defaultPageable);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        @SuppressWarnings("unchecked")
+        Page<Document> body = (Page<Document>) response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getContent()).hasSize(pageSize);
+        assertThat(body.getTotalElements()).isEqualTo(totalElements);
+        assertThat(body.getSize()).isEqualTo(pageSize);
+        assertThat(body.getNumber()).isEqualTo(0);
     }
 
     @Test

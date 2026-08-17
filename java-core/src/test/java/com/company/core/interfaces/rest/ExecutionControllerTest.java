@@ -17,6 +17,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -25,6 +28,7 @@ import com.company.core.infrastructure.web.GlobalExceptionHandler;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -64,13 +69,15 @@ class ExecutionControllerTest {
     private RetrievalEventRepository retrievalEventRepository;
 
     private MockMvc mockMvc;
+    private ExecutionController executionController;
 
     @BeforeEach
     void setup() {
         ObjectMapper objectMapper = new ObjectMapper();
-        mockMvc = MockMvcBuilders.standaloneSetup(new ExecutionController(
+        executionController = new ExecutionController(
                 userRepository, conversationRepository, executionRepository, rabbitTemplate,
-                objectMapper, agentRepository, messageRepository, auditService, retrievalEventRepository)).build();
+                objectMapper, agentRepository, messageRepository, auditService, retrievalEventRepository);
+        mockMvc = MockMvcBuilders.standaloneSetup(executionController).build();
     }
 
     @Test
@@ -241,18 +248,54 @@ class ExecutionControllerTest {
     }
 
     @Test
-    void listExecutions_withTenantId_returnsExecutionsForTenant() throws Exception {
+    void listExecutions_withTenantId_returnsExecutionsForTenant() {
         UUID tenantId = UUID.randomUUID();
         AgentExecution execution = new AgentExecution();
         execution.setId(UUID.randomUUID());
         execution.setTenantId(tenantId);
         execution.setStatus("COMPLETED");
 
-        when(executionRepository.findByTenantId(tenantId)).thenReturn(List.of(execution));
+        Pageable defaultPageable = PageRequest.of(0, 20);
+        when(executionRepository.findByTenantId(eq(tenantId), eq(defaultPageable)))
+                .thenReturn(new PageImpl<>(List.of(execution)));
 
-        mockMvc.perform(get("/api/executions?tenantId=" + tenantId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
+        org.springframework.http.ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> response =
+                executionController.listExecutions(tenantId.toString(), defaultPageable);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getContent().get(0).get("status")).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void listExecutions_withMoreRecordsThanPageSize_returnsPaginatedResponse() {
+        UUID tenantId = UUID.randomUUID();
+        int pageSize = 5;
+        int totalElements = 12;
+
+        List<AgentExecution> pageContent = new ArrayList<>();
+        for (int i = 0; i < pageSize; i++) {
+            AgentExecution execution = new AgentExecution();
+            execution.setId(UUID.randomUUID());
+            execution.setTenantId(tenantId);
+            execution.setStatus("COMPLETED");
+            pageContent.add(execution);
+        }
+
+        Pageable requestedPageable = PageRequest.of(1, pageSize);
+        when(executionRepository.findByTenantId(eq(tenantId), eq(requestedPageable)))
+                .thenReturn(new PageImpl<>(pageContent, requestedPageable, totalElements));
+
+        org.springframework.http.ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> response =
+                executionController.listExecutions(tenantId.toString(), requestedPageable);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        org.springframework.data.domain.Page<Map<String, Object>> body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getContent()).hasSize(pageSize);
+        assertThat(body.getTotalElements()).isEqualTo(totalElements);
+        assertThat(body.getNumber()).isEqualTo(1);
+        assertThat(body.getSize()).isEqualTo(pageSize);
     }
 
     @Test
