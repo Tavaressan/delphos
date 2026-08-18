@@ -15,6 +15,10 @@ ignore = [
   "RUSTSEC-2026-0099",
   # lopdf 0.31 -> 0.42 muda a API usada por ingestion-worker e document-processing.
   "RUSTSEC-2026-0187",
+  # h2 0.3.27: RUSTSEC-2026-0258 só tem correção em >=0.4.16, e a série 0.3 vem
+  # do reqwest 0.11 (rag-worker, ingestion-worker, embedding-service) — sair dela
+  # exige subir reqwest para 0.12. O h2 0.4.x já foi atualizado para 0.4.16.
+  "RUSTSEC-2026-0258",
   # rsa: sem versão corrigida publicada até hoje (2026-08-17).
   "RUSTSEC-2023-0071",
   # Crates sem manutenção, puxadas transitivamente — sem vulnerabilidade associada.
