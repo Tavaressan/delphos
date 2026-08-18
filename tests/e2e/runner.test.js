@@ -467,7 +467,12 @@ describe('Suite de Testes End-to-End - Alfabra Vector', () => {
     const workflowId = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d';
     const workflowVersion = 1;
     const executionId = randomUUID();
-    const tenantId = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12';
+    // A DAG semeada por V4__seed_workflow_data.sql não declara tenant_id, então
+    // V19__workflow_definitions_tenant_id.sql aplicou o UUID zero (o mesmo tenant
+    // padrão dos controllers). Desde que load_dag passou a filtrar por tenant
+    // (issue #266), publicar outro tenant aqui carregava 0 nós e o worker
+    // reportava sucesso sobre uma DAG vazia (issue #385).
+    const tenantId = '00000000-0000-0000-0000-000000000000';
     const tmpQueue = `e2e.workflow.outcome.${executionId}`;
 
     console.log('Passo 1: Aguardando o workflow-worker declarar a fila "agent.workflow.queue"...');
