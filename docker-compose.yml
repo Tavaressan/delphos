@@ -38,8 +38,8 @@ services:
 
   core:
     build:
-      context: .
-      dockerfile: java-core/Dockerfile
+      context: ./java-core
+      dockerfile: Dockerfile
     container_name: core-platform
     volumes:
       - .:/app
