@@ -63,9 +63,11 @@ class MockLLM(BaseLLM):
 
 
 class FallbackLLM(BaseLLM):
-    """Tenta o LLM primário (Vertex AI) e cai para o secundário (Google AI Studio,
-    autenticado via API key) quando a chamada primária falhar, espelhando o padrão
-    de `generate_response` em rust-services/rag-worker/src/llm.rs."""
+    """Tenta o LLM primário e cai para o secundário quando a chamada primária falhar,
+    espelhando o padrão de `generate_response` em rust-services/rag-worker/src/llm.rs.
+    A ordem dos elos (quem é `primary`/`fallback`) é decidida por quem instancia esta
+    classe — ver CrewAiRuntimeAdapter.__init__ (issue #389: Google AI Studio é o
+    primário e Vertex AI o último elo, invertido do que era antes)."""
 
     def __init__(self, primary: "LLM", fallback: "LLM", model: str):
         super().__init__(model=model)
@@ -108,7 +110,14 @@ class CrewAiRuntimeAdapter:
         gcp_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         ai_studio_api_key = os.environ.get("GOOGLE_AI_STUDIO_API_KEY")
 
-        has_creds = bool(gcp_creds and os.path.exists(gcp_creds))
+        # Issue #389: docker-compose.yml monta ADC_PATH com default `:-/dev/null` para
+        # não quebrar `docker compose up` quando a var não está configurada. Checar só
+        # os.path.exists não basta mais — /dev/null "existe" dentro do container, mas
+        # não é uma credencial real. isfile()+getsize()>0 exclui esse placeholder (e
+        # qualquer outro arquivo vazio) sem exigir parsing do JSON da credencial.
+        has_creds = bool(
+            gcp_creds and os.path.isfile(gcp_creds) and os.path.getsize(gcp_creds) > 0
+        )
         has_api_key = bool(
             api_key and "placeholder" not in api_key.lower() and len(api_key) > 20
         )
@@ -132,48 +141,70 @@ class CrewAiRuntimeAdapter:
             os.environ["GEMINI_API_KEY"] = ai_studio_api_key
             return LLM(model=f"gemini/{ai_studio_model_id}", temperature=0.2)
 
-        if worker_mode == "mock":
-            print(
-                "[CrewAiRuntimeAdapter] CREW_WORKER_MODE=mock: using MockLLM (explicit dev mode)."
-            )
-            self.llm = MockLLM(model="mock-model")
-        elif has_api_key or has_creds:
+        def build_vertex_llm() -> "LLM":
             if not project_id:
                 raise RuntimeError(
                     "[CrewAiRuntimeAdapter] GCP_PROJECT_ID não está definido. "
                     "Configure em .env ou defina CREW_WORKER_MODE=mock para dev local."
                 )
-            model_id = os.environ.get("GCP_CHAT_MODEL_ID", "gemini-1.5-flash")
+            model_id = os.environ.get("GCP_CHAT_MODEL_ID", "gemini-3.6-flash")
             if not model_id.startswith("vertex_ai/"):
                 model_id = f"vertex_ai/{model_id}"
 
             print(
-                f"[CrewAiRuntimeAdapter] Configuring real Vertex AI LLM ({model_id}) for project '{project_id}'..."
+                f"[CrewAiRuntimeAdapter] Configuring Vertex AI LLM ({model_id}) for project '{project_id}'..."
             )
             if has_api_key:
                 os.environ["VERTEX_API_KEY"] = api_key
             os.environ["VERTEX_PROJECT"] = project_id
             os.environ["VERTEX_LOCATION"] = region
-            vertex_llm = LLM(model=model_id, temperature=0.2)
+            return LLM(model=model_id, temperature=0.2)
 
-            if has_ai_studio_key:
-                print(
-                    "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY configurada: "
-                    "fallback para Google AI Studio habilitado caso o Vertex AI falhe."
-                )
-                self.llm = FallbackLLM(
-                    primary=vertex_llm,
-                    fallback=build_ai_studio_llm(),
-                    model=model_id,
-                )
-            else:
-                self.llm = vertex_llm
+        has_vertex = has_api_key or has_creds
+
+        if worker_mode == "mock":
+            print(
+                "[CrewAiRuntimeAdapter] CREW_WORKER_MODE=mock: using MockLLM (explicit dev mode)."
+            )
+            self.llm = MockLLM(model="mock-model")
+        elif has_ai_studio_key and has_vertex:
+            # Issue #389 (decisão do usuário, 2026-08-19): a ordem da cadeia é
+            # invertida em relação ao que era antes. Google AI Studio é o PRIMÁRIO —
+            # o free tier do Vertex AI está expirado (ver #192/#193/#194), então
+            # colocá-lo primeiro só somava a latência/ruído de uma chamada fadada ao
+            # 404 antes de cair para o AI Studio a cada request. Vertex continua na
+            # cadeia como ÚLTIMO elo de fallback (não removido), pronto para voltar a
+            # ser útil quando a cota for restabelecida.
+            #
+            # Ponto de extensão para a issue #358 (worker paralelo, branch
+            # "feat-358-ollama-provider"): o elo do Ollama entra AQUI, no meio da
+            # cadeia — AI Studio (primary) -> Ollama -> Vertex (fallback atual). Ao
+            # integrar #358, envolver build_vertex_llm() num FallbackLLM
+            # intermediário com o LLM do Ollama e passar esse intermediário como
+            # `fallback=` abaixo, mantendo Vertex como último elo.
+            print(
+                "[CrewAiRuntimeAdapter] Google AI Studio configurado como LLM primário; "
+                "Vertex AI habilitado como último elo de fallback."
+            )
+            self.llm = FallbackLLM(
+                primary=build_ai_studio_llm(),
+                fallback=build_vertex_llm(),
+                model="ai-studio-primary+vertex-fallback",
+            )
         elif has_ai_studio_key:
             print(
                 "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados). "
                 "Usando Google AI Studio diretamente."
             )
             self.llm = build_ai_studio_llm()
+        elif has_vertex:
+            print(
+                "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY ausente. "
+                "Usando Vertex AI diretamente (issue #389: sem o AI Studio como "
+                "primário, cada chamada paga o custo do Vertex mesmo com o free "
+                "tier expirado — configure GOOGLE_AI_STUDIO_API_KEY para evitar isso)."
+            )
+            self.llm = build_vertex_llm()
         else:
             raise RuntimeError(
                 "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas, "

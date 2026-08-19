@@ -105,7 +105,7 @@ services:
     volumes:
       - ./rust-services:/app
       - /app/target                # Protege o cache de compilação do Rust no Linux
-      - ${ADC_PATH}:/gcloud/adc.json:ro
+      - ${ADC_PATH:-/dev/null}:/gcloud/adc.json:ro
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
       interval: 10s
@@ -147,7 +147,7 @@ services:
     volumes:
       - ./rust-services:/app
       - /app/target                # Protege o cache de compilação do Rust no Linux
-      - ${ADC_PATH}:/gcloud/adc.json:ro
+      - ${ADC_PATH:-/dev/null}:/gcloud/adc.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -192,7 +192,13 @@ services:
       # fallback in-process (usado só em dev/testes unitários sem Docker).
       - SCRIPT_EXECUTOR_URL=http://script-executor:8000/run
     volumes:
-      - ${ADC_PATH}:/gcloud/adc.json:ro
+      # Issue #389: sem o default `:-/dev/null`, ADC_PATH vazio produz um volume spec
+      # inválido (":/gcloud/adc.json:ro", seção vazia entre dois-pontos) que aborta o
+      # `docker compose up` da stack INTEIRA, não só deste serviço — era essa a causa
+      # mais provável do crew-worker nunca ter sido criado. Vertex AI é o último elo
+      # de fallback da cadeia de LLM (ver crewai_adapter.py), então continua sendo
+      # montado normalmente quando ADC_PATH está configurado.
+      - ${ADC_PATH:-/dev/null}:/gcloud/adc.json:ro
     networks:
       # Rede default: alcança core, rabbitmq, embedding-service etc.
       - default
