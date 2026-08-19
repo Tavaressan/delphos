@@ -219,6 +219,60 @@ pub async fn call_ai_studio_embeddings(
     Ok(parsed.embeddings.into_iter().map(|e| e.values).collect())
 }
 
+#[derive(Serialize, Debug)]
+struct OllamaEmbedRequest {
+    model: String,
+    input: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaEmbedResponse {
+    embeddings: Vec<Vec<f32>>,
+}
+
+/// Monta a URL do endpoint de embeddings do Ollama a partir de uma base URL (injetável em
+/// testes, default `http://ollama:11434`).
+pub fn ollama_embed_url(base_url: &str) -> String {
+    format!("{base_url}/api/embed")
+}
+
+/// Chama a API `/api/embed` do Ollama (provider local, sem autenticação).
+pub async fn call_ollama_embeddings(
+    client: &reqwest::Client,
+    url: &str,
+    texts: &[String],
+    model_id: &str,
+) -> Result<Vec<Vec<f32>>, String> {
+    let body = OllamaEmbedRequest {
+        model: model_id.to_string(),
+        input: texts.to_vec(),
+    };
+
+    let res = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("HTTP error calling Ollama: {}", e))?;
+
+    let status = res.status();
+    if !status.is_success() {
+        let err_body = res.text().await.unwrap_or_default();
+        return Err(format!(
+            "Ollama API returned error status {}: {}",
+            status, err_body
+        ));
+    }
+
+    let parsed: OllamaEmbedResponse = res
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Ollama response body: {}", e))?;
+
+    Ok(parsed.embeddings)
+}
+
 /// Orquestra a geração de embeddings: tenta Vertex AI (quando há token OAuth disponível) e cai
 /// para o Google AI Studio quando a chamada falhar ou quando não há token (ADC não configurado).
 /// Retorna erro apenas se nenhum dos dois providers estiver disponível ou ambos falharem.
@@ -556,5 +610,59 @@ mod tests {
             entry.get("embedContentConfig").is_none(),
             "embedContentConfig é do SDK Python e é ignorado pela REST API — não deve ser enviado"
         );
+    }
+
+    #[test]
+    fn test_ollama_embed_url_format() {
+        assert_eq!(
+            ollama_embed_url("http://ollama:11434"),
+            "http://ollama:11434/api/embed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_call_ollama_embeddings_success() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/embed"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "model": "nomic-embed-text",
+                "embeddings": [[0.1, 0.2, 0.3]]
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let url = ollama_embed_url(&mock_server.uri());
+
+        let result =
+            call_ollama_embeddings(&client, &url, &sample_texts(), "nomic-embed-text").await;
+
+        assert_eq!(result.unwrap(), vec![vec![0.1, 0.2, 0.3]]);
+
+        let requests = mock_server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(body["model"], "nomic-embed-text");
+        assert_eq!(body["input"][0], "Olá Mundo");
+    }
+
+    #[tokio::test]
+    async fn test_call_ollama_embeddings_error_status() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/embed"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("internal error"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let url = ollama_embed_url(&mock_server.uri());
+
+        let result =
+            call_ollama_embeddings(&client, &url, &sample_texts(), "nomic-embed-text").await;
+
+        assert!(result.is_err());
     }
 }
