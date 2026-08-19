@@ -107,6 +107,12 @@ class CrewAiRuntimeAdapter:
         region = os.environ.get("GCP_LOCATION", "us-central1")
         gcp_creds = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         ai_studio_api_key = os.environ.get("GOOGLE_AI_STUDIO_API_KEY")
+        # Issue #358: Ollama como último elo da cadeia de fallback (redundância além dos
+        # dois providers Google) e provider explícito de dev/teste com semântica real.
+        # Opt-in via OLLAMA_CHAT_MODEL para não tentar alcançar um host Ollama que pode
+        # não existir em ambientes sem o profile local-ai do docker-compose.
+        ollama_chat_model = os.environ.get("OLLAMA_CHAT_MODEL")
+        has_ollama = bool(ollama_chat_model)
 
         has_creds = bool(gcp_creds and os.path.exists(gcp_creds))
         has_api_key = bool(
@@ -129,11 +135,35 @@ class CrewAiRuntimeAdapter:
             os.environ["GEMINI_API_KEY"] = ai_studio_api_key
             return LLM(model=f"gemini/{ai_studio_model_id}", temperature=0.2)
 
+        def build_ollama_llm() -> "LLM":
+            # litellm resolve o provider Ollama via o prefixo "ollama/" no nome do
+            # modelo. O endpoint é lido do kwarg `base_url` do construtor de LLM do
+            # CrewAI (repassado a litellm como `api_base`) — confirmado no pacote
+            # instalado (litellm/llms/ollama/common_utils.py:get_api_base), não na
+            # documentação, que não fixa esse nome de forma inequívoca.
+            ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://ollama:11434")
+            return LLM(
+                model=f"ollama/{ollama_chat_model}",
+                base_url=ollama_base_url,
+                temperature=0.2,
+            )
+
         if worker_mode == "mock":
             print(
                 "[CrewAiRuntimeAdapter] CREW_WORKER_MODE=mock: using MockLLM (explicit dev mode)."
             )
             self.llm = MockLLM(model="mock-model")
+        elif worker_mode == "ollama":
+            print(
+                "[CrewAiRuntimeAdapter] CREW_WORKER_MODE=ollama: usando Ollama diretamente "
+                "(dev/teste com semântica real, sem credencial GCP)."
+            )
+            if not has_ollama:
+                raise RuntimeError(
+                    "[CrewAiRuntimeAdapter] CREW_WORKER_MODE=ollama requer OLLAMA_CHAT_MODEL "
+                    "configurado (ex.: llama3.2)."
+                )
+            self.llm = build_ollama_llm()
         elif has_api_key or has_creds:
             if not project_id:
                 raise RuntimeError(
@@ -153,7 +183,22 @@ class CrewAiRuntimeAdapter:
             os.environ["VERTEX_LOCATION"] = region
             vertex_llm = LLM(model=model_id, temperature=0.2)
 
-            if has_ai_studio_key:
+            if has_ai_studio_key and has_ollama:
+                print(
+                    "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY e OLLAMA_CHAT_MODEL "
+                    "configurados: cadeia de fallback Vertex AI -> Google AI Studio -> Ollama "
+                    "habilitada."
+                )
+                self.llm = FallbackLLM(
+                    primary=vertex_llm,
+                    fallback=FallbackLLM(
+                        primary=build_ai_studio_llm(),
+                        fallback=build_ollama_llm(),
+                        model=model_id,
+                    ),
+                    model=model_id,
+                )
+            elif has_ai_studio_key:
                 print(
                     "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY configurada: "
                     "fallback para Google AI Studio habilitado caso o Vertex AI falhe."
@@ -163,21 +208,53 @@ class CrewAiRuntimeAdapter:
                     fallback=build_ai_studio_llm(),
                     model=model_id,
                 )
+            elif has_ollama:
+                print(
+                    "[CrewAiRuntimeAdapter] OLLAMA_CHAT_MODEL configurado: fallback para "
+                    "Ollama habilitado caso o Vertex AI falhe (GOOGLE_AI_STUDIO_API_KEY "
+                    "ausente)."
+                )
+                self.llm = FallbackLLM(
+                    primary=vertex_llm,
+                    fallback=build_ollama_llm(),
+                    model=model_id,
+                )
             else:
                 self.llm = vertex_llm
         elif has_ai_studio_key:
+            if has_ollama:
+                print(
+                    "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não "
+                    "configurados). Usando Google AI Studio, com fallback para Ollama."
+                )
+                self.llm = FallbackLLM(
+                    primary=build_ai_studio_llm(),
+                    fallback=build_ollama_llm(),
+                    model=os.environ.get(
+                        "GOOGLE_AI_STUDIO_CHAT_MODEL_ID", "gemini-1.5-flash"
+                    ),
+                )
+            else:
+                print(
+                    "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados). "
+                    "Usando Google AI Studio diretamente."
+                )
+                self.llm = build_ai_studio_llm()
+        elif has_ollama:
             print(
-                "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados). "
-                "Usando Google AI Studio diretamente."
+                "[CrewAiRuntimeAdapter] Nenhum provider Google disponível. Usando Ollama "
+                "diretamente (continuidade de serviço degradado)."
             )
-            self.llm = build_ai_studio_llm()
+            self.llm = build_ollama_llm()
         else:
             raise RuntimeError(
                 "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas, "
-                "GOOGLE_AI_STUDIO_API_KEY ausente e CREW_WORKER_MODE != mock. "
+                "GOOGLE_AI_STUDIO_API_KEY ausente, OLLAMA_CHAT_MODEL ausente e "
+                "CREW_WORKER_MODE != mock. "
                 "Configure GOOGLE_APPLICATION_CREDENTIALS (via ADC_PATH no .env), "
-                "GOOGLE_AI_STUDIO_API_KEY, ou defina CREW_WORKER_MODE=mock para "
-                "desenvolvimento local. Consulte .env.example para instruções."
+                "GOOGLE_AI_STUDIO_API_KEY, OLLAMA_CHAT_MODEL, ou defina "
+                "CREW_WORKER_MODE=mock/ollama para desenvolvimento local. Consulte "
+                ".env.example para instruções."
             )
 
         # Issue #149: query rewriting (opt-in) antes da busca vetorial em
