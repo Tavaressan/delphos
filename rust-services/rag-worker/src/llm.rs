@@ -1,11 +1,18 @@
-//! Cliente HTTP para geração da resposta final do RAG via API generateContent do Gemini.
+//! Cliente HTTP para geração da resposta final do RAG.
 //!
-//! Suporta dois providers com o mesmo formato de request/response:
+//! Suporta uma cadeia de fallback ordenada:
 //! - Vertex AI (`{location}-aiplatform.googleapis.com`), autenticado via ADC (OAuth token).
-//! - Google AI Studio (`generativelanguage.googleapis.com`), autenticado via API key.
+//! - Google AI Studio (`generativelanguage.googleapis.com`), autenticado via API key. Mesmo
+//!   formato de request/response que o Vertex AI (API generateContent do Gemini).
+//! - Ollama (`OLLAMA_BASE_URL`, default `http://ollama:11434`), provider local sem
+//!   autenticação, usado como último elo — continuidade de serviço degradado quando os dois
+//!   providers Google estão indisponíveis. Formato de request/response próprio (`/api/chat`),
+//!   incompatível com o formato Gemini, daí o adaptador dedicado abaixo.
 //!
-//! `generate_response` tenta Vertex AI primeiro (quando há token) e cai para o AI Studio
-//! quando a chamada falha ou quando não há token disponível (ADC não configurado).
+//! `generate_response` tenta Vertex AI primeiro (quando há token), cai para o AI Studio quando
+//! a chamada falha ou quando não há token disponível (ADC não configurado), e só recorre ao
+//! Ollama se ambos os providers Google falharem ou não estiverem configurados. A ordem não deve
+//! ser invertida: modelos locais não têm paridade de qualidade com o Gemini.
 
 use crate::error::WorkerError;
 use serde::{Deserialize, Serialize};
@@ -184,43 +191,151 @@ pub async fn call_ai_studio(
     extract_text(parsed, "Google AI Studio")
 }
 
-/// Orquestra a geração da resposta: tenta Vertex AI (quando há token OAuth disponível) e cai
-/// para o Google AI Studio quando a chamada falhar ou quando não há token (ADC não configurado).
-/// Retorna erro apenas se nenhum dos dois providers estiver disponível ou ambos falharem.
+#[derive(Serialize, Debug)]
+pub struct OllamaMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct OllamaChatRequest {
+    pub model: String,
+    pub messages: Vec<OllamaMessage>,
+    pub stream: bool,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaResponseMessage {
+    content: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaChatResponse {
+    message: OllamaResponseMessage,
+}
+
+/// Monta o corpo do request para a API `/api/chat` do Ollama. Formato próprio, diferente do
+/// Gemini: mensagens com `role`/`content` em vez de `contents`/`systemInstruction`.
+pub fn build_ollama_request(
+    model: &str,
+    system_instruction: &str,
+    user_content: &str,
+) -> OllamaChatRequest {
+    OllamaChatRequest {
+        model: model.to_string(),
+        messages: vec![
+            OllamaMessage {
+                role: "system".to_string(),
+                content: system_instruction.to_string(),
+            },
+            OllamaMessage {
+                role: "user".to_string(),
+                content: user_content.to_string(),
+            },
+        ],
+        stream: false,
+    }
+}
+
+/// Monta a URL de chat do Ollama a partir de uma base URL (injetável em testes).
+pub fn ollama_chat_url(base_url: &str) -> String {
+    format!("{base_url}/api/chat")
+}
+
+/// Chama a API `/api/chat` do Ollama (provider local, sem autenticação).
+pub async fn call_ollama(
+    client: &reqwest::Client,
+    url: &str,
+    request: &OllamaChatRequest,
+) -> Result<String, WorkerError> {
+    let res = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(request)
+        .send()
+        .await
+        .map_err(|e| WorkerError::VertexAI(format!("HTTP error calling Ollama: {}", e)))?;
+
+    let status = res.status();
+    if !status.is_success() {
+        let err_body = res.text().await.unwrap_or_default();
+        return Err(WorkerError::VertexAI(format!(
+            "Ollama API returned error status {}: {}",
+            status, err_body
+        )));
+    }
+
+    let parsed: OllamaChatResponse = res.json().await.map_err(|e| {
+        WorkerError::Serialization(format!("Failed to parse Ollama response body: {}", e))
+    })?;
+
+    Ok(parsed.message.content)
+}
+
+/// Orquestra a geração da resposta em uma cadeia de fallback ordenada: Vertex AI (quando há
+/// token OAuth disponível) → Google AI Studio (quando a chamada falhar ou quando não há token) →
+/// Ollama (último elo, apenas quando `ollama_model` está configurado). A ordem é fixa por
+/// design: Ollama é continuidade de serviço degradado, não substitui os providers Google.
+/// Retorna erro apenas se todos os providers configurados falharem ou nenhum estiver disponível.
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_response(
     client: &reqwest::Client,
     vertex_url: &str,
     vertex_token: Option<&str>,
     ai_studio_url: &str,
     ai_studio_api_key: Option<&str>,
+    ollama_url: &str,
+    ollama_model: Option<&str>,
+    system_instruction: &str,
+    user_content: &str,
     request: &GeminiRequest,
 ) -> Result<String, WorkerError> {
+    let mut last_err: Option<WorkerError> = None;
+
     if let Some(token) = vertex_token {
         match call_vertex_ai(client, vertex_url, token, request).await {
             Ok(text) => return Ok(text),
             Err(e) => {
-                if let Some(api_key) = ai_studio_api_key {
-                    println!(
-                        "WARNING: Vertex AI call failed ({}). Falling back to Google AI Studio.",
-                        e
-                    );
-                    return call_ai_studio(client, ai_studio_url, api_key, request).await;
-                }
-                return Err(e);
+                println!(
+                    "WARNING: Vertex AI call failed ({}). Trying next provider.",
+                    e
+                );
+                last_err = Some(e);
             }
         }
     }
 
     if let Some(api_key) = ai_studio_api_key {
-        println!("Vertex AI token indisponível (ADC não configurado). Usando Google AI Studio.");
-        return call_ai_studio(client, ai_studio_url, api_key, request).await;
+        match call_ai_studio(client, ai_studio_url, api_key, request).await {
+            Ok(text) => return Ok(text),
+            Err(e) => {
+                println!(
+                    "WARNING: Google AI Studio call failed ({}). Trying next provider.",
+                    e
+                );
+                last_err = Some(e);
+            }
+        }
     }
 
-    Err(WorkerError::Config(
-        "Nenhum provider de LLM disponível: GCP Authenticator (Vertex AI) não inicializado e \
-         GOOGLE_AI_STUDIO_API_KEY não configurada."
-            .to_string(),
-    ))
+    if let Some(model) = ollama_model {
+        let ollama_request = build_ollama_request(model, system_instruction, user_content);
+        match call_ollama(client, ollama_url, &ollama_request).await {
+            Ok(text) => return Ok(text),
+            Err(e) => {
+                println!("WARNING: Ollama call failed ({}).", e);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        WorkerError::Config(
+            "Nenhum provider de LLM disponível: GCP Authenticator (Vertex AI) não inicializado, \
+             GOOGLE_AI_STUDIO_API_KEY não configurada e OLLAMA_CHAT_MODEL não configurado."
+                .to_string(),
+        )
+    }))
 }
 
 #[cfg(test)]
@@ -282,6 +397,10 @@ mod tests {
             Some("fake-token"),
             &ai_studio_url,
             Some("fake-api-key"),
+            "http://unused.invalid/ollama",
+            None,
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -319,6 +438,10 @@ mod tests {
             Some("fake-token"),
             &ai_studio_url,
             Some("fake-api-key"),
+            "http://unused.invalid/ollama",
+            None,
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -349,6 +472,10 @@ mod tests {
             None,
             &ai_studio_url,
             Some("fake-api-key"),
+            "http://unused.invalid/ollama",
+            None,
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -375,6 +502,10 @@ mod tests {
             Some("fake-token"),
             "http://unused.invalid",
             None,
+            "http://unused.invalid/ollama",
+            None,
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -392,10 +523,132 @@ mod tests {
             None,
             "http://unused.invalid/ai-studio",
             None,
+            "http://unused.invalid/ollama",
+            None,
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
 
         assert!(matches!(result, Err(WorkerError::Config(_))));
+    }
+
+    #[test]
+    fn test_ollama_chat_url_format() {
+        assert_eq!(
+            ollama_chat_url("http://ollama:11434"),
+            "http://ollama:11434/api/chat"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_falls_back_to_ollama_when_google_providers_fail() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/vertex"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/ai-studio"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": { "role": "assistant", "content": "resposta ollama" }
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let vertex_url = format!("{}/vertex", mock_server.uri());
+        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ollama_url = ollama_chat_url(&mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            &vertex_url,
+            Some("fake-token"),
+            &ai_studio_url,
+            Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "resposta ollama");
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_uses_ollama_directly_when_no_google_provider_configured() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": { "role": "assistant", "content": "resposta ollama direto" }
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let ollama_url = ollama_chat_url(&mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            "http://unused.invalid/vertex",
+            None,
+            "http://unused.invalid/ai-studio",
+            None,
+            &ollama_url,
+            Some("llama3.2"),
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "resposta ollama direto");
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_errors_when_all_providers_fail_including_ollama() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let ollama_url = ollama_chat_url(&mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            "http://unused.invalid/vertex",
+            None,
+            "http://unused.invalid/ai-studio",
+            None,
+            &ollama_url,
+            Some("llama3.2"),
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert!(result.is_err());
     }
 }

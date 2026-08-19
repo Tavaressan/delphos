@@ -679,6 +679,7 @@ impl RabbitMQManager {
         );
         let request_body =
             crate::llm::build_gemini_request(&system_instruction, &user_content, 0.2, 2048);
+        let ollama_url = crate::llm::ollama_chat_url(&self.config.ollama_base_url);
 
         let start_llm = std::time::Instant::now();
         let response_text = crate::llm::generate_response(
@@ -687,6 +688,10 @@ impl RabbitMQManager {
             vertex_token.as_deref(),
             &ai_studio_url,
             self.config.google_ai_studio_api_key.as_deref(),
+            &ollama_url,
+            self.config.ollama_chat_model.as_deref(),
+            &system_instruction,
+            &user_content,
             &request_body,
         )
         .await?;
