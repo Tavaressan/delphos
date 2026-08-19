@@ -1,3 +1,10 @@
+# Dependências diretas (alto nível). O build NÃO instala este arquivo: ele usa
+# requirements.lock, com as 154 versões exatas resolvidas a partir daqui.
+#
+# Para regenerar o lock após alterar qualquer linha abaixo:
+#   docker run --rm -v "$PWD":/w -w /w python:3.11-slim \
+#     sh -c "pip install --quiet uv && uv pip compile requirements.txt \
+#            --output-file requirements.lock --python-version 3.11"
 crewai>=1.0.0
 pysqlite3-binary; sys_platform == "linux"
 litellm
