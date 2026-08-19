@@ -205,6 +205,17 @@ services:
         condition: service_healthy
       script-executor:
         condition: service_healthy
+    # Issue #391: detecta o event bus do CrewAI envenenado (StackDepthExceededError
+    # em cascata) para visibilidade via `docker compose ps`. A recuperação de fato é
+    # feita pelo próprio processo (src/main.py), que se encerra ao atingir o mesmo
+    # limiar e depende de `restart: on-failure` acima para ser recriado — plain
+    # `docker compose` não recria containers apenas por estarem unhealthy.
+    healthcheck:
+      test: [ "CMD", "python", "src/healthcheck.py" ]
+      interval: 30s
+      timeout: 5s
+      retries: 1
+      start_period: 15s
 
   # Sidecar dedicado à execução isolada de scripts Python gerados por LLM
   # (issue #148). Endurecido: SEM credenciais GCP (nenhum adc.json montado, sem
