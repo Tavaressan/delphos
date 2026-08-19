@@ -119,8 +119,11 @@ class CrewAiRuntimeAdapter:
         )
 
         def build_ai_studio_llm() -> "LLM":
+            # gemini-1.5-flash foi aposentado (issue #389); gemini-3.6-flash é o modelo
+            # servido atualmente pela Generative Language API (ListModels), alinhado ao
+            # GCP_CHAT_MODEL_ID usado no ramo Vertex AI.
             ai_studio_model_id = os.environ.get(
-                "GOOGLE_AI_STUDIO_CHAT_MODEL_ID", "gemini-1.5-flash"
+                "GOOGLE_AI_STUDIO_CHAT_MODEL_ID", "gemini-3.6-flash"
             )
             # litellm (usado pelo CrewAI LLM) lê GEMINI_API_KEY para rotear ao Google
             # AI Studio via o prefixo de modelo "gemini/" — nome de env var diferente
