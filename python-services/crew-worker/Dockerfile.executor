@@ -11,7 +11,7 @@
 # Endurecimento adicional (rede internal, read_only, tmpfs, cap_drop, no-new-privileges,
 # pids_limit, mem_limit) é aplicado no serviço `script-executor` do docker-compose.yml.
 # gVisor (`runtime: runsc`) é OPCIONAL e documentado, não default.
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Usuário não-root dedicado — o sidecar nunca precisa de privilégios.
 RUN useradd --create-home --uid 10001 sandbox
