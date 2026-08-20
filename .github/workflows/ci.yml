@@ -614,7 +614,7 @@ jobs:
           deno install
 
       - name: Next.js Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             frontend/.next/cache
