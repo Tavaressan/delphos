@@ -15,3 +15,87 @@ updates:
   # (docs.github.com/en/code-security/dependabot/ecosystems-supported-by-dependabot,
   # consultado em 2026-07-15) — sem cobertura automática de deps do frontend
   # até que isso mude ou uma alternativa (ex.: Renovate) seja adotada.
+
+  # Workspace Rust (issue #176): um único diretório cobre todos os membros
+  # (rust-services/Cargo.toml lista shared/document-processing/embedding-
+  # service/ingestion-worker/rag-worker/workflow-worker), então um só PR de
+  # atualização por vez evita o volume de N PRs paralelos que N crates
+  # gerariam.
+  - package-ecosystem: "cargo"
+    directory: "/rust-services"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "pip"
+    directory: "/python-services/crew-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+
+  # Actions usadas nos workflows do repo (.github/workflows/*.yml).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Docker: o ecossistema do Dependabot escaneia FROM de Dockerfile por
+  # diretório (sem recursão), então cada diretório com um ou mais
+  # Dockerfile precisa da própria entrada. python-services/crew-worker tem
+  # dois Dockerfiles (Dockerfile e Dockerfile.executor) cobertos pela mesma
+  # entrada.
+  - package-ecosystem: "docker"
+    directory: "/java-core"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/python-services/crew-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/infrastructure/caddy"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/rust-services"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/rust-services/document-processing"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/rust-services/embedding-service"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/rust-services/ingestion-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/rust-services/rag-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2
+  - package-ecosystem: "docker"
+    directory: "/rust-services/workflow-worker"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2

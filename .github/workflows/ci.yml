@@ -351,9 +351,14 @@ jobs:
     # Postgres efêmero para os testes marcados com #[sqlx::test] (issue #266): o
     # sqlx cria um banco por teste a partir de DATABASE_URL e aplica as migrações
     # do próprio crate.
+    #
+    # Os testes de integração do ingestion-worker, por outro lado, são
+    # #[tokio::test] comuns que leem DATABASE_URL direto e esperam o schema do
+    # java-core — daí o step que aplica as migrações do Flyway abaixo, e daí a
+    # imagem com pgvector (V1 faz CREATE EXTENSION vector).
     services:
       postgres:
-        image: postgres:16-alpine
+        image: pgvector/pgvector:pg16
         env:
           # Banco efêmero de CI, acessível apenas de dentro do job: trust evita
           # carregar uma credencial no workflow só para os testes.
@@ -405,15 +410,96 @@ jobs:
       - name: Install nextest
         uses: taiki-e/install-action@nextest
 
+      # Os testes de integração do ingestion-worker esperam a tabela `documents`,
+      # que só existe depois das migrações do Flyway — aplicadas em runtime pelo
+      # `core`, que não sobe neste job. Sem este step eles conectam, não acham a
+      # tabela e pulam: o job fica verde sem ter exercitado nada (issue #376).
+      #
+      # psql roda via container (mesma imagem do service) porque o cliente não é
+      # garantido no runner self-hosted; --network host alcança a porta efêmera
+      # publicada pelo service.
+      - name: Aplicar migrações do java-core no Postgres de teste
+        env:
+          PGPORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          set -euo pipefail
+          cd java-core/src/main/resources/db/migration
+
+          # Ordem numérica de versão: `sort` lexicográfico poria V10 antes de V2.
+          # Iteração por linha (não por word-splitting) para não depender do IFS
+          # nem quebrar num nome de arquivo com espaço.
+          printf '%s\n' V*.sql \
+            | sed -E 's/^V([0-9]+)__.*/\1 &/' | sort -n -k1,1 | cut -d' ' -f2- \
+            | while IFS= read -r f; do
+            echo "-> $f"
+            # `embedding.dimension` é placeholder do Flyway, resolvido pelo Spring
+            # a partir de EMBEDDING_DIMENSIONS (default 768 em application.yml).
+            # Aqui o SQL é aplicado cru, então o mesmo default entra por sed.
+            sed 's/${embedding.dimension}/768/g' "$f" \
+              | docker run --rm -i --network host pgvector/pgvector:pg16 \
+                  psql -h localhost -p "$PGPORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f -
+          done
+
+          # Guard explícito: os testes pulam quando `documents` não existe, então
+          # sem esta checagem uma migração que falhasse voltaria a produzir o
+          # mesmo verde vazio que este step existe para eliminar.
+          applied=$(docker run --rm --network host pgvector/pgvector:pg16 \
+            psql -h localhost -p "$PGPORT" -U postgres -d postgres -tAc \
+            "SELECT to_regclass('public.documents') IS NOT NULL")
+          if [ "$applied" != "t" ]; then
+            echo "::error::Migrações aplicadas mas a tabela documents não existe - os testes de integração pulariam silenciosamente"
+            exit 1
+          fi
+          echo "OK: schema do java-core aplicado no Postgres de teste"
+
       - name: Run Tests (cargo nextest)
         # O contexto `job` não existe em env de nível de job — só dentro de
         # steps —, e usá-lo lá invalida o workflow inteiro (o CI Pipeline deixa
         # de disparar). A porta sorteada para o Postgres é lida aqui.
+        #
+        # EMBEDDING_PROVIDER=mock: desde a issue #376, este job aplica as
+        # migrações do java-core e o schema `documents` passa a existir, então
+        # os testes de integração do ingestion-worker não pulam mais — e
+        # chegam a exercitar get_embeddings_from_service(), que por padrão
+        # chama o embedding-service real via DNS do Docker Compose,
+        # indisponível aqui (só o Postgres sobe neste job). O fallback mock já
+        # existe em main.rs para esse caso; só faltava ligá-lo neste job.
         env:
           DATABASE_URL: postgres://postgres@localhost:${{ job.services.postgres.ports['5432'] }}/postgres
+          EMBEDDING_PROVIDER: mock
         run: |
           cd rust-services
           cargo nextest run --workspace
+
+      # Issue #176: vulnerabilidades conhecidas (RUSTSEC) nas dependências.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit dependencies (cargo audit)
+        run: |
+          cd rust-services
+          # cargo-audit não lê deny.toml (é outra ferramenta), então as mesmas
+          # exceções do gate do cargo-deny precisam ser repetidas aqui. Cada
+          # uma exige um upgrade que quebra API, ou não tem correção publicada
+          # — remediação rastreada na issue #377. Revisar a cada upgrade.
+          cargo audit \
+            --ignore RUSTSEC-2024-0363 \
+            --ignore RUSTSEC-2026-0104 \
+            --ignore RUSTSEC-2026-0098 \
+            --ignore RUSTSEC-2026-0099 \
+            --ignore RUSTSEC-2026-0187 \
+            --ignore RUSTSEC-2023-0071 \
+            --ignore RUSTSEC-2026-0258 \
+            --ignore RUSTSEC-2024-0384 \
+            --ignore RUSTSEC-2024-0436 \
+            --ignore RUSTSEC-2025-0134
+
+      # Issue #176: licenças incompatíveis, crates banidas/duplicadas e
+      # fontes não confiáveis (config em rust-services/deny.toml).
+      - name: Audit licenses/bans/sources (cargo deny)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: rust-services/Cargo.toml
 
   java-check:
     name: Java Core Build & Test
@@ -594,7 +680,26 @@ jobs:
           if [ -f python-services/crew-worker/requirements.lock.txt ]; then
             pip install -r python-services/crew-worker/requirements.lock.txt
           fi
-          pip install black flake8 pytest
+          pip install black flake8 pytest pip-audit
+
+      # Issue #176: vulnerabilidades conhecidas (PyPA Advisory DB) nas
+      # dependências pinadas em requirements.txt.
+      - name: Audit dependencies (pip-audit)
+        run: |
+          # Exceções temporárias: as três dependências abaixo são pinadas
+          # transitivamente pelo crewai e não têm upgrade viável hoje —
+          # forçar mcp>=1.28.1/json-repair>=0.60.1 exige uma faixa de crewai
+          # que conflita com o pin PyYAML==6.0.1, e chromadb 1.1.1 não tem
+          # versão corrigida publicada. Tratadas em PR de remediação próprio;
+          # revisar esta lista a cada bump do crewai.
+          if [ -f python-services/crew-worker/requirements.lock.txt ]; then
+            pip-audit -r python-services/crew-worker/requirements.lock.txt \
+              --ignore-vuln PYSEC-2026-311 \
+              --ignore-vuln GHSA-xf7x-x43h-rpqh \
+              --ignore-vuln PYSEC-2026-3481 \
+              --ignore-vuln PYSEC-2026-3482 \
+              --ignore-vuln PYSEC-2026-3483
+          fi
 
       - name: Run Linter (Flake8)
         run: |
@@ -778,6 +883,29 @@ jobs:
           # base, então não há estágio intermediário pesado que valha exportar.
           cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=min,scope={0}', matrix.service) || '' }}
 
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan ${{ matrix.service }} image (Trivy)
+        if: needs.changes.outputs.rust == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        if: needs.changes.outputs.rust == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
+          severity: 'CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
+
   docker-build-java:
     name: Docker Build (Java core)
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
@@ -830,6 +958,27 @@ jobs:
           # Export só em push (ver docker-build-rust): cache de PR é
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=java-core' || '' }}
+
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan java-core image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/java-core:${{ github.sha }}
+          severity: 'CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
 
   docker-build-frontend:
     name: Docker Build (Frontend)
@@ -884,6 +1033,27 @@ jobs:
           # Export só em push (ver docker-build-rust): cache de PR é
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=frontend' || '' }}
+
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan frontend image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/frontend:${{ github.sha }}
+          severity: 'CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
 
   docker-build-python:
     name: Docker Build (Crew worker)
@@ -941,6 +1111,27 @@ jobs:
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=crew-worker' || '' }}
 
+      # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
+      - name: Scan crew-worker image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/crew-worker:${{ github.sha }}
+          severity: 'CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
+
   # Imagem do sidecar de execução isolada de scripts (issue #148). Mesmo path-filter
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
@@ -959,16 +1150,42 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # `load: true` + tag local (sem push) para o Trivy conseguir escanear
+      # a imagem abaixo — esta imagem nunca é publicada no GHCR (só validação
+      # de build), então não usa o padrão de tags SHA/latest dos demais jobs.
       - name: Build script-executor image
         uses: docker/build-push-action@v6
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile.executor
           push: false
+          load: true
+          tags: script-executor:${{ github.sha }}
           cache-from: type=gha,scope=script-executor
           # Export só em push (ver docker-build-rust): cache de PR é
           # escopado ao merge ref e inutilizável fora dele.
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=script-executor' || '' }}
+
+      # Issue #176: CVEs conhecidas na imagem (SO + deps do binário).
+      - name: Scan script-executor image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: script-executor:${{ github.sha }}
+          # Relatório completo: HIGH fica visível mas não barra o merge nesta
+          # introdução do gate — as imagens já carregam CVEs HIGH pré-existentes
+          # (Next.js, postcss) cuja remediação é trabalho próprio, rastreado na
+          # issue #377. O step seguinte é o que bloqueia.
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Bloquear merge em CVE CRITICAL
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: script-executor:${{ github.sha }}
+          severity: 'CRITICAL'
+          exit-code: '1'
+          ignore-unfixed: true
 
   # Job de integração cross-container (issue interna: gate de mock LLM no CI).
   # Diferente dos jobs docker-build-*, que só validam que cada imagem builda

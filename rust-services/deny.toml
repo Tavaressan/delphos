@@ -1,0 +1,60 @@
+[advisories]
+version = 2
+yanked = "deny"
+# Exceções temporárias: cada uma exige um upgrade que quebra API e por isso é
+# tratada em PR próprio, não neste (que apenas introduz o gate). Ver issue de
+# remediação (issue #377). Revisar esta lista a cada upgrade — entrada que sobra sem motivo
+# esvazia o gate.
+ignore = [
+  # sqlx 0.7 -> 0.8.1 muda a API usada por ingestion-worker, rag-worker e
+  # workflow-worker.
+  "RUSTSEC-2024-0363",
+  # rustls-webpki fica preso à cadeia do sqlx 0.7; sai junto com o upgrade acima.
+  "RUSTSEC-2026-0104",
+  "RUSTSEC-2026-0098",
+  "RUSTSEC-2026-0099",
+  # lopdf 0.31 -> 0.42 muda a API usada por ingestion-worker e document-processing.
+  "RUSTSEC-2026-0187",
+  # h2 0.3.27: RUSTSEC-2026-0258 só tem correção em >=0.4.16, e a série 0.3 vem
+  # do reqwest 0.11 (rag-worker, ingestion-worker, embedding-service) — sair dela
+  # exige subir reqwest para 0.12. O h2 0.4.x já foi atualizado para 0.4.16.
+  "RUSTSEC-2026-0258",
+  # rsa: sem versão corrigida publicada até hoje (2026-08-17).
+  "RUSTSEC-2023-0071",
+  # Crates sem manutenção, puxadas transitivamente — sem vulnerabilidade associada.
+  "RUSTSEC-2024-0384",
+  "RUSTSEC-2024-0436",
+  "RUSTSEC-2025-0134",
+]
+
+[licenses]
+version = 2
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+  # webpki-roots (âncoras de confiança TLS, dependência transitiva de reqwest/sqlx) é a
+  # única dependência do workspace sob esta licença — file-level copyleft, sem obrigação
+  # de distribuir o código-fonte do projeto que a usa.
+  "MPL-2.0",
+]
+# Os crates internos do workspace (publish = false) não são publicados, logo
+# não têm licença de distribuição a validar.
+private = { ignore = true }
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# shared = { path = "../shared" } nos crates do workspace não declara versão
+# (não faz sentido pinar versão de um crate irmão no mesmo repo); sem isso o
+# cargo-deny trata toda dependência de path como wildcard.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
