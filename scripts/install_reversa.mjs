@@ -1,14 +1,10 @@
-import { resolve, join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { readFileSync, writeFileSync } from 'fs';
-import { ENGINES } from '../node_modules/reversa/lib/installer/detector.js';
-import { Writer } from '../node_modules/reversa/lib/installer/writer.js';
-import { buildManifest, saveManifest } from '../node_modules/reversa/lib/installer/manifest.js';
-import { readJsonSafe } from '../node_modules/reversa/lib/utils/json-safe.js';
+import { resolve } from 'node:path';
+import { ENGINES } from 'npm:reversa@1.2.43/lib/installer/detector.js';
+import { Writer } from 'npm:reversa@1.2.43/lib/installer/writer.js';
+import { buildManifest, saveManifest } from 'npm:reversa@1.2.43/lib/installer/manifest.js';
 
 const projectRoot = resolve('.');
-const pkg = readJsonSafe(join(projectRoot, 'node_modules/reversa/package.json'));
-const version = pkg.version ?? '1.2.43';
+const version = '1.2.43';
 
 const selectedEngines = ENGINES.filter(e => e.id === 'antigravity');
 const writer = new Writer(projectRoot);

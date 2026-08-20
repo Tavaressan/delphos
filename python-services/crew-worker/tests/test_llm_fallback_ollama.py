@@ -1,5 +1,6 @@
-"""Testes do provider Ollama (issue #358): terceiro elo da cadeia de fallback do LLM
-(Vertex AI -> Google AI Studio -> Ollama) e do modo CREW_WORKER_MODE=ollama.
+"""Testes do provider Ollama (issue #358): elo intermediário da cadeia de fallback do
+LLM (Google AI Studio -> Ollama -> Vertex AI, issue #389) e do modo
+CREW_WORKER_MODE=ollama.
 
 Arquivo dedicado (em vez de estender test_llm_fallback.py) para minimizar conflito de
 rebase com o worker paralelo das issues #391/#389, que também altera crewai_adapter.py.
