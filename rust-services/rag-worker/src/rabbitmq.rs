@@ -646,8 +646,9 @@ impl RabbitMQManager {
         );
 
         // Obtém o token OAuth do Vertex AI quando o GcpAuthenticator (ADC) está disponível.
-        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o
-        // llm::generate_response cai para o Google AI Studio (API key) quando não há token.
+        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o Vertex AI
+        // é o último elo da cadeia — llm::generate_response tenta Google AI Studio e Ollama
+        // antes de precisar deste token.
         let vertex_token = match authenticator {
             Some(auth) => {
                 match auth
