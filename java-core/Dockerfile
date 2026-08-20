@@ -19,7 +19,7 @@ COPY src ./src
 RUN gradle bootJar -x test --no-daemon
 
 # Stage 2: Runtime image
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:22-jre-jammy
 WORKDIR /opt/app
 
 # Copy the build artifact from the builder stage
