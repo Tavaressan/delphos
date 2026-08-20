@@ -38,11 +38,22 @@ allow = [
   "ISC",
   "Unicode-3.0",
   "Zlib",
+  # webpki-roots (âncoras de confiança TLS, dependência transitiva de reqwest/sqlx) é a
+  # única dependência do workspace sob esta licença — file-level copyleft, sem obrigação
+  # de distribuir o código-fonte do projeto que a usa.
+  "MPL-2.0",
 ]
+# Os crates internos do workspace (publish = false) não são publicados, logo
+# não têm licença de distribuição a validar.
+private = { ignore = true }
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# shared = { path = "../shared" } nos crates do workspace não declara versão
+# (não faz sentido pinar versão de um crate irmão no mesmo repo); sem isso o
+# cargo-deny trata toda dependência de path como wildcard.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
