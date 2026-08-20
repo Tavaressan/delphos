@@ -73,8 +73,35 @@ def test_adapter_uses_fallback_llm_when_both_vertex_and_ai_studio_configured(cha
     )
 
     assert isinstance(adapter.llm, FallbackLLM)
-    # Uma chamada para o LLM da Vertex AI e outra para o LLM do AI Studio.
+    # Uma chamada para o LLM do AI Studio e outra para o LLM da Vertex AI.
     assert mock_llm_cls.call_count == 2
+
+
+def test_adapter_puts_ai_studio_as_primary_and_vertex_as_last_fallback(channel):
+    """Issue #389 (decisão de 2026-08-19): a cadeia foi invertida — Google AI Studio
+    é o LLM primário e Vertex AI o último elo de fallback (não removido, só deixou
+    de ser o primário porque seu free tier está expirado, ver #192/#193/#194).
+
+    `FallbackLLM(primary=build_ai_studio_llm(), fallback=build_vertex_llm(), ...)`
+    em crewai_adapter.py avalia os argumentos nomeados da esquerda para a direita:
+    o primeiro `LLM(...)` construído é sempre o do primário. Este teste trava essa
+    ordem via `call_args_list`, já que os dois mocks retornam o mesmo objeto e não
+    dá para distingui-los por identidade.
+    """
+    adapter, mock_llm_cls = _make_adapter_with_env(
+        channel,
+        {
+            "VERTEX_AI_API_KEY": "x" * 25,
+            "GCP_PROJECT_ID": "test-project",
+            "GOOGLE_AI_STUDIO_API_KEY": "y" * 25,
+        },
+    )
+
+    assert isinstance(adapter.llm, FallbackLLM)
+    first_call_kwargs = mock_llm_cls.call_args_list[0].kwargs
+    second_call_kwargs = mock_llm_cls.call_args_list[1].kwargs
+    assert first_call_kwargs["model"].startswith("gemini/")
+    assert second_call_kwargs["model"].startswith("vertex_ai/")
 
 
 def test_adapter_uses_ai_studio_directly_when_no_vertex_credentials(channel):
@@ -95,3 +122,27 @@ def test_adapter_uses_ai_studio_directly_when_no_vertex_credentials(channel):
 def test_adapter_raises_when_no_provider_configured(channel):
     with pytest.raises(RuntimeError, match="GOOGLE_AI_STUDIO_API_KEY"):
         _make_adapter_with_env(channel, {})
+
+
+def test_adapter_ignores_dev_null_adc_placeholder(channel, tmp_path):
+    """Issue #389: docker-compose.yml monta ADC_PATH com default `:-/dev/null` para
+    não quebrar `docker compose up` quando a var não está configurada (o volume spec
+    `${ADC_PATH}:/gcloud/adc.json:ro` com ADC_PATH vazio é inválido e abortava a stack
+    inteira). Esse placeholder "existe" no sentido de os.path.exists, mas não é uma
+    credencial real — o adapter deve tratá-lo como ausente e usar Google AI Studio
+    diretamente, não travar com GCP_PROJECT_ID ausente nem tentar autenticar no Vertex
+    com um arquivo vazio."""
+    empty_adc = tmp_path / "adc.json"
+    empty_adc.touch()  # simula /dev/null: existe, mas tem 0 bytes
+
+    adapter, mock_llm_cls = _make_adapter_with_env(
+        channel,
+        {
+            "GOOGLE_APPLICATION_CREDENTIALS": str(empty_adc),
+            "GOOGLE_AI_STUDIO_API_KEY": "y" * 25,
+        },
+    )
+
+    assert not isinstance(adapter.llm, FallbackLLM)
+    _, kwargs = mock_llm_cls.call_args
+    assert kwargs["model"].startswith("gemini/")
