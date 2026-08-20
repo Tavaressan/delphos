@@ -456,8 +456,17 @@ jobs:
         # O contexto `job` não existe em env de nível de job — só dentro de
         # steps —, e usá-lo lá invalida o workflow inteiro (o CI Pipeline deixa
         # de disparar). A porta sorteada para o Postgres é lida aqui.
+        #
+        # EMBEDDING_PROVIDER=mock: desde a issue #376, este job aplica as
+        # migrações do java-core e o schema `documents` passa a existir, então
+        # os testes de integração do ingestion-worker não pulam mais — e
+        # chegam a exercitar get_embeddings_from_service(), que por padrão
+        # chama o embedding-service real via DNS do Docker Compose,
+        # indisponível aqui (só o Postgres sobe neste job). O fallback mock já
+        # existe em main.rs para esse caso; só faltava ligá-lo neste job.
         env:
           DATABASE_URL: postgres://postgres@localhost:${{ job.services.postgres.ports['5432'] }}/postgres
+          EMBEDDING_PROVIDER: mock
         run: |
           cd rust-services
           cargo nextest run --workspace
