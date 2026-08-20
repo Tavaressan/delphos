@@ -17,3 +17,8 @@ futures-lite = "1.13"
 lopdf = "0.31"
 docx-rs = "0.4"
 anyhow = "1.0"
+# Download autenticado do MinIO via API S3 (issue #183). O bucket é privado, então
+# um GET anônimo retorna 403 — estas crates assinam a requisição com SigV4.
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }
+aws-credential-types = "1"
+aws-config = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }

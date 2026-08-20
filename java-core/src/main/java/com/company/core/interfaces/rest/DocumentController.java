@@ -122,9 +122,10 @@ public class DocumentController {
 
             User creator = userRepository.findByUsername("admin").orElse(null);
 
-            // Save metadata
+            // Save metadata (id é gerado pelo Hibernate; docId é usado só na chave do objeto no
+            // MinIO, pré-atribuí-lo à entidade fazia o save() virar merge()/UPDATE numa linha
+            // inexistente e estourar StaleObjectStateException)
             Document doc = new Document();
-            doc.setId(docId);
             doc.setName(name);
             doc.setFilePath(objectPath);
             doc.setFileSize(file.getSize());
