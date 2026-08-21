@@ -781,7 +781,7 @@ jobs:
 
       - name: Build and push Rust builder base
         if: needs.changes.outputs.rust == 'true' && steps.probe.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./rust-services
           file: ./rust-services/Dockerfile.builder
@@ -858,7 +858,7 @@ jobs:
 
       - name: Build and push ${{ matrix.service }} image
         if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./rust-services
           file: ./rust-services/${{ matrix.service }}/Dockerfile
@@ -948,7 +948,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push java-core image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./java-core
           file: ./java-core/Dockerfile
@@ -1023,7 +1023,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./frontend/Dockerfile
@@ -1100,7 +1100,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push crew-worker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile
@@ -1154,7 +1154,7 @@ jobs:
       # a imagem abaixo — esta imagem nunca é publicada no GHCR (só validação
       # de build), então não usa o padrão de tags SHA/latest dos demais jobs.
       - name: Build script-executor image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile.executor
@@ -1336,7 +1336,7 @@ jobs:
       # imagem no daemon local sob a tag que docker-compose.ci-ports.yml
       # espera, para que o `up` seguinte não precise buildar de novo.
       - name: Build script-executor image (cache GHA)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile.executor
