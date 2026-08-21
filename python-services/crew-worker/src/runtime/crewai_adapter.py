@@ -197,59 +197,37 @@ class CrewAiRuntimeAdapter:
                     "configurado (ex.: llama3.2)."
                 )
             self.llm = build_ollama_llm()
-        elif has_ai_studio_key and has_vertex:
-            # Issue #389 (decisão do usuário, 2026-08-19): Google AI Studio é o
-            # PRIMÁRIO — o free tier do Vertex AI está expirado (ver #192/#193/#194),
-            # então colocá-lo primeiro só somava a latência/ruído de uma chamada
-            # fadada ao 404 antes de cair para o próximo provider a cada request.
-            # Vertex continua na cadeia como ÚLTIMO elo de fallback (não removido),
-            # pronto para voltar a ser útil quando a cota for restabelecida.
-            # Issue #358: Ollama entra no meio da cadeia quando configurado —
-            # AI Studio (primary) -> Ollama -> Vertex AI (último elo).
-            if has_ollama:
-                print(
-                    "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY e OLLAMA_CHAT_MODEL "
-                    "configurados: cadeia de fallback Google AI Studio -> Ollama -> "
-                    "Vertex AI habilitada."
-                )
-                self.llm = FallbackLLM(
-                    primary=build_ai_studio_llm(),
-                    fallback=FallbackLLM(
-                        primary=build_ollama_llm(),
-                        fallback=build_vertex_llm(),
-                        model="ollama-fallback+vertex-fallback",
-                    ),
-                    model="ai-studio-primary+ollama-vertex-fallback",
-                )
-            else:
-                print(
-                    "[CrewAiRuntimeAdapter] Google AI Studio configurado como LLM primário; "
-                    "Vertex AI habilitado como último elo de fallback."
-                )
-                self.llm = FallbackLLM(
+        elif has_ollama and has_ai_studio_key and has_vertex:
+            # Decisão do usuário (2026-08-21): Ollama passa a ser o PRIMÁRIO —
+            # o free tier do Google AI Studio esgota rápido (20 req/dia,
+            # generate_content_free_tier_requests) e o Vertex AI está sem
+            # billing habilitado no projeto (ver #192/#193/#194), então as duas
+            # opções Google falhavam com frequência antes de qualquer resposta
+            # sair. Ollama local -> AI Studio -> Vertex AI (último elo).
+            print(
+                "[CrewAiRuntimeAdapter] OLLAMA_CHAT_MODEL, GOOGLE_AI_STUDIO_API_KEY e "
+                "Vertex AI configurados: cadeia de fallback Ollama -> Google AI Studio "
+                "-> Vertex AI habilitada."
+            )
+            self.llm = FallbackLLM(
+                primary=build_ollama_llm(),
+                fallback=FallbackLLM(
                     primary=build_ai_studio_llm(),
                     fallback=build_vertex_llm(),
-                    model="ai-studio-primary+vertex-fallback",
-                )
-        elif has_ai_studio_key:
-            if has_ollama:
-                print(
-                    "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não "
-                    "configurados). Usando Google AI Studio, com fallback para Ollama."
-                )
-                self.llm = FallbackLLM(
-                    primary=build_ai_studio_llm(),
-                    fallback=build_ollama_llm(),
-                    model=os.environ.get(
-                        "GOOGLE_AI_STUDIO_CHAT_MODEL_ID", "gemini-3.6-flash"
-                    ),
-                )
-            else:
-                print(
-                    "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados). "
-                    "Usando Google AI Studio diretamente."
-                )
-                self.llm = build_ai_studio_llm()
+                    model="ai-studio-fallback+vertex-fallback",
+                ),
+                model="ollama-primary+ai-studio-vertex-fallback",
+            )
+        elif has_ollama and has_ai_studio_key:
+            print(
+                "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não "
+                "configurados). Usando Ollama, com fallback para Google AI Studio."
+            )
+            self.llm = FallbackLLM(
+                primary=build_ollama_llm(),
+                fallback=build_ai_studio_llm(),
+                model="ollama-primary+ai-studio-fallback",
+            )
         elif has_ollama and has_vertex:
             print(
                 "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY ausente. Usando Ollama, "
@@ -266,6 +244,23 @@ class CrewAiRuntimeAdapter:
                 "diretamente (continuidade de serviço degradado)."
             )
             self.llm = build_ollama_llm()
+        elif has_ai_studio_key and has_vertex:
+            print(
+                "[CrewAiRuntimeAdapter] OLLAMA_CHAT_MODEL ausente. Google AI Studio "
+                "configurado como LLM primário; Vertex AI habilitado como último elo "
+                "de fallback."
+            )
+            self.llm = FallbackLLM(
+                primary=build_ai_studio_llm(),
+                fallback=build_vertex_llm(),
+                model="ai-studio-primary+vertex-fallback",
+            )
+        elif has_ai_studio_key:
+            print(
+                "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados) "
+                "e OLLAMA_CHAT_MODEL ausente. Usando Google AI Studio diretamente."
+            )
+            self.llm = build_ai_studio_llm()
         elif has_vertex:
             print(
                 "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY e OLLAMA_CHAT_MODEL ausentes. "
