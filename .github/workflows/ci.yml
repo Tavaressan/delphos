@@ -885,7 +885,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan ${{ matrix.service }} image (Trivy)
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
@@ -898,7 +898,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Bloquear merge em CVE CRITICAL
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
