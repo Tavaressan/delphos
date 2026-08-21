@@ -1,0 +1,23 @@
+# Override LOCAL (não commitado) para o teste manual do fallback Ollama (PR #416).
+# Objetivo: reaproveitar do GHCR as imagens dos serviços que esta branch NÃO altera
+# (core, ingestion-worker, workflow-worker, frontend), evitando rebuild local deles.
+# Os serviços realmente alterados pela branch (embedding-service, rag-worker,
+# crew-worker) continuam usando o `build:` do docker-compose.yml.
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.pull-override.yml \
+#     pull core ingestion-worker workflow-worker frontend
+#   docker compose -f docker-compose.yml -f docker-compose.pull-override.yml \
+#     --profile local-ai up -d --build embedding-service rag-worker crew-worker
+#   docker compose -f docker-compose.yml -f docker-compose.pull-override.yml \
+#     --profile local-ai up -d
+
+services:
+  core:
+    image: ghcr.io/tavaressan/alfabra-vector/java-core:latest
+  ingestion-worker:
+    image: ghcr.io/tavaressan/alfabra-vector/ingestion-worker:latest
+  workflow-worker:
+    image: ghcr.io/tavaressan/alfabra-vector/workflow-worker:latest
+  frontend:
+    image: ghcr.io/tavaressan/alfabra-vector/frontend:latest
