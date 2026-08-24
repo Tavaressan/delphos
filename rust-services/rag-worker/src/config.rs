@@ -11,11 +11,17 @@ pub struct Config {
     /// API key do Google AI Studio, usada como fallback quando o Vertex AI
     /// (autenticado via ADC) estiver indisponível ou não configurado.
     pub google_ai_studio_api_key: Option<String>,
-    /// Base URL do Ollama (provider local, último elo da cadeia de fallback).
+    /// Base URL do Ollama (provider local, segundo elo da cadeia de fallback).
     pub ollama_base_url: String,
     /// Modelo de chat do Ollama. `None` desativa o fallback para Ollama —
     /// configurável via env var OLLAMA_CHAT_MODEL.
     pub ollama_chat_model: Option<String>,
+    /// API key do OpenRouter, usada como elo de fallback gratuito adicional quando AI Studio e
+    /// Ollama estiverem indisponíveis ou não configurados.
+    pub openrouter_api_key: Option<String>,
+    /// Modelo free-tier do OpenRouter usado no fallback. Configurável via env var
+    /// OPENROUTER_MODEL, default "meta-llama/llama-3.3-70b-instruct:free".
+    pub openrouter_model: String,
     /// Número máximo de chunks a recuperar em buscas de retrieval (pgvector).
     /// Configurável via env var RAG_TOP_K, default 5.
     pub rag_top_k: usize,
@@ -46,6 +52,11 @@ impl Config {
             env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://ollama:11434".to_string());
         let ollama_chat_model = env::var("OLLAMA_CHAT_MODEL").ok();
 
+        let openrouter_api_key = env::var("OPENROUTER_API_KEY").ok();
+
+        let openrouter_model = env::var("OPENROUTER_MODEL")
+            .unwrap_or_else(|_| "meta-llama/llama-3.3-70b-instruct:free".to_string());
+
         let rag_top_k = env::var("RAG_TOP_K")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -61,6 +72,8 @@ impl Config {
             google_ai_studio_api_key,
             ollama_base_url,
             ollama_chat_model,
+            openrouter_api_key,
+            openrouter_model,
             rag_top_k,
         })
     }
