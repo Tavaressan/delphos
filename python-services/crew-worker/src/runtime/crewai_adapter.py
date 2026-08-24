@@ -115,6 +115,15 @@ class CrewAiRuntimeAdapter:
         # não existir em ambientes sem o profile local-ai do docker-compose.
         ollama_chat_model = os.environ.get("OLLAMA_CHAT_MODEL")
         has_ollama = bool(ollama_chat_model)
+        # Issue #429: OpenRouter como elo adicional de fallback, usando um modelo
+        # free-tier (sufixo ":free") via litellm (`openrouter/<modelo>`). Mesmo
+        # padrão opt-in do Ollama: só entra na cadeia se a API key estiver presente.
+        openrouter_api_key = os.environ.get("OPENROUTER_API_KEY")
+        has_openrouter = bool(
+            openrouter_api_key
+            and "placeholder" not in openrouter_api_key.lower()
+            and len(openrouter_api_key) > 20
+        )
 
         # Issue #389: docker-compose.yml monta ADC_PATH com default `:-/dev/null` para
         # não quebrar `docker compose up` quando a var não está configurada. Checar só
@@ -160,6 +169,16 @@ class CrewAiRuntimeAdapter:
                 temperature=0.2,
             )
 
+        def build_openrouter_llm() -> "LLM":
+            # litellm resolve o provider OpenRouter via o prefixo "openrouter/" no
+            # nome do modelo e lê a API key de OPENROUTER_API_KEY diretamente — sem
+            # ponte de env var, ao contrário do AI Studio (litellm docs: Provider ==
+            # OpenRouter). Default é um modelo com sufixo ":free" (free tier).
+            openrouter_model_id = os.environ.get(
+                "OPENROUTER_CHAT_MODEL", "meta-llama/llama-3.3-8b-instruct:free"
+            )
+            return LLM(model=f"openrouter/{openrouter_model_id}", temperature=0.2)
+
         def build_vertex_llm() -> "LLM":
             if not project_id:
                 raise RuntimeError(
@@ -197,88 +216,59 @@ class CrewAiRuntimeAdapter:
                     "configurado (ex.: llama3.2)."
                 )
             self.llm = build_ollama_llm()
-        elif has_ollama and has_ai_studio_key and has_vertex:
-            # Decisão do usuário (2026-08-21): Ollama passa a ser o PRIMÁRIO —
-            # o free tier do Google AI Studio esgota rápido (20 req/dia,
-            # generate_content_free_tier_requests) e o Vertex AI está sem
-            # billing habilitado no projeto (ver #192/#193/#194), então as duas
-            # opções Google falhavam com frequência antes de qualquer resposta
-            # sair. Ollama local -> AI Studio -> Vertex AI (último elo).
-            print(
-                "[CrewAiRuntimeAdapter] OLLAMA_CHAT_MODEL, GOOGLE_AI_STUDIO_API_KEY e "
-                "Vertex AI configurados: cadeia de fallback Ollama -> Google AI Studio "
-                "-> Vertex AI habilitada."
-            )
-            self.llm = FallbackLLM(
-                primary=build_ollama_llm(),
-                fallback=FallbackLLM(
-                    primary=build_ai_studio_llm(),
-                    fallback=build_vertex_llm(),
-                    model="ai-studio-fallback+vertex-fallback",
-                ),
-                model="ollama-primary+ai-studio-vertex-fallback",
-            )
-        elif has_ollama and has_ai_studio_key:
-            print(
-                "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não "
-                "configurados). Usando Ollama, com fallback para Google AI Studio."
-            )
-            self.llm = FallbackLLM(
-                primary=build_ollama_llm(),
-                fallback=build_ai_studio_llm(),
-                model="ollama-primary+ai-studio-fallback",
-            )
-        elif has_ollama and has_vertex:
-            print(
-                "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY ausente. Usando Ollama, "
-                "com fallback para Vertex AI (último elo)."
-            )
-            self.llm = FallbackLLM(
-                primary=build_ollama_llm(),
-                fallback=build_vertex_llm(),
-                model="ollama-primary+vertex-fallback",
-            )
-        elif has_ollama:
-            print(
-                "[CrewAiRuntimeAdapter] Nenhum provider Google disponível. Usando Ollama "
-                "diretamente (continuidade de serviço degradado)."
-            )
-            self.llm = build_ollama_llm()
-        elif has_ai_studio_key and has_vertex:
-            print(
-                "[CrewAiRuntimeAdapter] OLLAMA_CHAT_MODEL ausente. Google AI Studio "
-                "configurado como LLM primário; Vertex AI habilitado como último elo "
-                "de fallback."
-            )
-            self.llm = FallbackLLM(
-                primary=build_ai_studio_llm(),
-                fallback=build_vertex_llm(),
-                model="ai-studio-primary+vertex-fallback",
-            )
-        elif has_ai_studio_key:
-            print(
-                "[CrewAiRuntimeAdapter] Vertex AI indisponível (ADC/API key não configurados) "
-                "e OLLAMA_CHAT_MODEL ausente. Usando Google AI Studio diretamente."
-            )
-            self.llm = build_ai_studio_llm()
-        elif has_vertex:
-            print(
-                "[CrewAiRuntimeAdapter] GOOGLE_AI_STUDIO_API_KEY e OLLAMA_CHAT_MODEL ausentes. "
-                "Usando Vertex AI diretamente (issue #389: sem o AI Studio como "
-                "primário, cada chamada paga o custo do Vertex mesmo com o free "
-                "tier expirado — configure GOOGLE_AI_STUDIO_API_KEY para evitar isso)."
-            )
-            self.llm = build_vertex_llm()
         else:
-            raise RuntimeError(
-                "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas, "
-                "GOOGLE_AI_STUDIO_API_KEY ausente, OLLAMA_CHAT_MODEL ausente e "
-                "CREW_WORKER_MODE != mock. "
-                "Configure GOOGLE_APPLICATION_CREDENTIALS (via ADC_PATH no .env), "
-                "GOOGLE_AI_STUDIO_API_KEY, OLLAMA_CHAT_MODEL, ou defina "
-                "CREW_WORKER_MODE=mock/ollama para desenvolvimento local. Consulte "
-                ".env.example para instruções."
-            )
+            # Decisão do usuário (2026-08-21, issue #358/#416): Ollama é o
+            # PRIMÁRIO quando disponível — o free tier do Google AI Studio
+            # esgota rápido (20 req/dia) e o Vertex AI está sem billing
+            # habilitado no projeto (ver #192/#193/#194). Vertex AI (pago)
+            # continua sempre como ÚLTIMO elo da cadeia, quando configurado.
+            # Issue #429: OpenRouter (modelo free-tier) entra como elo
+            # adicional, entre o Google AI Studio e o Vertex AI — mesma regra
+            # de "Vertex por último" aplicada ao Ollama.
+            providers: List[tuple] = []
+            if has_ollama:
+                providers.append(("Ollama", build_ollama_llm))
+            if has_ai_studio_key:
+                providers.append(("Google AI Studio", build_ai_studio_llm))
+            if has_openrouter:
+                providers.append(("OpenRouter", build_openrouter_llm))
+            if has_vertex:
+                providers.append(("Vertex AI", build_vertex_llm))
+
+            if not providers:
+                raise RuntimeError(
+                    "[CrewAiRuntimeAdapter] Credenciais GCP ausentes ou inválidas, "
+                    "GOOGLE_AI_STUDIO_API_KEY ausente, OLLAMA_CHAT_MODEL ausente, "
+                    "OPENROUTER_API_KEY ausente e CREW_WORKER_MODE != mock. "
+                    "Configure GOOGLE_APPLICATION_CREDENTIALS (via ADC_PATH no .env), "
+                    "GOOGLE_AI_STUDIO_API_KEY, OLLAMA_CHAT_MODEL, OPENROUTER_API_KEY, "
+                    "ou defina CREW_WORKER_MODE=mock/ollama para desenvolvimento "
+                    "local. Consulte .env.example para instruções."
+                )
+            elif len(providers) == 1:
+                name, builder = providers[0]
+                print(
+                    f"[CrewAiRuntimeAdapter] Único provider de LLM configurado: "
+                    f"{name}. Usando diretamente."
+                )
+                self.llm = builder()
+            else:
+                chain_names = " -> ".join(name for name, _ in providers)
+                print(
+                    f"[CrewAiRuntimeAdapter] Cadeia de fallback de LLM habilitada: "
+                    f"{chain_names}."
+                )
+                # Constrói cada LLM na ordem da cadeia (primeiro = primário), para
+                # que a ordem de precedência fique visível em call_args_list nos
+                # testes, e só então aninha via FallbackLLM de trás para frente.
+                built = [(name, builder()) for name, builder in providers]
+                self.llm = built[-1][1]
+                for name, llm_instance in reversed(built[:-1]):
+                    self.llm = FallbackLLM(
+                        primary=llm_instance,
+                        fallback=self.llm,
+                        model=f"{name}-fallback-chain",
+                    )
 
         # Issue #149: query rewriting (opt-in) antes da busca vetorial em
         # _search_db. Configurável via env para permitir A/B e rollback sem
