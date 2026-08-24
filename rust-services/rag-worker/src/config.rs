@@ -11,6 +11,12 @@ pub struct Config {
     /// API key do Google AI Studio, usada como fallback quando o Vertex AI
     /// (autenticado via ADC) estiver indisponível ou não configurado.
     pub google_ai_studio_api_key: Option<String>,
+    /// API key do OpenRouter, usada como elo de fallback gratuito adicional quando tanto o
+    /// Vertex AI quanto o Google AI Studio estiverem indisponíveis ou não configurados.
+    pub openrouter_api_key: Option<String>,
+    /// Modelo free-tier do OpenRouter usado no fallback. Configurável via env var
+    /// OPENROUTER_MODEL, default "meta-llama/llama-3.3-70b-instruct:free".
+    pub openrouter_model: String,
     /// Número máximo de chunks a recuperar em buscas de retrieval (pgvector).
     /// Configurável via env var RAG_TOP_K, default 5.
     pub rag_top_k: usize,
@@ -37,6 +43,11 @@ impl Config {
 
         let google_ai_studio_api_key = env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
 
+        let openrouter_api_key = env::var("OPENROUTER_API_KEY").ok();
+
+        let openrouter_model = env::var("OPENROUTER_MODEL")
+            .unwrap_or_else(|_| "meta-llama/llama-3.3-70b-instruct:free".to_string());
+
         let rag_top_k = env::var("RAG_TOP_K")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -50,6 +61,8 @@ impl Config {
             gcp_location,
             gcp_chat_model_id,
             google_ai_studio_api_key,
+            openrouter_api_key,
+            openrouter_model,
             rag_top_k,
         })
     }
