@@ -94,6 +94,9 @@ async fn handle_embeddings(
     }
 
     let ai_studio_api_key = std::env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
+    let voyage_api_key = std::env::var("VOYAGE_API_KEY").ok();
+    let voyage_model =
+        std::env::var("VOYAGE_MODEL").unwrap_or_else(|_| "voyage-3.5-lite".to_string());
 
     let vertex_token: Option<String> = match &state.authenticator {
         Some(auth) => match auth
@@ -112,10 +115,10 @@ async fn handle_embeddings(
         None => None,
     };
 
-    if vertex_token.is_none() && ai_studio_api_key.is_none() {
+    if vertex_token.is_none() && ai_studio_api_key.is_none() && voyage_api_key.is_none() {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado e GOOGLE_AI_STUDIO_API_KEY ausente."
+            "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado, GOOGLE_AI_STUDIO_API_KEY ausente e VOYAGE_API_KEY ausente."
                 .to_string(),
         )
             .into_response();
@@ -128,9 +131,10 @@ async fn handle_embeddings(
     let vertex_url = embedding_client::vertex_ai_url(&region, &project_id, &model);
     let ai_studio_url =
         embedding_client::ai_studio_url(embedding_client::AI_STUDIO_DEFAULT_BASE_URL, &model);
+    let voyage_url = embedding_client::voyage_ai_url(embedding_client::VOYAGE_DEFAULT_BASE_URL);
     let vertex_request = embedding_client::build_vertex_request(&payload.input, dimensions);
 
-    let client = reqwest::Client::new();
+    let client = embedding_client::build_http_client();
     let max_retries: u32 = std::env::var("EMBEDDING_MAX_RETRIES")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -147,6 +151,9 @@ async fn handle_embeddings(
         &payload.input,
         dimensions,
         &model,
+        &voyage_url,
+        voyage_api_key.as_deref(),
+        &voyage_model,
     )
     .await
     {
@@ -369,6 +376,7 @@ mod tests {
         std::env::set_var("EMBEDDING_PROVIDER", "real");
         std::env::remove_var("GOOGLE_APPLICATION_CREDENTIALS");
         std::env::remove_var("GOOGLE_AI_STUDIO_API_KEY");
+        std::env::remove_var("VOYAGE_API_KEY");
 
         let state = AppState {
             authenticator: None,
