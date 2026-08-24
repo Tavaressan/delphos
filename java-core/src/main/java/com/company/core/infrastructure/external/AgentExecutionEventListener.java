@@ -140,6 +140,9 @@ public class AgentExecutionEventListener {
                     String outputResult = (String) finishPayload.get("outputResult");
                     execution.setOutputResult(outputResult);
                     execution.setTokensConsumed(((Number) finishPayload.get("tokensConsumed")).intValue());
+                    // Limpa um error_message residual de um TIMEOUT marcado pelo frontend
+                    // antes desta conclusão tardia chegar (execução acabou tendo sucesso).
+                    execution.setErrorMessage(null);
                     executionRepository.save(execution);
 
                     // Save assistant message to chat history
@@ -182,6 +185,7 @@ public class AgentExecutionEventListener {
                     execution.setFinishedAt(Instant.now());
                     Map<String, Object> workflowCompletedPayload = (Map<String, Object>) event.get("payload");
                     execution.setOutputResult((String) workflowCompletedPayload.get("outputResult"));
+                    execution.setErrorMessage(null);
                     executionRepository.save(execution);
                     log.info("Workflow execution {} COMPLETED successfully", executionId);
                     break;

@@ -1,14 +1,29 @@
 //! Cliente HTTP para geração da resposta final do RAG.
 //!
-//! Suporta três providers, encadeados por `generate_response`:
-//! - Vertex AI (`{location}-aiplatform.googleapis.com`), autenticado via ADC (OAuth token).
-//! - Google AI Studio (`generativelanguage.googleapis.com`), autenticado via API key.
+//! Suporta uma cadeia de fallback ordenada com quatro providers:
+//! - Google AI Studio (`generativelanguage.googleapis.com`), autenticado via API key. Provider
+//!   primário: sem cota de free tier expirada, ao contrário do Vertex AI.
+//! - Ollama (`OLLAMA_BASE_URL`, default `http://ollama:11434`), provider local sem
+//!   autenticação, usado como segundo elo — continuidade de serviço degradado quando o AI
+//!   Studio está indisponível. Formato de request/response próprio (`/api/chat`), incompatível
+//!   com o formato Gemini, daí o adaptador dedicado abaixo.
 //! - OpenRouter (`openrouter.ai`), API OpenAI-compatible autenticada via API key, usada como
-//!   último elo gratuito quando ambos os providers Google falham ou não estão configurados.
+//!   terceiro elo gratuito quando AI Studio e Ollama falharem ou não estiverem configurados.
+//! - Vertex AI (`{location}-aiplatform.googleapis.com`), autenticado via ADC (OAuth token).
+//!   Último elo: o free tier do projeto GCP está expirado, então toda chamada paga uma
+//!   tentativa fadada ao fracasso antes de poder cair para o próximo provider — por isso fica
+//!   por último em vez de primeiro.
 //!
-//! `generate_response` tenta Vertex AI primeiro (quando há token), cai para o Google AI Studio
-//! quando a chamada falha ou quando não há token disponível (ADC não configurado) e, por fim,
-//! cai para o OpenRouter quando os dois providers Google falharem ou não estiverem configurados.
+//! `generate_response` tenta o Google AI Studio primeiro (quando há API key), cai para o Ollama
+//! quando a chamada falha ou quando não há API key disponível, cai para o OpenRouter quando
+//! Ollama falhar ou não estiver configurado e, por fim, recorre ao Vertex AI se nenhum dos
+//! providers anteriores estiver disponível ou todos falharem.
+//!
+//! Nenhum provider faz retry interno: um erro com código claro (429, 5xx, erro de
+//! conexão/DNS) é propagado imediatamente para o próximo elo (fail-fast). O cliente HTTP usado
+//! por esta cadeia (ver `rabbitmq.rs`) é configurado com `connect_timeout` curto para que erros
+//! de conexão também falhem rápido; a única espera aplicável é a de uma chamada que nunca
+//! retorna erro nem resposta (caso ambíguo), limitada pelo timeout default do cliente.
 
 use crate::error::WorkerError;
 use serde::{Deserialize, Serialize};
@@ -268,9 +283,90 @@ pub async fn call_ai_studio(
     extract_text(parsed, "Google AI Studio")
 }
 
+#[derive(Serialize, Debug)]
+pub struct OllamaMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct OllamaChatRequest {
+    pub model: String,
+    pub messages: Vec<OllamaMessage>,
+    pub stream: bool,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaResponseMessage {
+    content: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaChatResponse {
+    message: OllamaResponseMessage,
+}
+
+/// Monta o corpo do request para a API `/api/chat` do Ollama. Formato próprio, diferente do
+/// Gemini: mensagens com `role`/`content` em vez de `contents`/`systemInstruction`.
+pub fn build_ollama_request(
+    model: &str,
+    system_instruction: &str,
+    user_content: &str,
+) -> OllamaChatRequest {
+    OllamaChatRequest {
+        model: model.to_string(),
+        messages: vec![
+            OllamaMessage {
+                role: "system".to_string(),
+                content: system_instruction.to_string(),
+            },
+            OllamaMessage {
+                role: "user".to_string(),
+                content: user_content.to_string(),
+            },
+        ],
+        stream: false,
+    }
+}
+
+/// Monta a URL de chat do Ollama a partir de uma base URL (injetável em testes).
+pub fn ollama_chat_url(base_url: &str) -> String {
+    format!("{base_url}/api/chat")
+}
+
+/// Chama a API `/api/chat` do Ollama (provider local, sem autenticação).
+pub async fn call_ollama(
+    client: &reqwest::Client,
+    url: &str,
+    request: &OllamaChatRequest,
+) -> Result<String, WorkerError> {
+    let res = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(request)
+        .send()
+        .await
+        .map_err(|e| WorkerError::VertexAI(format!("HTTP error calling Ollama: {}", e)))?;
+
+    let status = res.status();
+    if !status.is_success() {
+        let err_body = res.text().await.unwrap_or_default();
+        return Err(WorkerError::VertexAI(format!(
+            "Ollama API returned error status {}: {}",
+            status, err_body
+        )));
+    }
+
+    let parsed: OllamaChatResponse = res.json().await.map_err(|e| {
+        WorkerError::Serialization(format!("Failed to parse Ollama response body: {}", e))
+    })?;
+
+    Ok(parsed.message.content)
+}
+
 /// Chama a API de chat completions do OpenRouter, autenticada via API key (formato
-/// OpenAI-compatible). Elo de fallback gratuito adicional, usado quando Vertex AI e Google AI
-/// Studio estiverem indisponíveis ou não configurados.
+/// OpenAI-compatible). Elo de fallback gratuito adicional, usado quando AI Studio e Ollama
+/// estiverem indisponíveis ou não configurados.
 pub async fn call_openrouter(
     client: &reqwest::Client,
     url: &str,
@@ -311,10 +407,16 @@ pub async fn call_openrouter(
         })
 }
 
-/// Orquestra a geração da resposta, encadeando três providers na ordem: Vertex AI (quando há
-/// token OAuth disponível) -> Google AI Studio (API key) -> OpenRouter (API key, elo gratuito
-/// adicional). Cada elo só é tentado se o anterior falhar ou não estiver configurado. Retorna
-/// erro apenas se nenhum provider estiver disponível ou todos falharem.
+/// Orquestra a geração da resposta em uma cadeia de fallback ordenada: Google AI Studio (quando
+/// há API key disponível) → Ollama (quando a chamada anterior falhar ou quando não há API key,
+/// apenas se `ollama_model` estiver configurado) → OpenRouter (quando os dois elos anteriores
+/// falharem ou não estiverem configurados, apenas se `openrouter_api_key` estiver configurada)
+/// → Vertex AI (último elo, quando há token OAuth disponível). Vertex fica por último porque o
+/// free tier do projeto GCP está expirado: toda chamada paga uma tentativa fadada ao fracasso
+/// antes de poder degradar para o próximo provider, então não faz sentido tentá-lo primeiro.
+/// Nenhum elo faz retry interno: erros com código claro (429/5xx/conexão) propagam
+/// imediatamente para o próximo elo. Retorna erro apenas se todos os providers configurados
+/// falharem ou nenhum estiver disponível.
 #[allow(clippy::too_many_arguments)]
 pub async fn generate_response(
     client: &reqwest::Client,
@@ -322,12 +424,54 @@ pub async fn generate_response(
     vertex_token: Option<&str>,
     ai_studio_url: &str,
     ai_studio_api_key: Option<&str>,
+    ollama_url: &str,
+    ollama_model: Option<&str>,
     openrouter_url: &str,
     openrouter_api_key: Option<&str>,
     openrouter_model: &str,
+    system_instruction: &str,
+    user_content: &str,
     request: &GeminiRequest,
 ) -> Result<String, WorkerError> {
     let mut last_err: Option<WorkerError> = None;
+
+    if let Some(api_key) = ai_studio_api_key {
+        match call_ai_studio(client, ai_studio_url, api_key, request).await {
+            Ok(text) => return Ok(text),
+            Err(e) => {
+                println!(
+                    "WARNING: Google AI Studio call failed ({}). Trying next provider.",
+                    e
+                );
+                last_err = Some(e);
+            }
+        }
+    }
+
+    if let Some(model) = ollama_model {
+        let ollama_request = build_ollama_request(model, system_instruction, user_content);
+        match call_ollama(client, ollama_url, &ollama_request).await {
+            Ok(text) => return Ok(text),
+            Err(e) => {
+                println!("WARNING: Ollama call failed ({}). Trying next provider.", e);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    if let Some(api_key) = openrouter_api_key {
+        println!("Falling back to OpenRouter (model: {}).", openrouter_model);
+        match call_openrouter(client, openrouter_url, api_key, openrouter_model, request).await {
+            Ok(text) => return Ok(text),
+            Err(e) => {
+                println!(
+                    "WARNING: OpenRouter call failed ({}). Trying next provider.",
+                    e
+                );
+                last_err = Some(e);
+            }
+        }
+    }
 
     if let Some(token) = vertex_token {
         match call_vertex_ai(client, vertex_url, token, request).await {
@@ -339,42 +483,14 @@ pub async fn generate_response(
         }
     }
 
-    if let Some(api_key) = ai_studio_api_key {
-        if last_err.is_some() {
-            println!("Falling back to Google AI Studio.");
-        } else {
-            println!(
-                "Vertex AI token indisponível (ADC não configurado). Usando Google AI Studio."
-            );
-        }
-        match call_ai_studio(client, ai_studio_url, api_key, request).await {
-            Ok(text) => return Ok(text),
-            Err(e) => {
-                println!("WARNING: Google AI Studio call failed ({}).", e);
-                last_err = Some(e);
-            }
-        }
-    }
-
-    if let Some(api_key) = openrouter_api_key {
-        println!("Falling back to OpenRouter (model: {}).", openrouter_model);
-        match call_openrouter(client, openrouter_url, api_key, openrouter_model, request).await {
-            Ok(text) => return Ok(text),
-            Err(e) => {
-                println!("WARNING: OpenRouter call failed ({}).", e);
-                last_err = Some(e);
-            }
-        }
-    }
-
-    match last_err {
-        Some(e) => Err(e),
-        None => Err(WorkerError::Config(
-            "Nenhum provider de LLM disponível: GCP Authenticator (Vertex AI) não inicializado, \
-             GOOGLE_AI_STUDIO_API_KEY não configurada e OPENROUTER_API_KEY não configurada."
+    Err(last_err.unwrap_or_else(|| {
+        WorkerError::Config(
+            "Nenhum provider de LLM disponível: GOOGLE_AI_STUDIO_API_KEY não configurada, \
+             OLLAMA_CHAT_MODEL não configurado, OPENROUTER_API_KEY não configurada e \
+             GCP Authenticator (Vertex AI) não inicializado."
                 .to_string(),
-        )),
-    }
+        )
+    }))
 }
 
 #[cfg(test)]
@@ -429,47 +545,17 @@ mod tests {
         assert_eq!(url, "https://openrouter.ai/api/v1/chat/completions");
     }
 
-    #[tokio::test]
-    async fn test_generate_response_uses_vertex_ai_when_it_succeeds() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/vertex"))
-            .and(header("Authorization", "Bearer fake-token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(success_body("resposta vertex")))
-            .expect(1)
-            .mount(&mock_server)
-            .await;
-
-        let client = reqwest::Client::new();
-        let vertex_url = format!("{}/vertex", mock_server.uri());
-        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
-
-        let result = generate_response(
-            &client,
-            &vertex_url,
-            Some("fake-token"),
-            &ai_studio_url,
-            Some("fake-api-key"),
-            "http://unused.invalid/openrouter",
-            Some("fake-openrouter-key"),
-            "test/model:free",
-            &sample_request(),
-        )
-        .await;
-
-        assert_eq!(result.unwrap(), "resposta vertex");
+    #[test]
+    fn test_ollama_chat_url_format() {
+        assert_eq!(
+            ollama_chat_url("http://ollama:11434"),
+            "http://ollama:11434/api/chat"
+        );
     }
 
     #[tokio::test]
-    async fn test_generate_response_falls_back_to_ai_studio_when_vertex_ai_fails() {
+    async fn test_generate_response_uses_ai_studio_when_it_succeeds() {
         let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/vertex"))
-            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
-            .expect(1)
-            .mount(&mock_server)
-            .await;
-
         Mock::given(method("POST"))
             .and(path("/ai-studio"))
             .and(header("x-goog-api-key", "fake-api-key"))
@@ -481,18 +567,21 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let vertex_url = format!("{}/vertex", mock_server.uri());
         let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
 
         let result = generate_response(
             &client,
-            &vertex_url,
+            "http://unused.invalid/vertex",
             Some("fake-token"),
             &ai_studio_url,
             Some("fake-api-key"),
+            "http://unused.invalid/ollama",
+            None,
             "http://unused.invalid/openrouter",
-            Some("fake-openrouter-key"),
+            None,
             "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -501,50 +590,95 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_generate_response_uses_ai_studio_directly_when_no_vertex_token() {
+    async fn test_generate_response_falls_back_to_ollama_when_ai_studio_fails() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/ai-studio"))
-            .and(header("x-goog-api-key", "fake-api-key"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(success_body("sem ADC, direto AI Studio")),
-            )
-            .expect(1)
-            .mount(&mock_server)
-            .await;
-
-        let client = reqwest::Client::new();
-        let vertex_url = format!("{}/vertex", mock_server.uri());
-        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
-
-        let result = generate_response(
-            &client,
-            &vertex_url,
-            None,
-            &ai_studio_url,
-            Some("fake-api-key"),
-            "http://unused.invalid/openrouter",
-            Some("fake-openrouter-key"),
-            "test/model:free",
-            &sample_request(),
-        )
-        .await;
-
-        assert_eq!(result.unwrap(), "sem ADC, direto AI Studio");
-    }
-
-    #[tokio::test]
-    async fn test_generate_response_falls_back_to_openrouter_when_vertex_and_ai_studio_fail() {
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/vertex"))
             .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
             .expect(1)
             .mount(&mock_server)
             .await;
 
         Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": { "role": "assistant", "content": "resposta ollama" }
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ollama_url = ollama_chat_url(&mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            "http://unused.invalid/vertex",
+            Some("fake-token"),
+            &ai_studio_url,
+            Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
+            "http://unused.invalid/openrouter",
+            None,
+            "test/model:free",
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "resposta ollama");
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_uses_ollama_directly_when_no_ai_studio_key_configured() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": { "role": "assistant", "content": "resposta ollama direto" }
+            })))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let ollama_url = ollama_chat_url(&mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            "http://unused.invalid/vertex",
+            None,
+            "http://unused.invalid/ai-studio",
+            None,
+            &ollama_url,
+            Some("llama3.2"),
+            "http://unused.invalid/openrouter",
+            None,
+            "test/model:free",
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "resposta ollama direto");
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_falls_back_to_openrouter_when_ai_studio_and_ollama_fail() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
             .and(path("/ai-studio"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
             .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
             .expect(1)
             .mount(&mock_server)
@@ -562,19 +696,23 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let vertex_url = format!("{}/vertex", mock_server.uri());
         let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ollama_url = ollama_chat_url(&mock_server.uri());
         let openrouter_url = format!("{}/openrouter", mock_server.uri());
 
         let result = generate_response(
             &client,
-            &vertex_url,
-            Some("fake-token"),
+            "http://unused.invalid/vertex",
+            None,
             &ai_studio_url,
             Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
             &openrouter_url,
             Some("fake-openrouter-key"),
             "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -583,14 +721,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_generate_response_uses_openrouter_directly_when_no_google_providers() {
+    async fn test_generate_response_uses_openrouter_directly_when_no_ai_studio_or_ollama() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/openrouter"))
             .and(header("Authorization", "Bearer fake-openrouter-key"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(openrouter_success_body("sem Google, direto OpenRouter")),
+                ResponseTemplate::new(200).set_body_json(openrouter_success_body(
+                    "sem AI Studio/Ollama, direto OpenRouter",
+                )),
             )
             .expect(1)
             .mount(&mock_server)
@@ -605,22 +744,88 @@ mod tests {
             None,
             "http://unused.invalid/ai-studio",
             None,
+            "http://unused.invalid/ollama",
+            None,
             &openrouter_url,
             Some("fake-openrouter-key"),
             "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
 
-        assert_eq!(result.unwrap(), "sem Google, direto OpenRouter");
+        assert_eq!(result.unwrap(), "sem AI Studio/Ollama, direto OpenRouter");
     }
 
     #[tokio::test]
-    async fn test_generate_response_errors_when_vertex_fails_and_no_other_providers() {
+    async fn test_generate_response_falls_back_to_vertex_when_all_free_providers_fail() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/ai-studio"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/openrouter"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/vertex"))
+            .and(header("Authorization", "Bearer fake-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(success_body("resposta vertex")))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let vertex_url = format!("{}/vertex", mock_server.uri());
+        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ollama_url = ollama_chat_url(&mock_server.uri());
+        let openrouter_url = format!("{}/openrouter", mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            &vertex_url,
+            Some("fake-token"),
+            &ai_studio_url,
+            Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
+            &openrouter_url,
+            Some("fake-openrouter-key"),
+            "test/model:free",
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "resposta vertex");
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_uses_vertex_directly_when_no_other_provider_configured() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/vertex"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .and(header("Authorization", "Bearer fake-token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(success_body("sem outros providers, direto Vertex")),
+            )
             .expect(1)
             .mount(&mock_server)
             .await;
@@ -632,11 +837,72 @@ mod tests {
             &client,
             &vertex_url,
             Some("fake-token"),
-            "http://unused.invalid",
+            "http://unused.invalid/ai-studio",
+            None,
+            "http://unused.invalid/ollama",
             None,
             "http://unused.invalid/openrouter",
             None,
             "test/model:free",
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert_eq!(result.unwrap(), "sem outros providers, direto Vertex");
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_errors_when_no_provider_available() {
+        let client = reqwest::Client::new();
+
+        let result = generate_response(
+            &client,
+            "http://unused.invalid/vertex",
+            None,
+            "http://unused.invalid/ai-studio",
+            None,
+            "http://unused.invalid/ollama",
+            None,
+            "http://unused.invalid/openrouter",
+            None,
+            "test/model:free",
+            "system prompt",
+            "user question",
+            &sample_request(),
+        )
+        .await;
+
+        assert!(matches!(result, Err(WorkerError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn test_generate_response_errors_when_all_configured_providers_fail() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/ai-studio"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+
+        let result = generate_response(
+            &client,
+            "http://unused.invalid/vertex",
+            None,
+            &ai_studio_url,
+            Some("fake-api-key"),
+            "http://unused.invalid/ollama",
+            None,
+            "http://unused.invalid/openrouter",
+            None,
+            "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -645,46 +911,51 @@ mod tests {
     }
 
     /// 429 (rate limit) deve pular imediatamente para o próximo elo, sem retry no mesmo
-    /// provider. O `expect(1)` no mock do Vertex garante que nenhuma segunda tentativa é feita.
+    /// provider. O `expect(1)` no mock do AI Studio garante que nenhuma segunda tentativa é
+    /// feita.
     #[tokio::test]
     async fn test_generate_response_skips_to_next_provider_on_429_without_retry() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/vertex"))
+            .and(path("/ai-studio"))
             .respond_with(ResponseTemplate::new(429).set_body_string("Too Many Requests"))
             .expect(1)
             .mount(&mock_server)
             .await;
 
         Mock::given(method("POST"))
-            .and(path("/ai-studio"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(success_body("resposta ai studio")),
-            )
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": { "role": "assistant", "content": "resposta ollama" }
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
 
         let client = reqwest::Client::new();
-        let vertex_url = format!("{}/vertex", mock_server.uri());
         let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ollama_url = ollama_chat_url(&mock_server.uri());
 
         let start = std::time::Instant::now();
         let result = generate_response(
             &client,
-            &vertex_url,
-            Some("fake-token"),
+            "http://unused.invalid/vertex",
+            None,
             &ai_studio_url,
             Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
             "http://unused.invalid/openrouter",
             None,
             "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
         let elapsed = start.elapsed();
 
-        assert_eq!(result.unwrap(), "resposta ai studio");
+        assert_eq!(result.unwrap(), "resposta ollama");
         // Sem retry/backoff no mesmo provider: a chamada inteira deve ser rápida.
         assert!(
             elapsed < std::time::Duration::from_secs(2),
@@ -693,19 +964,19 @@ mod tests {
         );
     }
 
-    /// 5xx no Vertex e no AI Studio devem pular imediatamente para o OpenRouter, sem retry.
+    /// 5xx no AI Studio e no Ollama devem pular imediatamente para o OpenRouter, sem retry.
     #[tokio::test]
     async fn test_generate_response_skips_to_openrouter_on_5xx_without_retry() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/vertex"))
+            .and(path("/ai-studio"))
             .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
             .expect(1)
             .mount(&mock_server)
             .await;
 
         Mock::given(method("POST"))
-            .and(path("/ai-studio"))
+            .and(path("/api/chat"))
             .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
             .expect(1)
             .mount(&mock_server)
@@ -722,20 +993,24 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let vertex_url = format!("{}/vertex", mock_server.uri());
         let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ollama_url = ollama_chat_url(&mock_server.uri());
         let openrouter_url = format!("{}/openrouter", mock_server.uri());
 
         let start = std::time::Instant::now();
         let result = generate_response(
             &client,
-            &vertex_url,
-            Some("fake-token"),
+            "http://unused.invalid/vertex",
+            None,
             &ai_studio_url,
             Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
             &openrouter_url,
             Some("fake-openrouter-key"),
             "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
@@ -756,59 +1031,43 @@ mod tests {
     async fn test_generate_response_falls_back_on_connection_error_without_hanging() {
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/ai-studio"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(success_body("resposta ai studio")),
-            )
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "message": { "role": "assistant", "content": "resposta ollama" }
+            })))
             .expect(1)
             .mount(&mock_server)
             .await;
 
         let client = reqwest::Client::new();
         // Porta baixa sem listener: connection refused imediato (não é timeout de DNS/rede).
-        let vertex_url = "http://127.0.0.1:1/vertex".to_string();
-        let ai_studio_url = format!("{}/ai-studio", mock_server.uri());
+        let ai_studio_url = "http://127.0.0.1:1/ai-studio".to_string();
+        let ollama_url = ollama_chat_url(&mock_server.uri());
 
         let start = std::time::Instant::now();
         let result = generate_response(
             &client,
-            &vertex_url,
-            Some("fake-token"),
+            "http://unused.invalid/vertex",
+            None,
             &ai_studio_url,
             Some("fake-api-key"),
+            &ollama_url,
+            Some("llama3.2"),
             "http://unused.invalid/openrouter",
             None,
             "test/model:free",
+            "system prompt",
+            "user question",
             &sample_request(),
         )
         .await;
         let elapsed = start.elapsed();
 
-        assert_eq!(result.unwrap(), "resposta ai studio");
+        assert_eq!(result.unwrap(), "resposta ollama");
         assert!(
             elapsed < std::time::Duration::from_secs(3),
             "esperava fallback rápido em erro de conexão, levou {:?}",
             elapsed
         );
-    }
-
-    #[tokio::test]
-    async fn test_generate_response_errors_when_no_provider_available() {
-        let client = reqwest::Client::new();
-
-        let result = generate_response(
-            &client,
-            "http://unused.invalid/vertex",
-            None,
-            "http://unused.invalid/ai-studio",
-            None,
-            "http://unused.invalid/openrouter",
-            None,
-            "test/model:free",
-            &sample_request(),
-        )
-        .await;
-
-        assert!(matches!(result, Err(WorkerError::Config(_))));
     }
 }
