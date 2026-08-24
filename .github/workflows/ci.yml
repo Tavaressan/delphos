@@ -45,43 +45,49 @@ env:
   IMAGE_BASE: tavaressan/alfabra-vector
 
 jobs:
-  # Fallback automático entre self-hosted (local + EC2, label alfabra-local)
-  # e GitHub-hosted: GitHub Actions não faz balanceamento entre pools por si
-  # só (runs-on é match estático de label), então este job checa em tempo
-  # real se há ao menos um runner self-hosted online e decide o pool para
-  # todos os demais jobs. `|| echo 0` garante fail-safe (mesma filosofia do
-  # job `changes` ver #87): qualquer erro na checagem (rate limit, API fora)
-  # cai para ubuntu-latest em vez de travar o pipeline inteiro.
+  # Issue #426: inverte a prioridade herdada da #345/#374. GitHub-hosted
+  # (ubuntu-latest) é o pool PRIMÁRIO de toda 1ª tentativa de um run — este
+  # job nem consulta o self-hosted nesse caso (ver scripts/ci-select-runner.sh,
+  # testado isoladamente em ci-select-runner.test.sh). Self-hosted (label
+  # alfabra-local, local + EC2) só entra como FALLBACK quando o run já está
+  # em retry (github.run_attempt > 1) — sinal nativo do Actions de que a
+  # tentativa anterior não terminou com sucesso, seja por falha real de
+  # teste/build (o self-hosted falharia igual, sem custo extra) seja por
+  # problema de infraestrutura do GitHub-hosted (runner nunca atribuído, job
+  # cancelado sem rodar nenhum step). O job `auto-retry-on-infra-failure`
+  # (fim do arquivo) dispara esse retry automaticamente quando detecta esse
+  # sinal, sem depender de intervenção humana.
+  #
+  # Sem `needs: changes` (removido nesta issue): a versão anterior acordava a
+  # EC2 só quando um dos módulos self-hosted mudava, mas isso criava uma
+  # dependência circular impossível de resolver junto com o pedido desta
+  # issue de dar fallback também ao job `changes` (ver comentário em
+  # `changes` abaixo) — `changes` não pode depender de um job que depende
+  # dele. Como agora o self-hosted só é considerado em retry (evento raro),
+  # a EC2 deixa de ser acordada no caminho feliz de qualquer forma; o custo
+  # de checar isso incondicionalmente (sem o filtro de path) é irrelevante.
   select-runner:
     name: Select CI runner pool
     runs-on: ubuntu-latest
-    # Depende de `changes` para saber se algum job que de fato roda no EC2
-    # (rust/java/python/e2e — ver a tabela de pools abaixo) foi disparado.
-    # Sem isso, toda PR — inclusive as que só tocam docs ou frontend —
-    # acordava a instância e a mantinha ligada até o auto-stop por
-    # ociosidade. Custo: `changes` (~10s) entra no caminho crítico antes do
-    # start-instances; irrelevante com a instância quente e ~10s a mais
-    # sobre os ~200s de um cold-boot genuíno.
-    needs: changes
     permissions:
       actions: read
       id-token: write
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
-    env:
-      # Só estes 4 filtros disparam jobs que permanecem no pool self-hosted
-      # (mesma condição do `if` de e2e-integration). `frontend` fica de fora
-      # de propósito: frontend-check e docker-build-frontend migraram para o
-      # pool GitHub-hosted, então uma PR que só toca frontend/ não precisa da
-      # EC2. O contexto `env` é legível em `if` de step (não em `if` de job),
-      # que é exatamente como esta condição é consumida abaixo.
-      NEEDS_EC2: ${{ needs.changes.outputs.rust == 'true' || needs.changes.outputs.java == 'true' || needs.changes.outputs.python == 'true' || needs.changes.outputs.e2e == 'true' }}
     steps:
+      # Necessário só para o step "Check self-hosted runner availability"
+      # abaixo conseguir chamar scripts/ci-select-runner.sh (issue #426) —
+      # sem isso o `bash $GITHUB_WORKSPACE/scripts/...` não acharia o
+      # arquivo, já que este job nunca dava checkout antes desta mudança.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       # Sem isso, o runner EC2 só entra no ar se alguém der `aws ec2
-      # start-instances` manualmente (ver #345) — o que faz quase todo push
-      # cair no fallback hosted. A role é assumida via OIDC (sem access key
-      # fixa em secret) e só permite start-instances nesta instância
-      # específica + describe-instances read-only.
+      # start-instances` manualmente (ver #345). A role é assumida via OIDC
+      # (sem access key fixa em secret) e só permite start-instances nesta
+      # instância específica + describe-instances read-only. Só roda em
+      # retry (github.run_attempt > 1) — 1ª tentativa nunca acorda a EC2
+      # (issue #426).
       # PRs abertas pelo Dependabot rodam em contexto restrito sem acesso aos
       # secrets de Actions do repositório (só ao GITHUB_TOKEN automático e a
       # "Dependabot secrets", não cadastrados aqui — ver #350). O step
@@ -89,14 +95,14 @@ jobs:
       # caso, derrubando o job inteiro antes de chegar no fallback hosted.
       # Pula toda a tentativa de self-hosted/EC2 para esse actor.
       - name: Configure AWS credentials (OIDC)
-        if: github.actor != 'dependabot[bot]' && env.NEEDS_EC2 == 'true'
+        if: github.actor != 'dependabot[bot]' && github.run_attempt > 1
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::076248672901:role/alfabra-ci-github-actions-start
           aws-region: us-east-1
 
       - name: Start EC2 CI runner instance (idempotente)
-        if: github.actor != 'dependabot[bot]' && env.NEEDS_EC2 == 'true'
+        if: github.actor != 'dependabot[bot]' && github.run_attempt > 1
         env:
           INSTANCE_ID: i-060c83aa05d25e679
         run: |
@@ -122,85 +128,36 @@ jobs:
       # checagem.
       - name: Gera token da GitHub App (permissão de administração)
         id: app-token
-        if: github.actor != 'dependabot[bot]' && env.NEEDS_EC2 == 'true'
+        if: github.actor != 'dependabot[bot]' && github.run_attempt > 1
         uses: actions/create-github-app-token@v1
         with:
           app-id: 4358824
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
+      # Decisão extraída para scripts/ci-select-runner.sh (issue #426): 1ª
+      # tentativa sempre ubuntu-latest, sem checar nada; em retry, checa o
+      # self-hosted (poll de até 240s — cold-boot da EC2 medido em ~188-199s
+      # no run 30823116364, issue #349) e só usa se estiver online. Lógica
+      # testada isoladamente (mock do `gh`) em ci-select-runner.test.sh,
+      # sem depender de uma run real do Actions.
       - name: Check self-hosted runner availability
         id: pick
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          set -euo pipefail
-          # Ver #350: sem os steps acima (pulados para este actor), não há
-          # instância EC2 disparada nem GH_TOKEN válido para consultar
-          # runners self-hosted — cai direto para GitHub-hosted.
-          if [ "${{ github.actor }}" = "dependabot[bot]" ]; then
-            echo "::notice::Actor é dependabot[bot] (sem acesso a secrets de Actions, ver #350) - fallback direto para GitHub-hosted"
-            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Nenhum job do pool self-hosted foi disparado por esta mudança: os
-          # steps de start-instances/app-token acima foram pulados, então não
-          # há instância subindo nem GH_TOKEN para consultar runners. Emite o
-          # mesmo formato de output esperado pelo fromJSON dos dependentes —
-          # este job nunca pode ser pulado no nível de job, senão os outputs
-          # somem e todo `runs-on` derivado quebra (mesma armadilha da matrix
-          # documentada em docker-build-rust).
-          if [ "$NEEDS_EC2" != "true" ]; then
-            echo "::notice::Nenhum job self-hosted disparado (rust/java/python/e2e inalterados) - EC2 não foi acordada, usando GitHub-hosted"
-            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # A instância pode levar ~30-60s pra bootar e o runner registrar
-          # no GitHub após o start-instances acima — poll com timeout em vez
-          # de checar uma única vez, senão todo cold-start cairia no
-          # fallback hosted mesmo com a EC2 subindo com sucesso. Janela
-          # ampliada de 180s para 240s (24x10s): no run 30823116364, com a
-          # instância genuinamente "stopped" (cold boot completo), o
-          # start-instances disparou às 14:31:56 e os runners
-          # (alfabra-ec2-1/2) só apareceram "online" por volta de
-          # 14:35:04-14:35:15 (~188-199s depois) — o poll de 180s esgotou
-          # a poucos segundos do runner ficar pronto. 240s dá ~50s de
-          # margem sobre o cold-boot medido.
-          #
-          # issue #349: esse cold-boot de ~200s só acontece quando a
-          # instância EC2 está genuinamente "stopped" (não quando os
-          # containers do runner apenas reiniciam — systemd
-          # Restart=always já cobre isso sem reboot). A causa raiz de o
-          # cold-boot se repetir a cada PR da fila serializada era o
-          # auto-stop por ociosidade (scripts/ec2-idle-stop.sh) desligando
-          # a instância cedo demais — corrigido usando a média de carga de
-          # 15min em vez de 1min, exigindo ociosidade sustentada antes de
-          # parar. O poll de 240s aqui continua necessário como
-          # salvaguarda para o caso (mais raro após o fix) de cold-boot
-          # genuíno.
-          ONLINE=0
-          for _ in $(seq 1 24); do
-            ONLINE=$(gh api "repos/${{ github.repository }}/actions/runners" --paginate \
-              --jq '[.runners[] | select(.status == "online" and (.labels[].name == "alfabra-local"))] | length' \
-              2>/dev/null || echo 0)
-            if [ "$ONLINE" -gt 0 ]; then
-              break
-            fi
-            sleep 10
-          done
-          if [ "$ONLINE" -gt 0 ]; then
-            echo "::notice::$ONLINE runner(s) self-hosted online (label alfabra-local) - usando self-hosted"
-            echo 'runner=["self-hosted","alfabra-local"]' >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Nenhum runner self-hosted online após poll - fallback para GitHub-hosted (ubuntu-latest)"
-            echo 'runner=["ubuntu-latest"]' >> "$GITHUB_OUTPUT"
-          fi
+          bash "$GITHUB_WORKSPACE/scripts/ci-select-runner.sh"
 
   changes:
     name: Detect changed paths
-    # Sempre GitHub-hosted: precede select-runner (que agora depende deste job
-    # para decidir se acorda a EC2) e é trabalho trivial de ~10s, sem nenhum
-    # cache local no host self-hosted que justificasse rodar lá.
-    runs-on: ubuntu-latest
+    # Issue #426: antes rodava sempre em ubuntu-latest fixo, sem fallback
+    # algum — foi exatamente este job que falhou 3x seguidas em reruns
+    # idênticos nos PRs #397/#399/#401 (2026-08-21), fora do pool
+    # select-runner. Agora depende de select-runner (que não depende mais de
+    # `changes` — ver comentário lá; a dependência circular anterior
+    # impedia isso) e ganha o mesmo fallback self-hosted em retry que os
+    # demais jobs.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: select-runner
     outputs:
       rust: ${{ steps.normalize.outputs.rust }}
       java: ${{ steps.normalize.outputs.java }}
@@ -575,12 +532,13 @@ jobs:
 
   frontend-check:
     name: Frontend Lint, Test & Build
-    # Pool GitHub-hosted: o setup-deno roda com cache: false (issue #227) e o
-    # cache do Next.js vem do actions/cache pela rede — nada aqui aproveita o
-    # disco local do runner EC2, e liberar o slot lá reduz a fila dos jobs que
-    # de fato dependem de cache quente (rust-check, java-*).
-    runs-on: ubuntu-latest
-    needs: changes
+    # GitHub-hosted como primário (issue #426): o setup-deno roda com
+    # cache: false (issue #227) e o cache do Next.js vem do actions/cache
+    # pela rede — nada aqui aproveita o disco local do runner EC2. Em retry
+    # (github.run_attempt > 1), select-runner pode apontar para self-hosted
+    # como fallback caso a tentativa anterior tenha falhado por infra.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.frontend == 'true'
     steps:
       - name: Checkout code
@@ -654,10 +612,11 @@ jobs:
 
   python-ci:
     name: Python Lint & Test
-    # Pool GitHub-hosted: cache de pip via actions/setup-python (rede), sem
-    # dependência do disco local do EC2.
-    runs-on: ubuntu-latest
-    needs: changes
+    # GitHub-hosted como primário (issue #426): cache de pip via
+    # actions/setup-python (rede), sem dependência do disco local do EC2.
+    # Fallback self-hosted em retry via select-runner.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
@@ -733,8 +692,10 @@ jobs:
   # despejar entradas úteis por LRU.
   docker-build-rust-base:
     name: Docker Build (Rust builder base)
-    runs-on: ubuntu-latest
-    needs: changes
+    # GitHub-hosted como primário (issue #426), self-hosted como fallback em
+    # retry via select-runner.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     permissions:
       contents: read
       packages: write
@@ -790,14 +751,16 @@ jobs:
 
   docker-build-rust:
     name: Docker Build (Rust services)
-    # Pool GitHub-hosted: o cache do buildx aqui é type=gha (ver cache-from/to
-    # abaixo), ou seja, trafega pela rede e não ganha nada com o disco local do
-    # EC2. São 4 jobs de matrix — a maior fatia de compute do pipeline — que no
-    # self-hosted disputavam 2 slots e aqui expandem em paralelo. As imagens vão
-    # para o GHCR e o e2e-integration as consome via `docker compose pull`, não
-    # pelo daemon que as construiu, então o split não quebra a cadeia.
-    runs-on: ubuntu-latest
-    needs: [changes, docker-build-rust-base]
+    # GitHub-hosted como primário (issue #426): o cache do buildx aqui é
+    # type=gha (ver cache-from/to abaixo), ou seja, trafega pela rede e não
+    # ganha nada com o disco local do EC2. São 4 jobs de matrix — a maior
+    # fatia de compute do pipeline — que no self-hosted disputavam 2 slots e
+    # aqui expandem em paralelo. As imagens vão para o GHCR e o
+    # e2e-integration as consome via `docker compose pull`, não pelo daemon
+    # que as construiu, então o split não quebra a cadeia. Fallback
+    # self-hosted em retry via select-runner.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes, docker-build-rust-base]
     permissions:
       contents: read
       packages: write
@@ -982,12 +945,11 @@ jobs:
 
   docker-build-frontend:
     name: Docker Build (Frontend)
-    # Pool GitHub-hosted (mesma razão de cache type=gha dos demais). Com este
-    # job e o frontend-check fora do EC2, o filtro `frontend` deixa de exigir a
-    # instância — por isso ele não aparece na condição NEEDS_EC2 do
+    # GitHub-hosted como primário (issue #426, mesma razão de cache type=gha
+    # dos demais docker-build-*). Fallback self-hosted em retry via
     # select-runner.
-    runs-on: ubuntu-latest
-    needs: changes
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.frontend == 'true' && github.event.pull_request.draft != true
     permissions:
       contents: read
@@ -1057,14 +1019,17 @@ jobs:
 
   docker-build-python:
     name: Docker Build (Crew worker)
-    # Pool GitHub-hosted, mesma razão do docker-build-rust/frontend: o cache é
-    # type=gha (trafega pela rede, não ganha com o disco do EC2) e a imagem vai
-    # para o GHCR, de onde o e2e a consome via pull. Além disso este era o job
-    # mais lento do pool self-hosted — 31 min sem terminar em `cfd7bf5` e
-    # 14 min em #367, monopolizando um dos 2 slots enquanto Rust/Java/BDD
-    # esperavam na fila.
-    runs-on: ubuntu-latest
-    needs: changes
+    # GitHub-hosted como primário (issue #426), mesma razão do
+    # docker-build-rust/frontend: o cache é type=gha (trafega pela rede, não
+    # ganha com o disco do EC2) e a imagem vai para o GHCR, de onde o e2e a
+    # consome via pull. Além disso este era o job mais lento do pool
+    # self-hosted — 31 min sem terminar em `cfd7bf5` e 14 min em #367,
+    # monopolizando um dos 2 slots enquanto Rust/Java/BDD esperavam na fila
+    # (motivo original da #374 para tirá-lo do self-hosted). Continua fora
+    # do caminho feliz do self-hosted: só vira candidato em retry
+    # (github.run_attempt > 1, evento raro), sem reintroduzir aquele gargalo.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     permissions:
       contents: read
@@ -1136,12 +1101,13 @@ jobs:
   # `python` do job `changes` e mesma política de gate dos demais docker-build-*.
   docker-build-python-executor:
     name: Docker Build (Script executor sidecar)
-    # Hosted pela mesma razão do docker-build-python acima. O cache
-    # scope=script-executor que este job aquece é consumido depois pelo
-    # e2e-integration; sendo type=gha (remoto), o reaproveitamento independe
-    # de os dois jobs estarem no mesmo pool.
-    runs-on: ubuntu-latest
-    needs: changes
+    # GitHub-hosted como primário (issue #426), pela mesma razão do
+    # docker-build-python acima. O cache scope=script-executor que este job
+    # aquece é consumido depois pelo e2e-integration; sendo type=gha
+    # (remoto), o reaproveitamento independe de os dois jobs estarem no
+    # mesmo pool. Fallback self-hosted em retry via select-runner.
+    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    needs: [select-runner, changes]
     if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     steps:
       - name: Checkout code
@@ -1429,3 +1395,47 @@ jobs:
       - name: Tear down stack
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.ci-ports.yml down -v
+
+  # Issue #426: fecha o circuito do fallback GitHub-hosted -> self-hosted
+  # sem depender de um humano clicar em "Re-run failed jobs". Um job cujo
+  # `result` é `cancelled` DENTRO deste run (não confundir com a
+  # concurrency: cancel-in-progress do topo do arquivo, que cancela um RUN
+  # inteiro mais antigo — nunca marca um job do run atual como cancelled) é
+  # o sintoma descrito no critério de aceite ("runner nunca atribuído / job
+  # cancelado sem executar nenhum step"). Dispara `gh run rerun --failed`
+  # UMA única vez (github.run_attempt < 2 evita loop se o retry também
+  # falhar) — na nova tentativa, select-runner detecta github.run_attempt>1
+  # e move os jobs cancelados para o pool self-hosted (alfabra-local) como
+  # fallback, em vez de tentar ubuntu-latest de novo.
+  auto-retry-on-infra-failure:
+    name: Auto-retry on infra failure (GitHub-hosted -> self-hosted fallback)
+    runs-on: ubuntu-latest
+    needs:
+      - select-runner
+      - changes
+      - rust-check
+      - java-check
+      - java-integration
+      - frontend-check
+      - python-ci
+      - docker-build-rust-base
+      - docker-build-rust
+      - docker-build-java
+      - docker-build-frontend
+      - docker-build-python
+      - docker-build-python-executor
+      - e2e-integration
+    if: |
+      always() &&
+      github.run_attempt < 2 &&
+      contains(needs.*.result, 'cancelled')
+    permissions:
+      actions: write
+    steps:
+      - name: Re-executa jobs cancelados (possível infra do GitHub-hosted)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "::notice::Job(s) cancelado(s) detectado(s) neste run - reexecutando via 'gh run rerun --failed' (retry entra no pool self-hosted como fallback, ver select-runner)"
+          gh run rerun "${{ github.run_id }}" --failed --repo "${{ github.repository }}"

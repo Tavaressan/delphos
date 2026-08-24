@@ -81,7 +81,7 @@ ONLINE=0
 i=1
 while [ "$i" -le "$POLL_ATTEMPTS" ]; do
   ONLINE=$("$GH_BIN" api "repos/${REPOSITORY}/actions/runners" --paginate \
-    --jq ".[\"runners\"] // .runners | map(select(.status == \"online\" and (.labels[].name == \"${SELF_HOSTED_LABEL}\"))) | length" \
+    --jq "[.runners[] | select(.status == \"online\" and (.labels[].name == \"${SELF_HOSTED_LABEL}\"))] | length" \
     2>/dev/null || echo 0)
   if [ "$ONLINE" -gt 0 ] 2>/dev/null; then
     break
