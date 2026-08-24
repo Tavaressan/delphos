@@ -646,8 +646,9 @@ impl RabbitMQManager {
         );
 
         // Obtém o token OAuth do Vertex AI quando o GcpAuthenticator (ADC) está disponível.
-        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o
-        // llm::generate_response cai para o Google AI Studio (API key) quando não há token.
+        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o Vertex AI
+        // é o último elo da cadeia — llm::generate_response tenta Google AI Studio e Ollama
+        // antes de precisar deste token.
         let vertex_token = match authenticator {
             Some(auth) => {
                 match auth
@@ -679,6 +680,7 @@ impl RabbitMQManager {
         );
         let request_body =
             crate::llm::build_gemini_request(&system_instruction, &user_content, 0.2, 2048);
+        let ollama_url = crate::llm::ollama_chat_url(&self.config.ollama_base_url);
 
         let start_llm = std::time::Instant::now();
         let response_text = crate::llm::generate_response(
@@ -687,6 +689,10 @@ impl RabbitMQManager {
             vertex_token.as_deref(),
             &ai_studio_url,
             self.config.google_ai_studio_api_key.as_deref(),
+            &ollama_url,
+            self.config.ollama_chat_model.as_deref(),
+            &system_instruction,
+            &user_content,
             &request_body,
         )
         .await?;
