@@ -27,7 +27,7 @@ export const useExecution = (onSuccess?: (output: string, sources?: RetrievalSou
   
   const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const attemptsRef = useRef<number>(0);
-  const MAX_ATTEMPTS = 60; // Max 2 minutes (60 * 2 seconds)
+  const MAX_ATTEMPTS = 300; // Max 10 minutes (300 * 2 seconds)
 
   const stopPolling = () => {
     if (pollingTimerRef.current) {
