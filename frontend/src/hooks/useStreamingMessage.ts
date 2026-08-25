@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { BASE_URL } from '../infrastructure/api/apiClient';
+import { getBaseUrl } from '../infrastructure/api/apiClient';
 
 /**
  * Concatena um novo chunk de texto ao texto já montado. Extraído como
@@ -25,17 +25,26 @@ export const parseSseDataLine = (rawLine: string): string | null => {
 };
 
 /**
+ * Streaming real via SSE (Server-Sent Events) está desabilitado até o
+ * backend expor o endpoint (issue #276): `ExecutionController` (java-core)
+ * só tem `POST /`, `GET /`, `GET /{id}` e `POST /{id}/cancel` — nenhum
+ * mapeamento para `/stream` existe. Com a suposição da issue #142 ativa,
+ * `start()` abria uma conexão para um endpoint 404, disparava `onerror` e
+ * caía silenciosamente no fallback de polling — ou seja, a feature nunca
+ * funcionava de fato. Esta constante mantém a implementação de streaming
+ * pronta (montagem incremental de chunks, parsing de linhas SSE) para
+ * quando o endpoint existir de fato no backend, sem tentar abrir conexões
+ * fadadas a falhar enquanto isso não acontece.
+ */
+export const isStreamingEnabled = (): boolean => false;
+
+/**
  * Hook de streaming de mensagens do agente via SSE (Server-Sent Events).
  *
- * Suposição documentada (issue #142): no momento em que este hook foi
- * escrito, o backend (java-core `ExecutionController`) ainda não expõe
- * nenhum endpoint de streaming/SSE — apenas o polling síncrono usado por
- * `useExecution`. Assumimos aqui, de forma consistente com o padrão REST
- * já usado em `/api/executions/{id}`, um endpoint
- * `GET /api/executions/{id}/stream` que responde `text/event-stream` com
+ * Ver `isStreamingEnabled` acima: `start()` é um no-op até o backend expor
+ * `GET /api/executions/{id}/stream`. O contrato assumido é consistente com
+ * o padrão REST já usado em `/api/executions/{id}`: `text/event-stream` com
  * eventos `data: <token>` incrementais e um evento final `event: done`.
- * Quando esse endpoint existir de fato no backend, nenhuma mudança de
- * contrato deveria ser necessária neste hook.
  */
 export const useStreamingMessage = () => {
   const [text, setText] = useState('');
@@ -56,14 +65,15 @@ export const useStreamingMessage = () => {
   const start = useCallback((executionId: string, onDone?: (finalText: string) => void) => {
     reset();
 
-    if (typeof EventSource === 'undefined') {
-      // Ambiente sem suporte a EventSource (ex.: SSR) — o chamador deve
-      // continuar usando o polling existente como fallback.
+    if (!isStreamingEnabled() || typeof EventSource === 'undefined') {
+      // Streaming desabilitado (backend ainda não expõe o endpoint — issue
+      // #276) ou ambiente sem suporte a EventSource (ex.: SSR): o chamador
+      // deve continuar usando o polling existente como fallback.
       return;
     }
 
     setIsStreaming(true);
-    const url = `${BASE_URL.replace(/\/$/, '')}/api/executions/${executionId}/stream`;
+    const url = `${getBaseUrl().replace(/\/$/, '')}/api/executions/${executionId}/stream`;
     const source = new EventSource(url);
     eventSourceRef.current = source;
 

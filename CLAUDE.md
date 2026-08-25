@@ -17,7 +17,7 @@ Plataforma corporativa de RAG (Retrieval-Augmented Generation) para busca semân
 | `rust-services/workflow-worker/` | Rust | Orquestração de fluxos |
 | `python-services/crew-worker/` | Python, CrewAI | Agentes autônomos LLM |
 
-**Infra:** PostgreSQL + pgvector, Redis, MinIO (S3), RabbitMQ, Caddy (proxy/TLS)
+**Infra:** PostgreSQL + pgvector, MinIO (S3), RabbitMQ, Caddy (proxy/TLS)
 
 ## Reversa Framework
 

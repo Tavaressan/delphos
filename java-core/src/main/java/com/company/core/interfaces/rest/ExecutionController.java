@@ -11,7 +11,12 @@ import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentExecutionRepository;
 import com.company.core.domain.repositories.ConversationRepository;
 import com.company.core.domain.repositories.UserRepository;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +28,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/executions")
 public class ExecutionController {
+
+    private static final Logger log = LoggerFactory.getLogger(ExecutionController.class);
 
     private final UserRepository userRepository;
     private final ConversationRepository conversationRepository;
@@ -59,7 +66,13 @@ public class ExecutionController {
         try {
             String prompt = request.getOrDefault("prompt", "Simular execução cognitiva corporativa.");
             String tenantStr = request.get("tenantId");
-            UUID tenantId = (tenantStr != null) ? UUID.fromString(tenantStr) : UUID.randomUUID();
+            // tenantId omitido usa o mesmo UUID zero padrão dos demais controllers
+            // (AgentController, ChatController), consistente com o default usado por
+            // GET /api/executions - um UUID aleatório deixaria a execução órfã e
+            // impossível de listar sem o tenantId exato (issue #313).
+            UUID tenantId = (tenantStr != null && !tenantStr.isEmpty())
+                    ? UUID.fromString(tenantStr)
+                    : UUID.fromString("00000000-0000-0000-0000-000000000000");
 
             // 0. agentId é opcional: chat genérico sem agente selecionado é um caso
             // suportado (ver issue #124), cai para agent = null / fallback no crew-worker.
@@ -179,20 +192,22 @@ public class ExecutionController {
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
+            log.error("Erro ao processar submissão de execução", e);
             Map<String, Object> errorResp = new HashMap<>();
-            errorResp.put("error", e.getMessage());
+            errorResp.put("error", GlobalExceptionHandler.GENERIC_ERROR_MESSAGE);
             return ResponseEntity.internalServerError().body(errorResp);
         }
     }
 
     @GetMapping
-    public ResponseEntity<java.util.List<Map<String, Object>>> listExecutions(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+    public ResponseEntity<Page<Map<String, Object>>> listExecutions(
+            @RequestParam(value = "tenantId", required = false) String tenantIdStr,
+            Pageable pageable) {
         UUID tenantId = (tenantIdStr != null && !tenantIdStr.isEmpty())
                 ? UUID.fromString(tenantIdStr)
                 : UUID.fromString("00000000-0000-0000-0000-000000000000");
 
-        java.util.List<Map<String, Object>> response = executionRepository.findByTenantId(tenantId)
-                .stream()
+        Page<Map<String, Object>> response = executionRepository.findByTenantId(tenantId, pageable)
                 .map(execution -> {
                     Map<String, Object> item = new HashMap<>();
                     item.put("executionId", execution.getId().toString());
@@ -201,8 +216,7 @@ public class ExecutionController {
                     item.put("startedAt", execution.getStartedAt());
                     item.put("finishedAt", execution.getFinishedAt());
                     return item;
-                })
-                .collect(java.util.stream.Collectors.toList());
+                });
 
         return ResponseEntity.ok(response);
     }

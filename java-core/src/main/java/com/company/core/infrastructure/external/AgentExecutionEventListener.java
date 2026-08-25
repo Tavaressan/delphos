@@ -11,8 +11,10 @@ import com.company.core.domain.repositories.RetrievalEventRepository;
 import com.company.core.domain.repositories.ToolCallRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -47,10 +49,11 @@ public class AgentExecutionEventListener {
     @SuppressWarnings("unchecked")
     public void handleExecutionEvent(String messageBody) {
         log.info("Received execution event: {}", messageBody);
+        UUID executionId = null;
         try {
             Map<String, Object> event = objectMapper.readValue(messageBody, new TypeReference<Map<String, Object>>() {});
             String eventType = (String) event.get("eventType");
-            UUID executionId = UUID.fromString((String) event.get("executionId"));
+            executionId = UUID.fromString((String) event.get("executionId"));
 
             AgentExecution execution = executionRepository.findById(executionId).orElse(null);
             if (execution == null) {
@@ -137,6 +140,9 @@ public class AgentExecutionEventListener {
                     String outputResult = (String) finishPayload.get("outputResult");
                     execution.setOutputResult(outputResult);
                     execution.setTokensConsumed(((Number) finishPayload.get("tokensConsumed")).intValue());
+                    // Limpa um error_message residual de um TIMEOUT marcado pelo frontend
+                    // antes desta conclusão tardia chegar (execução acabou tendo sucesso).
+                    execution.setErrorMessage(null);
                     executionRepository.save(execution);
 
                     // Save assistant message to chat history
@@ -179,6 +185,7 @@ public class AgentExecutionEventListener {
                     execution.setFinishedAt(Instant.now());
                     Map<String, Object> workflowCompletedPayload = (Map<String, Object>) event.get("payload");
                     execution.setOutputResult((String) workflowCompletedPayload.get("outputResult"));
+                    execution.setErrorMessage(null);
                     executionRepository.save(execution);
                     log.info("Workflow execution {} COMPLETED successfully", executionId);
                     break;
@@ -197,8 +204,30 @@ public class AgentExecutionEventListener {
                     break;
             }
         } catch (Exception e) {
-            log.error("Error processing agent execution event", e);
+            log.error("Error processing agent execution event, rejecting message: {}", messageBody, e);
+            // Marca a execução em estado terminal FAILED numa transação própria (REQUIRES_NEW),
+            // já que a transação da mensagem original vai ser descartada junto com a rejeição
+            // abaixo — sem isso a execução ficaria travada invisivelmente no status anterior
+            // (issue #271).
+            if (executionId != null) {
+                markExecutionFailed(executionId, e);
+            }
+            // Rejeita a mensagem (nack, sem requeue) em vez de engolir a exceção silenciosamente:
+            // com o ack mode AUTO padrão, retornar normalmente do listener confirmaria a mensagem
+            // mesmo após uma falha de processamento. Com x-dead-letter-exchange configurado na
+            // fila, a mensagem rejeitada cai na DLQ em vez de ser descartada.
+            throw new AmqpRejectAndDontRequeueException("Failed to process agent execution event", e);
         }
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markExecutionFailed(UUID executionId, Exception cause) {
+        executionRepository.findById(executionId).ifPresent(execution -> {
+            execution.setStatus("FAILED");
+            execution.setFinishedAt(Instant.now());
+            execution.setErrorMessage("Error processing event: " + cause.getMessage());
+            executionRepository.save(execution);
+        });
     }
 
     private String extractErrorMessage(Map<String, Object> payload) {

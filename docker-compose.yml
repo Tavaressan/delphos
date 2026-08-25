@@ -20,18 +20,6 @@ services:
       retries: 5
       start_period: 20s
 
-  redis:
-    image: redis:7-alpine
-    container_name: rag_redis
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-
   minio:
     image: minio/minio:latest
     container_name: rag_minio
@@ -50,8 +38,8 @@ services:
 
   core:
     build:
-      context: .
-      dockerfile: java-core/Dockerfile
+      context: ./java-core
+      dockerfile: Dockerfile
     container_name: core-platform
     volumes:
       - .:/app
@@ -63,8 +51,6 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://alfabra-vector.vercel.app,https://*.vercel.app,http://localhost:[*]}
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
@@ -119,7 +105,7 @@ services:
     volumes:
       - ./rust-services:/app
       - /app/target                # Protege o cache de compilação do Rust no Linux
-      - ${ADC_PATH}:/gcloud/adc.json:ro
+      - ${ADC_PATH:-/dev/null}:/gcloud/adc.json:ro
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/healthz" ]
       interval: 10s
@@ -161,7 +147,7 @@ services:
     volumes:
       - ./rust-services:/app
       - /app/target                # Protege o cache de compilação do Rust no Linux
-      - ${ADC_PATH}:/gcloud/adc.json:ro
+      - ${ADC_PATH:-/dev/null}:/gcloud/adc.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -206,7 +192,13 @@ services:
       # fallback in-process (usado só em dev/testes unitários sem Docker).
       - SCRIPT_EXECUTOR_URL=http://script-executor:8000/run
     volumes:
-      - ${ADC_PATH}:/gcloud/adc.json:ro
+      # Issue #389: sem o default `:-/dev/null`, ADC_PATH vazio produz um volume spec
+      # inválido (":/gcloud/adc.json:ro", seção vazia entre dois-pontos) que aborta o
+      # `docker compose up` da stack INTEIRA, não só deste serviço — era essa a causa
+      # mais provável do crew-worker nunca ter sido criado. Vertex AI é o último elo
+      # de fallback da cadeia de LLM (ver crewai_adapter.py), então continua sendo
+      # montado normalmente quando ADC_PATH está configurado.
+      - ${ADC_PATH:-/dev/null}:/gcloud/adc.json:ro
     networks:
       # Rede default: alcança core, rabbitmq, embedding-service etc.
       - default
@@ -219,6 +211,17 @@ services:
         condition: service_healthy
       script-executor:
         condition: service_healthy
+    # Issue #391: detecta o event bus do CrewAI envenenado (StackDepthExceededError
+    # em cascata) para visibilidade via `docker compose ps`. A recuperação de fato é
+    # feita pelo próprio processo (src/main.py), que se encerra ao atingir o mesmo
+    # limiar e depende de `restart: on-failure` acima para ser recriado — plain
+    # `docker compose` não recria containers apenas por estarem unhealthy.
+    healthcheck:
+      test: [ "CMD", "python", "src/healthcheck.py" ]
+      interval: 30s
+      timeout: 5s
+      retries: 1
+      start_period: 15s
 
   # Sidecar dedicado à execução isolada de scripts Python gerados por LLM
   # (issue #148). Endurecido: SEM credenciais GCP (nenhum adc.json montado, sem
@@ -254,6 +257,28 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  # Provider local de embeddings e chat (issue #358): redundância além dos providers
+  # Google (Vertex AI / AI Studio) e camada de teste com semântica real, substituindo o
+  # mock hoje usado no E2E. Fora do profile default: o pull dos modelos é de vários GB e
+  # não deve penalizar quem só quer subir a stack. Suba com:
+  #   docker compose --profile local-ai up -d
+  # e baixe um modelo antes do primeiro uso, ex.:
+  #   docker compose --profile local-ai exec ollama ollama pull nomic-embed-text
+  #   docker compose --profile local-ai exec ollama ollama pull llama3.2
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag_ollama
+    profiles:
+      - local-ai
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: [ "CMD", "ollama", "list" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
@@ -314,6 +339,6 @@ volumes:
   caddy_data:
   caddy_config:
   postgres_data:
-  redis_data:
   minio_data:
   rabbitmq_data:
+  ollama_data:

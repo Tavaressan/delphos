@@ -1,11 +1,13 @@
 package com.company.core.interfaces.rest;
 
+import com.company.core.application.FileTypeValidator;
 import com.company.core.domain.entities.Agent;
 import com.company.core.domain.entities.Document;
 import com.company.core.domain.entities.User;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.DocumentRepository;
 import com.company.core.domain.repositories.UserRepository;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
 import tools.jackson.databind.ObjectMapper;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -13,13 +15,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +40,7 @@ public class DocumentController {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final com.company.core.application.AuditService auditService;
+    private final FileTypeValidator fileTypeValidator;
 
     @Value("${minio.bucket:agents-data}")
     private String minioBucket;
@@ -46,7 +51,8 @@ public class DocumentController {
                               MinioClient minioClient,
                               RabbitTemplate rabbitTemplate,
                               ObjectMapper objectMapper,
-                              com.company.core.application.AuditService auditService) {
+                              com.company.core.application.AuditService auditService,
+                              FileTypeValidator fileTypeValidator) {
         this.documentRepository = documentRepository;
         this.agentRepository = agentRepository;
         this.userRepository = userRepository;
@@ -54,6 +60,7 @@ public class DocumentController {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.fileTypeValidator = fileTypeValidator;
     }
 
     @PostMapping("/upload")
@@ -82,27 +89,43 @@ public class DocumentController {
                 agent = agentRepository.findById(UUID.fromString(agentIdStr)).orElse(null);
             }
 
-            // Create document UUID
-            UUID docId = UUID.randomUUID();
             String name = file.getOriginalFilename();
+            if (name == null || name.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Nome do arquivo é obrigatório."));
+            }
+            if (name.length() > 255) {
+                name = name.substring(name.length() - 255);
+            }
             String ext = getFileExtension(name).toLowerCase();
-            
+
+            byte[] fileBytes = file.getBytes();
+            try {
+                fileTypeValidator.validate(fileBytes, ext);
+            } catch (FileTypeValidator.ValidationException e) {
+                return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            }
+
+            // Create document UUID e object key baseado em UUID (nome original vira só metadado)
+            UUID docId = UUID.randomUUID();
+            String storedFileName = docId + "." + ext;
+
             // Upload to MinIO
-            String objectPath = "documents/" + docId + "/" + name;
-            try (InputStream is = file.getInputStream()) {
+            String objectPath = "documents/" + docId + "/" + storedFileName;
+            try (InputStream is = new ByteArrayInputStream(fileBytes)) {
                 minioClient.putObject(PutObjectArgs.builder()
                         .bucket(minioBucket)
                         .object(objectPath)
-                        .stream(is, file.getSize(), -1L)
+                        .stream(is, (long) fileBytes.length, -1L)
                         .contentType(getContentType(ext))
                         .build());
             }
 
             User creator = userRepository.findByUsername("admin").orElse(null);
 
-            // Save metadata
+            // Save metadata (id é gerado pelo Hibernate; docId é usado só na chave do objeto no
+            // MinIO, pré-atribuí-lo à entidade fazia o save() virar merge()/UPDATE numa linha
+            // inexistente e estourar StaleObjectStateException)
             Document doc = new Document();
-            doc.setId(docId);
             doc.setName(name);
             doc.setFilePath(objectPath);
             doc.setFileSize(file.getSize());
@@ -138,12 +161,14 @@ public class DocumentController {
 
         } catch (Exception e) {
             log.error("Failed to upload document", e);
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(Map.of("error", GlobalExceptionHandler.GENERIC_ERROR_MESSAGE));
         }
     }
 
     @GetMapping
-    public ResponseEntity<?> listDocuments(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+    public ResponseEntity<?> listDocuments(
+            @RequestParam(value = "tenantId", required = false) String tenantIdStr,
+            Pageable pageable) {
         if (tenantIdStr == null || tenantIdStr.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "tenantId é obrigatório para listar documentos."));
         }
@@ -155,7 +180,7 @@ public class DocumentController {
             return ResponseEntity.badRequest().body(Map.of("error", "tenantId inválido."));
         }
 
-        List<Document> docs = documentRepository.findByTenantId(tenantId);
+        Page<Document> docs = documentRepository.findByTenantId(tenantId, pageable);
         return ResponseEntity.ok(docs);
     }
 

@@ -2,6 +2,7 @@
 name = "document-processing"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 shared = { path = "../shared" }
@@ -9,7 +10,7 @@ tokio = { workspace = true, features = ["full"] }
 axum = { version = "0.7", features = ["multipart"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { workspace = true }
-lopdf = "0.31"
+lopdf = "0.42"
 anyhow = "1.0"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 gcp-auth = { workspace = true }

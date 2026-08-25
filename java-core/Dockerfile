@@ -1,11 +1,11 @@
 # Dockerfile for Java Core (Spring Boot)
 
 # Stage 1: Build the application using Gradle
-FROM gradle:8.14-jdk21 AS builder
+FROM gradle:9.6-jdk21 AS builder
 WORKDIR /app
 
 # Copy gradle configuration files
-COPY java-core/build.gradle.kts java-core/settings.gradle.kts ./
+COPY build.gradle.kts settings.gradle.kts ./
 
 # Pre-download dependencies for layer caching
 RUN gradle dependencies --no-daemon --configuration runtimeClasspath 2>/dev/null; \
@@ -13,7 +13,7 @@ RUN gradle dependencies --no-daemon --configuration runtimeClasspath 2>/dev/null
     true
 
 # Copy the source code
-COPY java-core/src ./src
+COPY src ./src
 
 # Build the executable jar
 RUN gradle bootJar -x test --no-daemon

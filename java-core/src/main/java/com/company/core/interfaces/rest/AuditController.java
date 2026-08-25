@@ -2,6 +2,8 @@ package com.company.core.interfaces.rest;
 
 import com.company.core.domain.entities.AuditLog;
 import com.company.core.domain.repositories.AuditLogRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -9,10 +11,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Issue #84: endpoint de auditoria filtra obrigatoriamente por tenantId do
@@ -34,7 +34,9 @@ public class AuditController {
     }
 
     @GetMapping
-    public ResponseEntity<?> listAuditLogs(@RequestParam(value = "tenantId", required = false) String tenantIdStr) {
+    public ResponseEntity<?> listAuditLogs(
+            @RequestParam(value = "tenantId", required = false) String tenantIdStr,
+            Pageable pageable) {
         if (tenantIdStr == null || tenantIdStr.isBlank()) {
             Map<String, Object> error = new HashMap<>();
             error.put("error", "tenantId é obrigatório para listar logs de auditoria.");
@@ -50,8 +52,8 @@ public class AuditController {
             return ResponseEntity.badRequest().body(error);
         }
 
-        List<AuditLog> logs = auditLogRepository.findByTenantId(tenantId);
-        List<Map<String, Object>> response = logs.stream().map(this::toResponse).collect(Collectors.toList());
+        Page<AuditLog> logs = auditLogRepository.findByTenantId(tenantId, pageable);
+        Page<Map<String, Object>> response = logs.map(this::toResponse);
         return ResponseEntity.ok(response);
     }
 

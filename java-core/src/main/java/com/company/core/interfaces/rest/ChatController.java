@@ -1,12 +1,17 @@
 package com.company.core.interfaces.rest;
 
 import com.company.core.domain.entities.Agent;
+import com.company.core.domain.entities.AgentExecution;
 import com.company.core.domain.entities.Conversation;
 import com.company.core.domain.entities.Message;
 import com.company.core.domain.entities.User;
+import com.company.core.domain.repositories.AgentExecutionRepository;
 import com.company.core.domain.repositories.AgentRepository;
 import com.company.core.domain.repositories.ConversationRepository;
 import com.company.core.domain.repositories.UserRepository;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,16 +23,21 @@ import java.util.UUID;
 @RequestMapping("/api/chats")
 public class ChatController {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatController.class);
+
     private final ConversationRepository conversationRepository;
     private final AgentRepository agentRepository;
     private final UserRepository userRepository;
+    private final AgentExecutionRepository agentExecutionRepository;
 
     public ChatController(ConversationRepository conversationRepository,
                           AgentRepository agentRepository,
-                          UserRepository userRepository) {
+                          UserRepository userRepository,
+                          AgentExecutionRepository agentExecutionRepository) {
         this.conversationRepository = conversationRepository;
         this.agentRepository = agentRepository;
         this.userRepository = userRepository;
+        this.agentExecutionRepository = agentExecutionRepository;
     }
 
     @GetMapping
@@ -72,7 +82,8 @@ public class ChatController {
             conversation = conversationRepository.save(conversation);
             return ResponseEntity.ok(conversation);
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            log.error("Erro ao criar conversa", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", GlobalExceptionHandler.GENERIC_ERROR_MESSAGE));
         }
     }
 
@@ -90,6 +101,15 @@ public class ChatController {
         if (!conversationRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
+
+        // agent_executions.conversation_id não tem ON DELETE CASCADE (diferente de
+        // messages.conversation_id) - excluir as execuções associadas explicitamente
+        // evita uma FK violation não tratada (issue #315).
+        List<AgentExecution> executions = agentExecutionRepository.findByConversationId(id);
+        if (!executions.isEmpty()) {
+            agentExecutionRepository.deleteAll(executions);
+        }
+
         conversationRepository.deleteById(id);
         return ResponseEntity.noContent().build();
     }

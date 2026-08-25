@@ -17,12 +17,18 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import com.company.core.infrastructure.web.GlobalExceptionHandler;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,6 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -62,13 +69,15 @@ class ExecutionControllerTest {
     private RetrievalEventRepository retrievalEventRepository;
 
     private MockMvc mockMvc;
+    private ExecutionController executionController;
 
     @BeforeEach
     void setup() {
         ObjectMapper objectMapper = new ObjectMapper();
-        mockMvc = MockMvcBuilders.standaloneSetup(new ExecutionController(
+        executionController = new ExecutionController(
                 userRepository, conversationRepository, executionRepository, rabbitTemplate,
-                objectMapper, agentRepository, messageRepository, auditService, retrievalEventRepository)).build();
+                objectMapper, agentRepository, messageRepository, auditService, retrievalEventRepository);
+        mockMvc = MockMvcBuilders.standaloneSetup(executionController).build();
     }
 
     @Test
@@ -201,18 +210,92 @@ class ExecutionControllerTest {
     }
 
     @Test
-    void listExecutions_withTenantId_returnsExecutionsForTenant() throws Exception {
+    void submitExecution_withoutTenantId_usesDefaultZeroTenantIdInsteadOfRandom() throws Exception {
+        // issue #313: omitir tenantId deve usar o mesmo UUID zero padrão dos demais
+        // controllers (AgentController, ChatController), não um UUID aleatório - do
+        // contrário a execução fica órfã e não aparece em GET /api/executions sem
+        // query param (que também usa o UUID zero como default).
+        User admin = new User();
+        admin.setId(UUID.randomUUID());
+        admin.setUsername("admin");
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(admin));
+
+        when(conversationRepository.save(any())).thenAnswer(inv -> {
+            Conversation c = inv.getArgument(0);
+            c.setId(UUID.randomUUID());
+            return c;
+        });
+
+        when(executionRepository.save(any())).thenAnswer(inv -> {
+            AgentExecution e = inv.getArgument(0);
+            if (e.getId() == null) {
+                e.setId(UUID.randomUUID());
+            }
+            return e;
+        });
+
+        ArgumentCaptor<AgentExecution> executionCaptor = ArgumentCaptor.forClass(AgentExecution.class);
+
+        mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"Olá\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tenantId").value("00000000-0000-0000-0000-000000000000"));
+
+        verify(executionRepository, org.mockito.Mockito.atLeastOnce()).save(executionCaptor.capture());
+        assertThat(executionCaptor.getValue().getTenantId())
+                .isEqualTo(UUID.fromString("00000000-0000-0000-0000-000000000000"));
+    }
+
+    @Test
+    void listExecutions_withTenantId_returnsExecutionsForTenant() {
         UUID tenantId = UUID.randomUUID();
         AgentExecution execution = new AgentExecution();
         execution.setId(UUID.randomUUID());
         execution.setTenantId(tenantId);
         execution.setStatus("COMPLETED");
 
-        when(executionRepository.findByTenantId(tenantId)).thenReturn(List.of(execution));
+        Pageable defaultPageable = PageRequest.of(0, 20);
+        when(executionRepository.findByTenantId(eq(tenantId), eq(defaultPageable)))
+                .thenReturn(new PageImpl<>(List.of(execution)));
 
-        mockMvc.perform(get("/api/executions?tenantId=" + tenantId))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].status").value("COMPLETED"));
+        org.springframework.http.ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> response =
+                executionController.listExecutions(tenantId.toString(), defaultPageable);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getContent().get(0).get("status")).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void listExecutions_withMoreRecordsThanPageSize_returnsPaginatedResponse() {
+        UUID tenantId = UUID.randomUUID();
+        int pageSize = 5;
+        int totalElements = 12;
+
+        List<AgentExecution> pageContent = new ArrayList<>();
+        for (int i = 0; i < pageSize; i++) {
+            AgentExecution execution = new AgentExecution();
+            execution.setId(UUID.randomUUID());
+            execution.setTenantId(tenantId);
+            execution.setStatus("COMPLETED");
+            pageContent.add(execution);
+        }
+
+        Pageable requestedPageable = PageRequest.of(1, pageSize);
+        when(executionRepository.findByTenantId(eq(tenantId), eq(requestedPageable)))
+                .thenReturn(new PageImpl<>(pageContent, requestedPageable, totalElements));
+
+        org.springframework.http.ResponseEntity<org.springframework.data.domain.Page<Map<String, Object>>> response =
+                executionController.listExecutions(tenantId.toString(), requestedPageable);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        org.springframework.data.domain.Page<Map<String, Object>> body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.getContent()).hasSize(pageSize);
+        assertThat(body.getTotalElements()).isEqualTo(totalElements);
+        assertThat(body.getNumber()).isEqualTo(1);
+        assertThat(body.getSize()).isEqualTo(pageSize);
     }
 
     @Test
@@ -245,5 +328,26 @@ class ExecutionControllerTest {
 
         verifyNoInteractions(rabbitTemplate);
         verify(executionRepository, never()).save(any());
+    }
+
+    /**
+     * Issue #247: uma exceção inesperada (ex.: falha ao consultar o banco) não pode vazar sua
+     * mensagem crua (e.getMessage()) para o corpo da resposta HTTP.
+     */
+    @Test
+    void submitExecution_whenRepositoryThrows_doesNotLeakInternalExceptionMessage() throws Exception {
+        String sensitiveDetail = "FATAL: password authentication failed for user \"core_admin\" at db-internal:5432";
+        when(userRepository.findByUsername("admin")).thenThrow(new RuntimeException(sensitiveDetail));
+
+        MvcResult result = mockMvc.perform(post("/api/executions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"prompt\":\"Olá\"}"))
+                .andExpect(status().isInternalServerError())
+                .andReturn();
+
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).doesNotContain(sensitiveDetail);
+        assertThat(body).doesNotContain("db-internal");
+        assertThat(body).contains(GlobalExceptionHandler.GENERIC_ERROR_MESSAGE);
     }
 }

@@ -10,6 +10,23 @@ metadata:
 
 Você é o agente de fix autônomo do Vetor. Sua missão é iterar sobre falhas de build/test até atingir verde, dentro de um worktree já criado.
 
+🚫 **NUNCA entre em plan mode (`EnterPlanMode`).** Este skill roda tipicamente em agentes headless
+despachados em background (`issue-worker`), sem interlocutor disponível para aprovar a saída via
+`ExitPlanMode` — entrar em plan mode aqui trava a sessão sem recuperação (issue #121). Independente
+de a tarefa parecer "não-trivial" pela heurística padrão do Claude Code, vá **direto** para
+reproduce → fix (passo 3 abaixo), nunca produza um plano para aprovação antes de agir.
+
+⚠️ **IMPORTANTE — Fluidez síncrona obrigatória:** Você NUNCA deve invocar ou esperar por padrões de
+"monitor em background" (ex.: "I'll wait for this background monitor to notify me"). Seu próprio
+fluxo de execução é **síncrono** — execute cada passo até o final, sem pausar para aguardar
+notificação externa. Se você encontrar algo que pareça um monitoramento assíncrono, ignore-o e
+prossiga com seu fluxo normal. Parar antes de atingir um estado terminal é uma falha silenciosa que
+o coordinator não consegue detectar.
+
+**Ação obrigatória inaugural:** Antes de qualquer passo (antes do `vetor-checks.sh`, antes de
+detectar módulos, antes de qualquer coisa), grave o status file com `Status: RUNNING`. Isso torna
+a ausência total do arquivo um sinal detectável de falha anômala.
+
 ---
 
 ## Sintaxe
@@ -28,11 +45,20 @@ Você é o agente de fix autônomo do Vetor. Sua missão é iterar sobre falhas 
 
 **Branch default e comandos de teste.** Leia `$CLAUDE_PLUGIN_ROOT/skills/shared/references/project-conventions.md` — resolva `$DEFAULT_BRANCH` e o `module-test-map` conforme descrito lá antes de prosseguir.
 
+**Reprodução de bugs de UI (opcional).** Se a `<descrição>` indicar um bug visual/frontend, leia
+`$CLAUDE_PLUGIN_ROOT/skills/shared/references/mcp-availability.md` (seção "Browser
+(chrome-devtools)") e verifique disponibilidade do MCP antes do passo 3.a — se disponível, use-o
+para reproduzir o bug e capturar evidência antes de tentar o fix.
+
 ---
 
 ## Comportamento
 
-### 0 — Guarda de contexto
+### 0 — Status file inaugural + Guarda de contexto
+
+**Primeira ação (antes de tudo):** Grave o status file com `Status: RUNNING`. Derive o path conforme
+§2 abaixo (ou use o path absoluto recebido do `issue-coordinator`). A ausência total do arquivo
+torna indetectável uma falha anômala — não atras isso para depois.
 
 ```bash
 bash "$CLAUDE_PLUGIN_ROOT/scripts/vetor-checks.sh" in-worktree
@@ -49,6 +75,35 @@ git diff "$DEFAULT_BRANCH" --name-only
 ```
 
 Mapeie ao módulo usando a tabela do module-test-map.
+Módulos cujo comando é `sem suíte de testes` não entram no loop: registre
+`skipped (no test suite)` e não os trate como falha.
+
+**Cache de arquivos tocados (issue #81).** Depois de resolver os módulos, grave um cache leve e
+efêmero em `<repo-root>/.claude/vetor/status/<branch com / trocada por ->-touched-files.json`
+(mesmo diretório e convenção de nome do status file, root via `git rev-parse --git-common-dir`).
+Isso evita que o `code-review` (despachado pelo `worktree-ship` logo depois, sobre a mesma branch)
+tenha que re-derivar do zero a lista de arquivos alterados e o mapeamento módulo → arquivos.
+
+Formato:
+
+```json
+{
+  "branch": "<branch>",
+  "head": "<git rev-parse HEAD>",
+  "generated_at": "<ISO 8601>",
+  "default_branch": "<DEFAULT_BRANCH>",
+  "modules": {
+    "<módulo>": ["<arquivo1>", "<arquivo2>"]
+  },
+  "files": ["<arquivo1>", "<arquivo2>", "..."]
+}
+```
+
+Grave (sobrescrevendo) esse arquivo sempre que os módulos forem (re)detectados nesta seção — inclui
+a primeira execução e qualquer iteração do loop em que novos arquivos tenham sido alterados. `head`
+deve refletir o `git rev-parse HEAD` **no momento da gravação**, para que o `code-review` consiga
+validar frescor (ver `agents/code-review.md`). O cache é descartado no cleanup do `worktree-ship`
+(passo 12) — nunca persiste entre PRs.
 
 ### 2 — Status file
 
@@ -69,6 +124,7 @@ Para cada iteração `i` de 1 a 5:
 **3.a — Executar testes**
 
 Execute o comando headless do módulo detectado.
+Se o comando for `sem suíte de testes`, pule o módulo sem consumir uma iteração.
 
 **Regra sandbox de docker:**
 - Na **primeira** tentativa, tente docker se aplicável

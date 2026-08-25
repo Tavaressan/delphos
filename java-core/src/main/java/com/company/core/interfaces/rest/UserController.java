@@ -226,7 +226,12 @@ public class UserController {
         } catch (IllegalArgumentException e) {
             return null;
         }
-        return userRepository.findById(userId);
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (userOpt.isPresent() && "INACTIVE".equals(userOpt.get().getStatus())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED, "Usuário inativo.");
+        }
+        return userOpt;
     }
 
     private ResponseEntity<?> badRequest(String message) {

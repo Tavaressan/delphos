@@ -30,4 +30,23 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().get("error").toString())
                 .contains("excede o tamanho máximo permitido");
     }
+
+    /**
+     * Issue #247: exceções genéricas não mapeadas não podem vazar detalhes internos
+     * (mensagens de driver JDBC, hosts internos, etc.) para o corpo da resposta HTTP.
+     */
+    @Test
+    void handleGenericException_returnsInternalServerErrorWithoutLeakingOriginalMessage() {
+        RuntimeException ex = new RuntimeException(
+                "FATAL: password authentication failed for user \"core_admin\" at db-internal.company.local:5432");
+
+        ResponseEntity<Map<String, Object>> response = handler.handleGenericException(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("error").toString())
+                .isEqualTo(GlobalExceptionHandler.GENERIC_ERROR_MESSAGE)
+                .doesNotContain("db-internal.company.local")
+                .doesNotContain("core_admin");
+    }
 }

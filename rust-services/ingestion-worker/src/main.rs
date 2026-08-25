@@ -545,31 +545,106 @@ async fn download_file(file_path: &str) -> Result<Vec<u8>> {
 /// real por padrão. Somente quando `allow_dev_fallback` for `true` (opt-in via
 /// `INGESTION_DEV_FALLBACK=true`) um texto mock de desenvolvimento é retornado —
 /// isso nunca deve acontecer silenciosamente em produção.
+/// Monta a URL de download no MinIO (path-style: `http://host:port/bucket/object`)
+/// usando o bucket configurável e o `file_path` completo (chave do objeto) tal
+/// como gravado pelo java-core, sem truncar para o basename.
+fn build_minio_url(
+    minio_host: &str,
+    minio_port: &str,
+    minio_bucket: &str,
+    file_path: &str,
+) -> String {
+    format!(
+        "http://{}:{}/{}/{}",
+        minio_host, minio_port, minio_bucket, file_path
+    )
+}
+
+/// Baixa um objeto do MinIO pela API S3, assinando a requisição com SigV4 (issue #183).
+///
+/// O bucket `agents-data` é privado, então um GET anônimo retorna 403 AccessDenied. As
+/// credenciais vêm de MINIO_ROOT_USER/MINIO_ROOT_PASSWORD, já disponíveis no container
+/// via `env_file: .env` no docker-compose.yml.
+///
+/// `force_path_style` é obrigatório: o MinIO endereça buckets por path
+/// (`http://host:9000/bucket/key`), não por subdomínio como o S3 da AWS.
+async fn s3_get_object(
+    minio_host: &str,
+    minio_port: &str,
+    minio_bucket: &str,
+    file_path: &str,
+) -> Result<Vec<u8>> {
+    let access_key = env::var("MINIO_ROOT_USER").unwrap_or_else(|_| "minioadmin".to_string());
+    let secret_key = env::var("MINIO_ROOT_PASSWORD").unwrap_or_else(|_| "minioadmin".to_string());
+
+    let credentials =
+        aws_credential_types::Credentials::new(access_key, secret_key, None, None, "minio-static");
+
+    let config = aws_sdk_s3::Config::builder()
+        .endpoint_url(format!("http://{}:{}", minio_host, minio_port))
+        .credentials_provider(credentials)
+        .region(aws_config::Region::new("us-east-1"))
+        .force_path_style(true)
+        .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+        .build();
+
+    let output = aws_sdk_s3::Client::from_conf(config)
+        .get_object()
+        .bucket(minio_bucket)
+        .key(file_path)
+        .send()
+        .await
+        .map_err(|e| {
+            // service_error() distingue erro de protocolo S3 (NoSuchKey, AccessDenied)
+            // de falha de transporte, para o log não confundir permissão com ausência.
+            anyhow::anyhow!("GetObject falhou: {}", aws_error_detail(&e))
+        })?;
+
+    let bytes = output
+        .body
+        .collect()
+        .await
+        .context("Falha ao ler o corpo do objeto S3")?
+        .into_bytes();
+
+    Ok(bytes.to_vec())
+}
+
+/// Extrai uma descrição legível do erro do SDK, nomeando o código S3 quando houver.
+fn aws_error_detail(
+    err: &aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError>,
+) -> String {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+    match err.code() {
+        Some(code) => format!(
+            "{} ({})",
+            code,
+            err.message().unwrap_or("sem mensagem do servidor")
+        ),
+        None => err.to_string(),
+    }
+}
+
 async fn download_file_with_fallback(file_path: &str, allow_dev_fallback: bool) -> Result<Vec<u8>> {
     let minio_host = env::var("MINIO_HOST").unwrap_or_else(|_| "minio".to_string());
     let minio_port = env::var("MINIO_PORT").unwrap_or_else(|_| "9000".to_string());
+    let minio_bucket = env::var("MINIO_BUCKET").unwrap_or_else(|_| "agents-data".to_string());
 
-    // Tratamento para extrair apenas o nome do arquivo se o file_path contiver diretórios
-    let clean_path = if let Some(pos) = file_path.rfind('/') {
-        &file_path[pos + 1..]
-    } else {
-        file_path
-    };
-
-    let url = format!(
-        "http://{}:{}/documents/{}",
-        minio_host, minio_port, clean_path
-    );
+    let url = build_minio_url(&minio_host, &minio_port, &minio_bucket, file_path);
     println!("Tentando baixar arquivo de: {}", url);
 
-    match reqwest::get(&url).await {
-        Ok(res) if res.status().is_success() => {
-            let bytes = res.bytes().await?;
+    match s3_get_object(&minio_host, &minio_port, &minio_bucket, file_path).await {
+        Ok(bytes) => {
             println!("Arquivo baixado com sucesso de: {}", url);
-            return Ok(bytes.to_vec());
+            return Ok(bytes);
         }
-        _ => {
-            println!("Falha ao baixar do MinIO em {}. Tentando ler local...", url);
+        Err(e) => {
+            // Distinguir causa: um 403 (credencial ausente/errada) reportado como
+            // "não encontrado" mandou a investigação da #183 para o lado errado.
+            println!(
+                "Falha ao baixar do MinIO em {}: {}. Tentando ler local...",
+                url, e
+            );
         }
     }
 

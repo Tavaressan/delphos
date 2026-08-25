@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -56,16 +57,31 @@ public class FailedJobController {
         FailedJob job = jobs.get(0);
 
         Document document = documentRepository.findById(documentId).orElse(null);
+        String previousStatus = document != null ? document.getStatus() : null;
+        String previousProcessingError = document != null ? document.getProcessingError() : null;
+
         if (document != null) {
             document.setStatus("PROCESSING");
             document.setProcessingError(null);
             documentRepository.save(document);
         }
 
-        rabbitTemplate.convertAndSend(
-                "agent.execution.exchange",
-                "document.ingestion.jobs",
-                job.getPayload());
+        try {
+            rabbitTemplate.convertAndSend(
+                    "agent.execution.exchange",
+                    "document.ingestion.jobs",
+                    job.getPayload());
+        } catch (Exception e) {
+            log.error("Failed to publish retry job to RabbitMQ for document {}: {}", documentId, e.getMessage(), e);
+            if (document != null) {
+                document.setStatus(previousStatus);
+                document.setProcessingError(previousProcessingError);
+                documentRepository.save(document);
+            }
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "error", "Falha ao publicar job de retry no RabbitMQ. O documento foi preservado no estado anterior.",
+                    "documentId", documentId));
+        }
 
         job.setRetryCount(job.getRetryCount() + 1);
         failedJobRepository.save(job);

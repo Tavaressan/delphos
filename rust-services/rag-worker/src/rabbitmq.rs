@@ -351,18 +351,7 @@ impl RabbitMQManager {
 
         match self.execute_rag(&job, db_pool, authenticator).await {
             Ok((_response_text, chunks)) => {
-                let results = chunks
-                    .into_iter()
-                    .map(|c| {
-                        let chunk_id_str = c.id.as_str().unwrap_or("");
-                        let chunk_id = uuid::Uuid::parse_str(chunk_id_str).unwrap_or_default();
-                        DelegatedChunkData {
-                            chunk_id,
-                            text: c.content,
-                            score: c.score,
-                        }
-                    })
-                    .collect();
+                let results = chunks_to_delegated(chunks);
 
                 let event = DelegatedResponseEvent {
                     execution_id: job.execution_id,
@@ -560,18 +549,24 @@ impl RabbitMQManager {
         );
         let start_db = std::time::Instant::now();
         let rows = if let Some(aid) = agent_id {
-            sqlx::query(crate::retrieval::vector_search_query(true))
-                .bind(&embedding)
-                .bind(job.tenant_id)
-                .bind(aid)
-                .fetch_all(db_pool)
-                .await
+            sqlx::query(&crate::retrieval::vector_search_query_with_limit(
+                true,
+                self.config.rag_top_k,
+            ))
+            .bind(&embedding)
+            .bind(job.tenant_id)
+            .bind(aid)
+            .fetch_all(db_pool)
+            .await
         } else {
-            sqlx::query(crate::retrieval::vector_search_query(false))
-                .bind(&embedding)
-                .bind(job.tenant_id)
-                .fetch_all(db_pool)
-                .await
+            sqlx::query(&crate::retrieval::vector_search_query_with_limit(
+                false,
+                self.config.rag_top_k,
+            ))
+            .bind(&embedding)
+            .bind(job.tenant_id)
+            .fetch_all(db_pool)
+            .await
         }
         .map_err(|e| WorkerError::Database(format!("SQL execution error: {}", e)))?;
 
@@ -651,8 +646,9 @@ impl RabbitMQManager {
         );
 
         // Obtém o token OAuth do Vertex AI quando o GcpAuthenticator (ADC) está disponível.
-        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o
-        // llm::generate_response cai para o Google AI Studio (API key) quando não há token.
+        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o Vertex AI
+        // é o último elo da cadeia — llm::generate_response tenta Google AI Studio e Ollama
+        // antes de precisar deste token.
         let vertex_token = match authenticator {
             Some(auth) => {
                 match auth
@@ -682,16 +678,34 @@ impl RabbitMQManager {
             crate::llm::AI_STUDIO_DEFAULT_BASE_URL,
             &self.config.gcp_chat_model_id,
         );
+        let openrouter_url = crate::llm::openrouter_url(crate::llm::OPENROUTER_DEFAULT_BASE_URL);
         let request_body =
             crate::llm::build_gemini_request(&system_instruction, &user_content, 0.2, 2048);
+        let ollama_url = crate::llm::ollama_chat_url(&self.config.ollama_base_url);
+
+        // Cliente dedicado à cadeia de LLM com connect_timeout curto: erros de conexão/DNS
+        // (host inalcançável, firewall descartando pacotes) devem pular para o próximo elo
+        // rapidamente, em vez de travar no timeout default do reqwest. Erros com status HTTP
+        // (429, 5xx) já são fail-fast por natureza — generate_response não faz retry.
+        let llm_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| client.clone());
 
         let start_llm = std::time::Instant::now();
         let response_text = crate::llm::generate_response(
-            &client,
+            &llm_client,
             &vertex_url,
             vertex_token.as_deref(),
             &ai_studio_url,
             self.config.google_ai_studio_api_key.as_deref(),
+            &ollama_url,
+            self.config.ollama_chat_model.as_deref(),
+            &openrouter_url,
+            self.config.openrouter_api_key.as_deref(),
+            &self.config.openrouter_model,
+            &system_instruction,
+            &user_content,
             &request_body,
         )
         .await?;
@@ -712,5 +726,73 @@ impl RabbitMQManager {
             )
             .await?;
         Ok(())
+    }
+}
+
+/// Converte os `ChunkData` retornados pela busca RAG em `DelegatedChunkData`,
+/// descartando (e logando) qualquer chunk cujo `id` não seja uma string ou não
+/// seja um UUID válido, em vez de silenciosamente colapsar para um UUID nulo.
+fn chunks_to_delegated(chunks: Vec<ChunkData>) -> Vec<DelegatedChunkData> {
+    chunks
+        .into_iter()
+        .filter_map(
+            |c| match c.id.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()) {
+                Some(chunk_id) => Some(DelegatedChunkData {
+                    chunk_id,
+                    text: c.content,
+                    score: c.score,
+                }),
+                None => {
+                    eprintln!(
+                        "WARN: chunk descartado - id ausente ou invalido (esperado UUID): {:?}",
+                        c.id
+                    );
+                    None
+                }
+            },
+        )
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunks_to_delegated_keeps_valid_uuid_chunks() {
+        let valid_id = uuid::Uuid::new_v4();
+        let chunks = vec![ChunkData {
+            id: serde_json::Value::String(valid_id.to_string()),
+            content: "hello".to_string(),
+            score: 0.9,
+        }];
+
+        let result = chunks_to_delegated(chunks);
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].chunk_id, valid_id);
+    }
+
+    #[test]
+    fn chunks_to_delegated_discards_invalid_or_missing_id_instead_of_nil_uuid() {
+        let chunks = vec![
+            ChunkData {
+                id: serde_json::Value::String("not-a-uuid".to_string()),
+                content: "invalid".to_string(),
+                score: 0.5,
+            },
+            ChunkData {
+                id: serde_json::Value::Null,
+                content: "missing".to_string(),
+                score: 0.5,
+            },
+        ];
+
+        let result = chunks_to_delegated(chunks);
+
+        // Nenhum chunk com id invalido deve ser silenciosamente substituido
+        // por um UUID nulo indistinguivel de um id legitimo.
+        assert!(result.is_empty());
+        assert!(!result.iter().any(|c| c.chunk_id.is_nil()));
     }
 }
