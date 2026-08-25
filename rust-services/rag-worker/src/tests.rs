@@ -17,6 +17,8 @@ mod tests {
         let old_location = env::var("GCP_LOCATION").ok();
         let old_chat_model = env::var("GCP_CHAT_MODEL_ID").ok();
         let old_ai_studio_key = env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
+        let old_ollama_base_url = env::var("OLLAMA_BASE_URL").ok();
+        let old_ollama_chat_model = env::var("OLLAMA_CHAT_MODEL").ok();
 
         env::remove_var("RABBITMQ_URL");
         env::remove_var("DATABASE_URL");
@@ -25,6 +27,8 @@ mod tests {
         env::remove_var("GCP_LOCATION");
         env::remove_var("GCP_CHAT_MODEL_ID");
         env::remove_var("GOOGLE_AI_STUDIO_API_KEY");
+        env::remove_var("OLLAMA_BASE_URL");
+        env::remove_var("OLLAMA_CHAT_MODEL");
 
         let config = Config::from_env();
         assert!(config.is_ok());
@@ -42,6 +46,8 @@ mod tests {
         assert_eq!(cfg.gcp_location, "us-central1");
         assert_eq!(cfg.gcp_chat_model_id, "gemini-2.5-flash");
         assert_eq!(cfg.google_ai_studio_api_key, None);
+        assert_eq!(cfg.ollama_base_url, "http://ollama:11434");
+        assert_eq!(cfg.ollama_chat_model, None);
 
         // Restore variables
         if let Some(val) = old_rabbitmq {
@@ -64,6 +70,39 @@ mod tests {
         }
         if let Some(val) = old_ai_studio_key {
             env::set_var("GOOGLE_AI_STUDIO_API_KEY", val);
+        }
+        if let Some(val) = old_ollama_base_url {
+            env::set_var("OLLAMA_BASE_URL", val);
+        }
+        if let Some(val) = old_ollama_chat_model {
+            env::set_var("OLLAMA_CHAT_MODEL", val);
+        }
+    }
+
+    #[test]
+    fn test_config_ollama_read_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let old_base_url = env::var("OLLAMA_BASE_URL").ok();
+        let old_chat_model = env::var("OLLAMA_CHAT_MODEL").ok();
+
+        env::set_var("OLLAMA_BASE_URL", "http://localhost:11434");
+        env::set_var("OLLAMA_CHAT_MODEL", "llama3.2");
+
+        let config = Config::from_env();
+        assert!(config.is_ok());
+        let cfg = config.unwrap();
+        assert_eq!(cfg.ollama_base_url, "http://localhost:11434");
+        assert_eq!(cfg.ollama_chat_model, Some("llama3.2".to_string()));
+
+        if let Some(val) = old_base_url {
+            env::set_var("OLLAMA_BASE_URL", val);
+        } else {
+            env::remove_var("OLLAMA_BASE_URL");
+        }
+        if let Some(val) = old_chat_model {
+            env::set_var("OLLAMA_CHAT_MODEL", val);
+        } else {
+            env::remove_var("OLLAMA_CHAT_MODEL");
         }
     }
 
