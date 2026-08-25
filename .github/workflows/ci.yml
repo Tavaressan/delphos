@@ -217,7 +217,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
 
@@ -511,7 +511,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -544,7 +544,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -614,7 +614,7 @@ jobs:
           deno install
 
       - name: Next.js Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             frontend/.next/cache
@@ -777,11 +777,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: needs.changes.outputs.rust == 'true' && steps.probe.outputs.exists == 'false'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build and push Rust builder base
         if: needs.changes.outputs.rust == 'true' && steps.probe.outputs.exists == 'false'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./rust-services
           file: ./rust-services/Dockerfile.builder
@@ -823,7 +823,7 @@ jobs:
 
       - name: Set up Docker Buildx
         if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
@@ -858,7 +858,7 @@ jobs:
 
       - name: Build and push ${{ matrix.service }} image
         if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./rust-services
           file: ./rust-services/${{ matrix.service }}/Dockerfile
@@ -885,7 +885,7 @@ jobs:
 
       # Issue #176: CVEs conhecidas na imagem publicada (SO + deps do binário).
       - name: Scan ${{ matrix.service }} image (Trivy)
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
@@ -898,7 +898,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Bloquear merge em CVE CRITICAL
-        if: needs.changes.outputs.rust == 'true'
+        if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_BASE }}/${{ matrix.service }}:${{ github.sha }}
@@ -922,7 +922,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -948,7 +948,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push java-core image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./java-core
           file: ./java-core/Dockerfile
@@ -997,7 +997,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -1023,7 +1023,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./frontend/Dockerfile
@@ -1074,7 +1074,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -1100,7 +1100,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push crew-worker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile
@@ -1148,13 +1148,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # `load: true` + tag local (sem push) para o Trivy conseguir escanear
       # a imagem abaixo — esta imagem nunca é publicada no GHCR (só validação
       # de build), então não usa o padrão de tags SHA/latest dos demais jobs.
       - name: Build script-executor image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile.executor
@@ -1325,7 +1325,7 @@ jobs:
             core embedding-service ingestion-worker rag-worker workflow-worker crew-worker frontend
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # `script-executor` fica fora do GHCR (não é um dos 4 jobs
       # docker-build-* publicados pela #203). Continua buildado localmente
@@ -1336,7 +1336,7 @@ jobs:
       # imagem no daemon local sob a tag que docker-compose.ci-ports.yml
       # espera, para que o `up` seguinte não precise buildar de novo.
       - name: Build script-executor image (cache GHA)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./python-services/crew-worker
           file: ./python-services/crew-worker/Dockerfile.executor
