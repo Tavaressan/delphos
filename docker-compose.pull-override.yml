@@ -1,0 +1,49 @@
+# Override LOCAL (não commitado) para o teste manual do fallback Ollama (PR #416).
+# Objetivo: reaproveitar do GHCR as imagens dos serviços que esta branch NÃO altera
+# (core, ingestion-worker, workflow-worker, frontend), evitando rebuild local deles.
+# Os serviços realmente alterados pela branch (embedding-service, rag-worker,
+# crew-worker) continuam usando o `build:` do docker-compose.yml.
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.pull-override.yml \
+#     pull core ingestion-worker workflow-worker frontend
+#   docker compose -f docker-compose.yml -f docker-compose.pull-override.yml \
+#     --profile local-ai up -d --build embedding-service rag-worker crew-worker
+#   docker compose -f docker-compose.yml -f docker-compose.pull-override.yml \
+#     --profile local-ai up -d
+
+services:
+  # core: sem override de image — volta a usar o `build:` local do
+  # docker-compose.yml (necessário após editar AgentExecutionEventListener.java).
+  core:
+    # Expõe a API direto no host: o Caddy exige TLS com DNS challenge
+    # ($DOMAIN_NAME), inviável para este teste manual sem domínio real.
+    ports:
+      - "8080:8080"
+  ingestion-worker:
+    image: ghcr.io/tavaressan/alfabra-vector/ingestion-worker:latest
+  workflow-worker:
+    image: ghcr.io/tavaressan/alfabra-vector/workflow-worker:latest
+  # frontend: sem override de image aqui — volta a usar o `build:` local do
+  # docker-compose.yml (necessário após editar useExecution.ts).
+  # Reaproveita os modelos já baixados no Ollama do host (~/.ollama, 13GB)
+  # em vez de puxar de novo dentro do container. Bind-mount só para este
+  # teste manual — o volume nomeado `ollama_data` do compose original não
+  # é usado enquanto este override estiver ativo.
+  ollama:
+    volumes:
+      - /Users/vitortavares/.ollama:/root/.ollama
+  rag-worker:
+    environment:
+      OLLAMA_CHAT_MODEL: "llama3.2:1b"
+  embedding-service:
+    environment:
+      EMBEDDING_PROVIDER: "ollama"
+      OLLAMA_EMBEDDING_MODEL: "nomic-embed-text"
+  # Sem isso, o crew-worker cai direto no Vertex AI quando o AI Studio falha
+  # (503/rate-limit) — e o Vertex do projeto `alfabra-platform` está sem
+  # billing habilitado, gerando 403 BILLING_DISABLED. Com OLLAMA_CHAT_MODEL
+  # setado, a cadeia (crewai_adapter.py) passa a ser AI Studio -> Ollama -> Vertex.
+  crew-worker:
+    environment:
+      OLLAMA_CHAT_MODEL: "llama3.2:1b"
