@@ -18,6 +18,29 @@ pub struct AppState {
     pub authenticator: Option<shared::gcp::GcpAuthenticator>,
 }
 
+/// Provider de embeddings selecionado via `EMBEDDING_PROVIDER`. `Google` engloba a cadeia
+/// Vertex AI → Google AI Studio já existente; `Ollama` é o provider local (redundância e
+/// fidelidade de teste); `Mock` gera embeddings determinísticos sintéticos sem chamar rede.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EmbeddingProvider {
+    Mock,
+    Google,
+    Ollama,
+}
+
+impl EmbeddingProvider {
+    fn from_env() -> Self {
+        match std::env::var("EMBEDDING_PROVIDER")
+            .unwrap_or_else(|_| "real".to_string())
+            .as_str()
+        {
+            "mock" => EmbeddingProvider::Mock,
+            "ollama" => EmbeddingProvider::Ollama,
+            _ => EmbeddingProvider::Google,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct EmbeddingsRequest {
     input: Vec<String>,
@@ -64,12 +87,12 @@ async fn handle_embeddings(
             .into_response();
     }
 
-    let provider = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
-    let model =
-        std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "gemini-embedding-001".to_string());
+    let provider = EmbeddingProvider::from_env();
     let dimensions = payload.dimensions.unwrap_or(768);
 
-    if provider == "mock" {
+    if provider == EmbeddingProvider::Mock {
+        let model =
+            std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "gemini-embedding-001".to_string());
         let data: Vec<EmbeddingData> = payload
             .input
             .iter()
@@ -93,7 +116,53 @@ async fn handle_embeddings(
         return (StatusCode::OK, Json(response)).into_response();
     }
 
+    if provider == EmbeddingProvider::Ollama {
+        let model = std::env::var("OLLAMA_EMBEDDING_MODEL")
+            .unwrap_or_else(|_| "nomic-embed-text".to_string());
+        let base_url =
+            std::env::var("OLLAMA_BASE_URL").unwrap_or_else(|_| "http://ollama:11434".to_string());
+        let url = embedding_client::ollama_embed_url(&base_url);
+
+        let client = reqwest::Client::new();
+        let embeddings =
+            match embedding_client::call_ollama_embeddings(&client, &url, &payload.input, &model)
+                .await
+            {
+                Ok(e) => e,
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response();
+                }
+            };
+
+        let data: Vec<EmbeddingData> = embeddings
+            .into_iter()
+            .enumerate()
+            .map(|(idx, values)| EmbeddingData {
+                object: "embedding",
+                index: idx,
+                embedding: values,
+            })
+            .collect();
+
+        let response = EmbeddingsResponse {
+            object: "list",
+            data,
+            model,
+            usage: Usage {
+                prompt_tokens: payload.input.len() * 2,
+                total_tokens: payload.input.len() * 2,
+            },
+        };
+        return (StatusCode::OK, Json(response)).into_response();
+    }
+
+    // EmbeddingProvider::Google: cadeia Vertex AI → Google AI Studio.
+    let model =
+        std::env::var("EMBEDDING_MODEL").unwrap_or_else(|_| "gemini-embedding-001".to_string());
     let ai_studio_api_key = std::env::var("GOOGLE_AI_STUDIO_API_KEY").ok();
+    let voyage_api_key = std::env::var("VOYAGE_API_KEY").ok();
+    let voyage_model =
+        std::env::var("VOYAGE_MODEL").unwrap_or_else(|_| "voyage-3.5-lite".to_string());
 
     let vertex_token: Option<String> = match &state.authenticator {
         Some(auth) => match auth
@@ -112,10 +181,10 @@ async fn handle_embeddings(
         None => None,
     };
 
-    if vertex_token.is_none() && ai_studio_api_key.is_none() {
+    if vertex_token.is_none() && ai_studio_api_key.is_none() && voyage_api_key.is_none() {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado e GOOGLE_AI_STUDIO_API_KEY ausente."
+            "Erro de autenticação: GOOGLE_APPLICATION_CREDENTIALS não configurado, GOOGLE_AI_STUDIO_API_KEY ausente e VOYAGE_API_KEY ausente."
                 .to_string(),
         )
             .into_response();
@@ -128,9 +197,10 @@ async fn handle_embeddings(
     let vertex_url = embedding_client::vertex_ai_url(&region, &project_id, &model);
     let ai_studio_url =
         embedding_client::ai_studio_url(embedding_client::AI_STUDIO_DEFAULT_BASE_URL, &model);
+    let voyage_url = embedding_client::voyage_ai_url(embedding_client::VOYAGE_DEFAULT_BASE_URL);
     let vertex_request = embedding_client::build_vertex_request(&payload.input, dimensions);
 
-    let client = reqwest::Client::new();
+    let client = embedding_client::build_http_client();
     let max_retries: u32 = std::env::var("EMBEDDING_MAX_RETRIES")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -147,6 +217,9 @@ async fn handle_embeddings(
         &payload.input,
         dimensions,
         &model,
+        &voyage_url,
+        voyage_api_key.as_deref(),
+        &voyage_model,
     )
     .await
     {
@@ -213,9 +286,9 @@ fn generate_mock_embedding(text: &str, dimension: usize) -> Vec<f32> {
 
 #[tokio::main]
 async fn main() {
-    let provider = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "real".to_string());
+    let provider = EmbeddingProvider::from_env();
 
-    let authenticator = if provider == "real" {
+    let authenticator = if provider == EmbeddingProvider::Google {
         println!("Inicializando GcpAuthenticator para o provider real...");
         let auth = match shared::gcp::GcpAuthenticator::new().await {
             Ok(a) => a,
@@ -233,7 +306,10 @@ async fn main() {
         println!("Conectividade com GCP confirmada.");
         Some(auth)
     } else {
-        println!("Provider configurado como mock. GCP Autenticador ignorado.");
+        println!(
+            "Provider configurado como {:?}. GCP Autenticador ignorado.",
+            provider
+        );
         None
     };
 
@@ -369,6 +445,7 @@ mod tests {
         std::env::set_var("EMBEDDING_PROVIDER", "real");
         std::env::remove_var("GOOGLE_APPLICATION_CREDENTIALS");
         std::env::remove_var("GOOGLE_AI_STUDIO_API_KEY");
+        std::env::remove_var("VOYAGE_API_KEY");
 
         let state = AppState {
             authenticator: None,
@@ -392,5 +469,67 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let body_str = String::from_utf8_lossy(&body);
         assert!(body_str.contains("GOOGLE_APPLICATION_CREDENTIALS não configurado"));
+    }
+
+    #[tokio::test]
+    async fn test_embeddings_ollama_provider() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let mock_server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .and(wiremock::matchers::path("/api/embed"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({ "model": "nomic-embed-text", "embeddings": [[0.1, 0.2]] }),
+            ))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        std::env::set_var("EMBEDDING_PROVIDER", "ollama");
+        std::env::set_var("OLLAMA_BASE_URL", mock_server.uri());
+        std::env::set_var("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text");
+
+        let state = AppState {
+            authenticator: None,
+        };
+        let app = app(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/embeddings")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(r#"{"input": ["Olá Mundo"]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["model"], "nomic-embed-text");
+        assert_eq!(json["data"][0]["embedding"], serde_json::json!([0.1, 0.2]));
+
+        std::env::remove_var("OLLAMA_BASE_URL");
+        std::env::remove_var("OLLAMA_EMBEDDING_MODEL");
+    }
+
+    #[test]
+    fn test_embedding_provider_from_env() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+
+        std::env::set_var("EMBEDDING_PROVIDER", "mock");
+        assert_eq!(EmbeddingProvider::from_env(), EmbeddingProvider::Mock);
+
+        std::env::set_var("EMBEDDING_PROVIDER", "ollama");
+        assert_eq!(EmbeddingProvider::from_env(), EmbeddingProvider::Ollama);
+
+        std::env::set_var("EMBEDDING_PROVIDER", "real");
+        assert_eq!(EmbeddingProvider::from_env(), EmbeddingProvider::Google);
+
+        std::env::remove_var("EMBEDDING_PROVIDER");
+        assert_eq!(EmbeddingProvider::from_env(), EmbeddingProvider::Google);
     }
 }
