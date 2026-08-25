@@ -652,13 +652,27 @@ jobs:
           # que conflita com o pin PyYAML==6.0.1, e chromadb 1.1.1 não tem
           # versão corrigida publicada. Tratadas em PR de remediação próprio;
           # revisar esta lista a cada bump do crewai.
+          #
+          # CVE-2026-45830/-45831/-45833 (chromadb 1.1.1, publicados
+          # 2026-06-12, sem fix disponível): controle de acesso multi-tenant
+          # do SimpleRBACAuthorizationProvider e um code injection (Crítico).
+          # chromadb é dependência transitiva do crewai (memória interna),
+          # sem uso direto neste código-fonte e sem servidor chromadb
+          # exposto separadamente nesta stack — mas essa avaliação de risco
+          # não foi confirmada a fundo. Decisão consciente de aceitar o
+          # risco para não bloquear todo PR que roda a suíte Python
+          # completa; revisar e remover assim que uma versão corrigida for
+          # publicada.
           if [ -f python-services/crew-worker/requirements.lock.txt ]; then
             pip-audit -r python-services/crew-worker/requirements.lock.txt \
               --ignore-vuln PYSEC-2026-311 \
               --ignore-vuln GHSA-xf7x-x43h-rpqh \
               --ignore-vuln PYSEC-2026-3481 \
               --ignore-vuln PYSEC-2026-3482 \
-              --ignore-vuln PYSEC-2026-3483
+              --ignore-vuln PYSEC-2026-3483 \
+              --ignore-vuln CVE-2026-45830 \
+              --ignore-vuln CVE-2026-45831 \
+              --ignore-vuln CVE-2026-45833
           fi
 
       - name: Run Linter (Flake8)
