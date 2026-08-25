@@ -646,8 +646,9 @@ impl RabbitMQManager {
         );
 
         // Obtém o token OAuth do Vertex AI quando o GcpAuthenticator (ADC) está disponível.
-        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o
-        // llm::generate_response cai para o Google AI Studio (API key) quando não há token.
+        // Ausência de authenticator ou falha na obtenção do token não é fatal aqui: o Vertex AI
+        // é o último elo da cadeia — llm::generate_response tenta Google AI Studio e Ollama
+        // antes de precisar deste token.
         let vertex_token = match authenticator {
             Some(auth) => {
                 match auth
@@ -677,16 +678,34 @@ impl RabbitMQManager {
             crate::llm::AI_STUDIO_DEFAULT_BASE_URL,
             &self.config.gcp_chat_model_id,
         );
+        let openrouter_url = crate::llm::openrouter_url(crate::llm::OPENROUTER_DEFAULT_BASE_URL);
         let request_body =
             crate::llm::build_gemini_request(&system_instruction, &user_content, 0.2, 2048);
+        let ollama_url = crate::llm::ollama_chat_url(&self.config.ollama_base_url);
+
+        // Cliente dedicado à cadeia de LLM com connect_timeout curto: erros de conexão/DNS
+        // (host inalcançável, firewall descartando pacotes) devem pular para o próximo elo
+        // rapidamente, em vez de travar no timeout default do reqwest. Erros com status HTTP
+        // (429, 5xx) já são fail-fast por natureza — generate_response não faz retry.
+        let llm_client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .build()
+            .unwrap_or_else(|_| client.clone());
 
         let start_llm = std::time::Instant::now();
         let response_text = crate::llm::generate_response(
-            &client,
+            &llm_client,
             &vertex_url,
             vertex_token.as_deref(),
             &ai_studio_url,
             self.config.google_ai_studio_api_key.as_deref(),
+            &ollama_url,
+            self.config.ollama_chat_model.as_deref(),
+            &openrouter_url,
+            self.config.openrouter_api_key.as_deref(),
+            &self.config.openrouter_model,
+            &system_instruction,
+            &user_content,
             &request_body,
         )
         .await?;
