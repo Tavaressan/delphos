@@ -1,197 +1,119 @@
-# Análise Técnica Consolidada (Code Analysis) — Alfabra-Vector
+# Módulo: frontend
 
-Este documento fornece a especificação técnica dos componentes, fluxos de controle e dicionário de dados do sistema legado **Alfabra-Vector**, extraídos sob a diretriz de nível **Essencial**.
+## Fluxo de controle
+- **Chat e Execução**: O usuário interage via `ChatCanvas`, enviando prompts (`handleSend`). O `useExecution` gerencia o polling de status da execução, enquanto o `useStreamingMessage` gerencia o streaming SSE da resposta.
+- **Catálogo de Agentes**: `CatalogClient` carrega agentes via `apiClient.get`, e permite publicar, desativar, editar e excluir (com tratamentos de erro específicos como HTTP 409).
+- **Agendamentos**: Gerenciado via `CreateScheduleDialog` e hooks como `useSchedules`, com chamadas para criar e cancelar agendamentos via cron.
+- **Base de Conhecimento**: `KnowledgeBasePage` permite o upload de arquivos (`handleFileSelect`) via `FormData`, realizando polling automático (a cada 3s) quando há documentos com status `UPLOADING` ou `PROCESSING`. Busca semântica também está conectada.
+- **Tratamento de erros e exceções**: Centralizado na classe `ApiError` em `apiClient.ts`, que captura o timeout ou respostas não-OK e lança exceções padronizadas baseadas em `ErrorResponse`.
 
----
+## Algoritmos e Lógica
+- **Conversão de Timeline**: `timelineToTasks` converte eventos da execução do agente em tarefas consumidas pelo `TaskPanel` (sucesso -> completed, warning -> in_progress, danger -> failed).
+- **Validação de Upload de Agente**: `validateAgentZipFileName` assegura que uploads de agentes sejam feitos obrigatoriamente através de pacotes `.zip` contendo os artefatos corretos, rejeitando `.md` avulso (Issue #110).
+- **Filtragem e Ordenação**: No `KnowledgeBasePage`, há lógica condicional detalhada de ordenação baseada em `kbSortField` (nome, tamanho, data de criação) combinada com filtro textual de nome.
+- **Validação de MCP**: Lógica de verificação de campos vazios e checagem de duplicidade de nomes de servidores MCP (`validateMcpConfigInput` e `addMcpConfig`).
 
-## 1. Visão Geral da Arquitetura
+## Estruturas de Dados
+- Uso intensivo de interfaces DTO e entidades de domínio padronizadas, extraídas da camada `domain/entities`.
+- Referenciar dicionário de dados (`data-dictionary.md`) para campos precisos de `Agent`, `Message`, `AgentExecution`, `Schedule`, `McpServerConfig`.
 
-O **Alfabra-Vector** é uma plataforma corporativa de Inteligência Artificial e Retrieval-Augmented Generation (RAG) voltada para o domínio de transportes verticais (elevadores e escadas rolantes). O sistema é estruturado como um monorepo composto por:
+## Metadados e Configurações
+- **Tipos base (Enums equivalentes)**: `DocumentStatus`, `ExecutionStatus`, `AgentStatus`, `MessageRole`.
+- **Configurações MCP**: `McpTransport` (`stdio` | `sse`).
+- **Modelos**: `LlmModel` (`gemini-1.5-pro` | `gemini-1.5-flash` | `gemini-2.0-flash`) e `EmbeddingModel` (`text-embedding-004` | `text-multilingual-embedding-002`).
+- A configuração da URL base para as chamadas de API verifica `NEXT_PUBLIC_BACKEND_URL`, fazendo fallback para `http://localhost:8000` em ambiente de desenvolvimento.
 
-- **Frontend (`frontend/`)**: Interface do usuário construída com Next.js (React) e TypeScript.
-- **Java Core (`java-core/`)**: Backend de orquestração e API Rest estruturado em Spring Boot 3.2.5.
-- **Rust Services (`rust-services/`)**: Workers de alto desempenho para ingestão de dados, busca vetorial e controle de fluxos (DAG).
-- **Python Services (`python-services/`)**: Workers baseados em CrewAI para orquestração de múltiplos agentes de IA.
-- **Infrastructure (`infrastructure/`)**: Gateway Caddy para proxy reverso e script de firewall UFW.
+# Módulo: java-core
 
-### Desenho do Fluxo Operacional (REST a Workers)
+## Fluxo de controle
+- **Criação e Atualização de Agentes**: `AgentService.createAgent` e `AgentService.updateAgentPackage` validam pacotes ZIP de agentes, extraem `systemInstructions`, persistem custom tools (`tools/*.py`), e fazem upload de documentos anexos para o MinIO, publicando em seguida na fila RabbitMQ `document.ingestion.jobs`.
+- **Tratamento de Transações**: `AgentService` usa `TransactionSynchronizationManager.registerSynchronization` para garantir que mensagens do RabbitMQ só sejam enviadas após o commit bem-sucedido no banco de dados.
+- **Processamento de Eventos de Execução**: `AgentExecutionEventListener` escuta a fila `agent.execution.events` no RabbitMQ, gerenciando a máquina de estados das execuções (STARTED, RETRIEVAL_RUNNING, THINKING, TOOL_RUNNING, COMPLETED, FAILED) e registrando `RetrievalEvent` e `ToolCall`.
 
-```
-[Frontend (useExecution)] 
-       │ 
-       ▼ (HTTP POST /api/executions)
-[Java Core (ExecutionController)]
-       │
-       ├─► (Salva Conversation/Message/AgentExecution no Postgres)
-       ▼ (Publica em RabbitMQ: agent.execution.jobs)
-[Python/Rust Workers] ◄───► [embedding-service (Rust)] ◄───► [PostgreSQL (pgvector)]
-       │
-       ▼ (Publica eventos em RabbitMQ: agent.execution.events)
-[Java Core (AgentExecutionEventListener)] 
-       │
-       ▼ (Atualiza tabela no Postgres)
-[Frontend Polling (2s)] ◄─── (HTTP GET /api/executions/{id})
-```
+## Algoritmos e Lógica
+- **Validação de Pacotes**: `parseZip` verifica a estrutura do arquivo ZIP, garantindo a presença de arquivo `.md` (instruções de sistema) na raiz, e limitando tamanho descompactado a 20MB. Ferramentas são identificadas e seus nomes validados por `TOOL_NAME_PATTERN`.
+- **Sanitização de Caminhos (Path Traversal)**: `validateDocumentEntryName` evita ataques de directory traversal (`../`) ao extrair nomes de arquivos.
+- **Extração de Erros**: O listener de eventos no RabbitMQ unifica mensagens de falha vindas de diferentes workers (Rust usa `error`, Python usa `reason`) no campo unificado `errorMessage`.
+- **Prevenção de AmqpRejectAndDontRequeueException**: Em caso de falha de processamento de evento, o listener usa uma transação isolada (`REQUIRES_NEW`) para marcar a execução como FAILED antes de descartar a mensagem na DLQ.
 
----
+## Estruturas de Dados
+- **Agentes**: `Agent`, `AgentCustomTool`.
+- **Execução**: `AgentExecution`, `ToolCall`, `RetrievalEvent`, `Message`, `Conversation`.
+- **Documentos**: `Document`, `DocumentChunk`.
+- Ver `data-dictionary.md` para campos exatos extraídos do domínio JPA (`com.company.core.domain.entities`).
 
-## 2. Análise por Módulo e Fluxos de Controle
+## Metadados e Configurações
+- **MinIO**: Bucket padrão configurável `agents-data`.
+- **RabbitMQ**: Exchanges e filas como `agent.execution.exchange`, `document.ingestion.jobs`, `agent.execution.events`.
+- **Status de Execução**: REQUESTED, QUEUED, STARTED, THINKING, TOOL_RUNNING, RETRIEVAL_RUNNING, COMPLETED, FAILED, CANCELLED, TIMEOUT.
 
-### 2.1. Módulo: Frontend
+# Módulo: rust-services
 
-- **Finalidade**: Interface gráfica para envio de prompts, criação de agentes, upload de conhecimento e monitoramento de execuções.
-- **Fluxo de Controle - Submissão e Polling (Texto)**:
-  1. O usuário submete um prompt através do componente `ChatCanvas`.
-  2. O hook [useExecution.ts](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/hooks/useExecution.ts) intercepta e inicia o estado `REQUESTED`.
-  3. Envia uma requisição HTTP POST para `/api/executions`.
-  4. Ao obter resposta do backend com o `executionId`, altera a timeline para o estado `QUEUED`.
-  5. Inicia um polling periódico via `setInterval` a cada 2 segundos.
-  6. A cada tick do polling, chama a API HTTP GET `/api/executions/{id}`.
-  7. A timeline transiciona de acordo com o status recebido: `QUEUED` ➔ `THINKING` ➔ `TOOL_RUNNING` ➔ `COMPLETED` / `FAILED`.
-  8. **Tratamento de Exceções**: Se o tempo total exceder 2 minutos (60 tentativas), interrompe o polling, define o erro como Timeout e transiciona a execução para `FAILED` localmente.
+O módulo `rust-services` é um workspace Cargo (monorepo Rust) contendo serviços de alto desempenho para tarefas pesadas, integrando-se via RabbitMQ e banco de dados.
 
----
+## Fluxo de controle
+- **ingestion-worker**: Lê da fila `document.ingestion.jobs`. Processa documentos em background (download do MinIO), extrai texto (`document-processing`), faz chunking, requisita embeddings (`embedding-service`) e grava na tabela `document_chunks` (pgvector). Possui um loop independente de *heartbeat reaper* para recuperar e marcar falhas em documentos presos no status `PROCESSING`. Em caso de erro contínuo, jobs são direcionados para uma DLQ (`document.ingestion.jobs.dlq`).
+- **rag-worker**: Lê da fila `agent.retrieval.queue`. Executa as buscas vetoriais reais usando HNSW no PostgreSQL (`pgvector`) e invoca LLMs (Vertex AI / Google AI Studio) para resumir informações, gerando eventos no RabbitMQ de término de retrieval.
+- **workflow-worker**: Lê da fila `agent.workflow.queue`. Age como um DAG Engine para execução de fluxos determinísticos, enviando de volta eventos de início, sucesso e falha para a fila de eventos principal (`agent.execution.events`).
+- **embedding-service**: API HTTP (via Axum) acessada por outros workers. Prove embeddings de texto fazendo chamadas externas para a Vertex AI / Google AI Studio, contando também com uma implementação *mock* para desenvolvimento local (`EMBEDDING_PROVIDER=mock`).
 
-### 2.2. Módulo: Java Core
+## Algoritmos e Lógica
+- **Extração de Texto (document-processing)**: Parsers robustos para PDF (`lopdf`), DOCX (`docx_rs`), Markdown e Texto Puro.
+- **Chunking (ingestion-worker)**: O texto é particionado com suporte nativo a overlap, controlável pelas variáveis `CHUNK_SIZE` e `CHUNK_OVERLAP`.
+- **Validação de Token e Mocking (embedding-service)**: Sistema resiliente que tenta buscar credentials do GCP Auth e tem fallbacks caso apenas uma API Key exista, além de possibilitar mock determinístico baseado em hash de texto.
+- **Transações e Limpeza Atômica (ingestion-worker)**: Ao realizar a ingestão de um documento já indexado, os chunks antigos são removidos transacionalmente antes de inserir os novos para evitar sujeira de dados.
 
-- **Finalidade**: API Gateway principal do sistema, manipulação de persistência (JPA) e orquestração de eventos de arquivos de conhecimento.
-- **Fluxo de Controle - Cadastro de Agentes ([AgentService.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/application/AgentService.java))**:
-  1. Recebe um arquivo ZIP contendo os dados do agente.
-  2. **Validação**: Verifica se o ZIP está vazio ou se o tamanho total descompactado excede o limite de **20MB** (lança `IllegalArgumentException`).
-  3. **Validação**: Varre o ZIP e exige a existência de pelo menos um arquivo `.md` na raiz. O conteúdo do primeiro `.md` encontrado é extraído e definido na propriedade `systemInstructions` do agente.
-  4. Persiste o `Agent` no banco PostgreSQL com o status inicial.
-  5. Envia o arquivo ZIP original para o bucket MinIO em `agents-data/agent-<id>/agent.zip`.
-  6. Varre novamente o ZIP, extrai individualmente os arquivos de conhecimento com extensões `.pdf`, `.docx`, `.txt`, `.md`, enviando-os ao MinIO.
-  7. Para cada arquivo de conhecimento aceito, cria um registro `Document` com status `PROCESSING` e publica um job de ingestão no RabbitMQ na exchange `agent.execution.exchange` (routing key: `document.ingestion.jobs`).
+## Estruturas de Dados
+- **IngestionJob**: `{ document_id, file_path, tenant_id, file_type }` recebido do RabbitMQ.
+- **EmbeddingsRequest / Response**: `{ input, dimensions }` enviado para a API de embeddings; resposta contém array de vetores e log de *usage* de tokens.
+- Consultar `data-dictionary.md` para campos exatos extraídos destas sub-estruturas.
 
-- **Fluxo de Controle - Roteamento de Eventos ([AgentExecutionEventListener.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/infrastructure/external/AgentExecutionEventListener.java))**:
-  1. Escuta eventos publicados no RabbitMQ na fila `agent.execution.events`.
-  2. Parseia o payload da mensagem JSON para identificar `eventType` e `executionId`.
-  3. Atualiza o status correspondente de `AgentExecution` no banco:
-     - `AgentExecutionStarted` ➔ Status `STARTED`.
-     - `RetrievalStarted` ➔ Status `RETRIEVAL_RUNNING`.
-     - `RetrievalCompleted` ➔ Status `THINKING` (e cria um registro de similaridade em `RetrievalEvent`).
-     - `ToolCallStarted` ➔ Status `TOOL_RUNNING` (e insere em `ToolCall`).
-     - `ToolCallFinished` ➔ Status `THINKING` (e atualiza o registro do `ToolCall`).
-     - `AgentExecutionFinished` ➔ Status `COMPLETED` (salva o output final e insere a resposta do assistente no histórico do chat `Message`).
-     - `AgentExecutionFailed` ➔ Status `FAILED` (grava o log de erro `errorMessage`).
+## Metadados e Configurações
+- **Ingestion**: `HEARTBEAT_TIMEOUT_MINUTES`, `INGESTION_MAX_RETRIES`, `INGESTION_DEV_FALLBACK`.
+- **Embeddings**: `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `EMBEDDING_MAX_RETRIES`.
+- **Servidores Axum**: Healthchecks configurados nas portas 8000 para facilitar probes do Kubernetes.
+- **RAG Configuration**: Conexão primária com GCP_CHAT_MODEL_ID e fallbacks para GOOGLE_AI_STUDIO_API_KEY.
 
----
+# Módulo: python-services
 
-### 2.3. Módulo: Rust Services
+## Fluxo de controle
+- **Consumo RabbitMQ (`main.py`)**: Consome da fila `agent.execution.jobs`. Roda o job num `contextvars.Context` isolado para evitar vazamento de eventos do CrewAI (issue #391).
+- **Adaptador CrewAI (`crewai_adapter.py`)**: Coordena a execução recebendo o payload (prompt, tenant_id, agent_id), inicializa a cadeia LLM, valida segurança (Prompt Injection/tamanho), emite eventos RabbitMQ (Started, Retrieval, ToolCall, Finished) e dispara o `Agent` do CrewAI.
+- **Recuperação e RAG**: Reescreve opcionalmente a query (`_rewrite_query`), consome `embedding-service` (via API REST) e executa busca vetorial cosseno no Postgres (`_search_db`).
+- **Sandbox de Ferramentas (`executor_core.py`)**: Para execução de scripts e custom tools, isola o script num processo `python3 -I` usando subprocessos (contenção de kernel via diretórios temporários, sem variáveis de ambiente, limite de timeout e MAX_OUTPUT_CHARS).
+- **Monitoramento de Saúde**: Caso exceções `StackDepthExceededError` atinjam o `POISON_THRESHOLD`, o worker força encerramento `os._exit(1)` (reiniciado via Docker restart policy) para limpar o state de contexto (issue #391).
 
-- **Finalidade**: Consumo assíncrono de tarefas pesadas de ingestão, busca vetorial e processamento de prompts via RAG.
-- **Fluxo de Controle - Execução de RAG ([rabbitmq.rs](file:///Users/vitortavares/Desktop/Alfabra-Vector/rust-services/rag-worker/src/rabbitmq.rs))**:
-  1. O worker `rag-worker` consome tarefas na fila RabbitMQ `agent.retrieval.queue`.
-  2. Publica o evento `RetrievalStarted` na fila de logs/events.
-  3. Dispara uma requisição HTTP POST para o `embedding-service` para converter a query de busca em um vetor de 768 dimensões.
-  4. Realiza uma busca vetorial no PostgreSQL por similaridade de cosseno usando o operador `<=>` do pgvector (limitado aos top 5 chunks). A busca filtra pelo `tenant_id` e isola os documentos associados ao `agent_id` correspondente.
-  5. Recupera as diretrizes operacionais do agente na tabela `agents` (se ausente, usa o prompt padrão Alfabra).
-  6. Monta o contexto final concatenando os 5 chunks com scores de similaridade e formata o payload para o Gemini.
-  7. Gera o token OAuth usando a biblioteca local `shared::gcp::GcpAuthenticator` e dispara a chamada para a API oficial do Vertex AI Gemini (`generateContent`).
-  8. Publica a resposta obtida em `RetrievalCompleted` com o texto final e detalhes de chunks de origem.
-  9. **Tratamento de Exceções**: Se qualquer chamada de rede falhar, publica o evento `AgentExecutionFailed`.
+## Algoritmos e Lógica
+- **LLM Fallback Pattern**: Implementado na classe `FallbackLLM`, tenta chamar primeiro a Google AI Studio e faz fallback automático para Vertex AI em caso de falha (ajustado via issue #389).
+- **Query Rewriting (issue #149)**: Passo de reescrita opt-in do prompt via LLM antes de gerar o embedding, com timeout rigoroso para evitar latência.
+- **Validação de Ferramentas**: As tools passam por validação AST rigorosa em `sandboxed_script_tool._validate_script` antes de rodarem no `executor_core.py`, bloqueando imports proibidos e dunder methods.
 
----
+## Estruturas de Dados
+- **QuotaValue**: DTO validado via Pydantic para o cálculo de cotas de execução no sandbox.
+- **Payloads de Eventos RabbitMQ**: `AgentExecutionStarted`, `RetrievalStarted`, `RetrievalCompleted`, `ToolCallStarted`, `ToolCallFinished`, `AgentExecutionFailed`, seguindo schema estruturado UUID/timestamp/payload.
 
-### 2.4. Módulo: Python Services
+## Metadados e Configurações
+- **Contenção**: Variáveis `CREW_WORKER_HEALTH_FILE` e `CREW_WORKER_POISON_THRESHOLD` (mitigação #391). Flag de CI `ALLOW_UNVALIDATED_SCRIPT` para testes extremos do sandbox sem AST.
+- **LLM / Vertex**: Variáveis como `CREW_WORKER_MODE` (real/mock), `VERTEX_AI_API_KEY`, `GCP_PROJECT_ID`, `GOOGLE_AI_STUDIO_API_KEY`, `GOOGLE_AI_STUDIO_CHAT_MODEL_ID`.
+- **Query Rewriting**: Opcional via `CREW_QUERY_REWRITING_ENABLED` e `CREW_QUERY_REWRITING_TIMEOUT_SECONDS`.
+- **RabbitMQ**: Conexão configurada por `RABBITMQ_HOST`, porta 5672, troca via `agent.execution.exchange` e filas auxiliares.
 
-- **Finalidade**: Orquestrar pipelines cognitivos mais complexos utilizando agentes inteligentes.
-- **Fluxo de Controle - Execução via CrewAI ([crewai_adapter.py](file:///Users/vitortavares/Desktop/Alfabra-Vector/python-services/crew-worker/src/runtime/crewai_adapter.py))**:
-  1. Consome mensagens na fila `agent.execution.jobs`.
-  2. Publica `AgentExecutionStarted` e executa um fluxo de busca inicial na base vetorial (RAG) direto via psycopg2.
-  3. Instancia ferramentas locais (`@tool`):
-     - `calculate_sandbox_quota`: Calcula o total de tokens do sandbox usados por um tenant. Publica eventos de início e fim da ferramenta no RabbitMQ.
-     - `search_knowledge_base`: Expõe a busca vetorial por similaridade diretamente à LLM para buscas sob demanda.
-  4. Define o agente do CrewAI `Elevator Specialist` com goal e backstory técnicos focados em transporte vertical da Alfabra.
-  5. Cria uma `Task` com o prompt do usuário injetando as ferramentas e o contexto inicial.
-  6. Executa a orquestração do CrewAI sequencialmente via `kickoff()` e publica a resposta gerada com status `AgentExecutionFinished`.
+# Módulo: infrastructure
 
----
+## Fluxo de controle
+- **Provisionamento Web/Proxy**: O Caddy funciona como Gateway API, roteando `/api/*` e `/actuator/*` para o backend `java-core`, com fallback genérico para o `frontend` Next.js na porta 3000.
+- **Segurança (UFW)**: O `setup_firewall.sh` automatiza as regras UFW, resetando as antigas e impondo "default deny" na entrada. As conexões liberadas são estritamente em listas brancas (whitelist): SSH via `INFRA_IP_RANGE` e HTTP/HTTPS via `CORP_WHITELIST_RANGE`.
+- **Certificados SSL**: O Caddy implementa DNS Challenge embutido via módulo DuckDNS para emitir certificados HTTPS wildcard gratuitos, útil para IPs dinâmicos ou cenários corporativos.
+- **Implantação Cloud POC**: O arquivo `render.yaml` descreve a especificação Blueprint no provedor Render para provisionar o serviço web do `rag-worker` conectando com Postgres (CloudAMQP gerenciado manualmente).
 
-### 2.5. Módulo: Infrastructure
+## Algoritmos e Lógica
+- **Resolução Automática DuckDNS**: O módulo Caddy resolve requisições ACME enviando chamadas API usando a variável de ambiente `DUCKDNS_TOKEN`, eliminando a necessidade de expor a porta 80.
+- **Hardening Shell Script**: O script UFW verifica previlégios de root, zera policies antigas, define deny-by-default, e emite avisos importantes sobre as interfaces do Docker que precisam fazer bypass.
 
-- **Finalidade**: Roteamento unificado externo e segurança local de portas na máquina host.
-- **Fluxo de Controle - Roteamento Caddy e Firewall**:
-  1. O Caddy Server escuta nas portas HTTP `80` e HTTPS `443` utilizando DuckDNS.
-  2. Requisições que começam com `/api/*` ou `/actuator/*` são encaminhadas diretamente para o Spring Boot backend na porta `core:8080`.
-  3. Todas as demais requisições (rotas estáticas e dinâmicas da Web UI) são encaminhadas ao Next.js frontend na porta `frontend:3000`.
-  4. O script [setup_firewall.sh](file:///Users/vitortavares/Desktop/Alfabra-Vector/infrastructure/setup_firewall.sh) bloqueia acessos externos diretos para as portas do Postgres (pgvector), Redis, MinIO e RabbitMQ, permitindo apenas tráfego interno no Docker. SSH é restrito a `INFRA_IP_RANGE` e Web às subredes da empresa `CORP_WHITELIST_RANGE`.
+## Estruturas de Dados
+- Não há definição estrita de estruturas de código/domínio neste módulo (IaC declarativa).
 
----
-
-## 3. Dicionário de Dados Resumido
-
-Abaixo estão as tabelas consolidadas representando os modelos e entidades extraídos diretamente do código-fonte do monorepo.
-
-### 3.1. Entidade: User
-*Mapeada em:* [entities/index.ts](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/domain/entities/index.ts) / [User.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/domain/entities/User.java)
-
-| Campo | Tipo | Obrigatório | Descrição | Confiança |
-|-------|------|-------------|-----------|-----------|
-| `id` | UUID / String | Sim | Identificador único do usuário. | 🟢 CONFIRMADO |
-| `username` | String | Sim | Nome de login único. | 🟢 CONFIRMADO |
-| `email` | String | Sim | Email do usuário. | 🟢 CONFIRMADO |
-| `firstName` | String | Não | Primeiro nome. | 🟢 CONFIRMADO |
-| `lastName` | String | Não | Sobrenome. | 🟢 CONFIRMADO |
-| `status` | String | Sim | Estado do registro ('ACTIVE', 'INACTIVE'). | 🟢 CONFIRMADO |
-
----
-
-### 3.2. Entidade: Agent
-*Mapeada em:* [entities/index.ts](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/domain/entities/index.ts) / [Agent.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/domain/entities/Agent.java)
-
-| Campo | Tipo | Obrigatório | Descrição | Confiança |
-|-------|------|-------------|-----------|-----------|
-| `id` | UUID / String | Sim | Identificador único do agente. | 🟢 CONFIRMADO |
-| `name` | String | Sim | Nome descritivo do agente. | 🟢 CONFIRMADO |
-| `systemInstructions` | String | Não | Instruções comportamentais extraídas do ZIP. | 🟢 CONFIRMADO |
-| `zipPath` | String | Não | Caminho do arquivo zip original no MinIO. | 🟢 CONFIRMADO |
-| `tenantId` | UUID / String | Sim | Identificador do tenant de isolamento. | 🟢 CONFIRMADO |
-
----
-
-### 3.3. Entidade: Document
-*Mapeada em:* [entities/index.ts](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/domain/entities/index.ts) / [Document.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/domain/entities/Document.java)
-
-| Campo | Tipo | Obrigatório | Descrição | Confiança |
-|-------|------|-------------|-----------|-----------|
-| `id` | UUID / String | Sim | Identificador do documento de conhecimento. | 🟢 CONFIRMADO |
-| `name` | String | Sim | Nome do arquivo original. | 🟢 CONFIRMADO |
-| `filePath` | String | Sim | Caminho físico no MinIO. | 🟢 CONFIRMADO |
-| `fileSize` | Long / String | Sim | Tamanho do arquivo. | 🟢 CONFIRMADO |
-| `fileType` | String | Sim | Extensão do arquivo (pdf, docx, txt, md). | 🟢 CONFIRMADO |
-| `status` | String | Sim | Estado da ingestão ('UPLOADING', 'PROCESSING', 'INDEXED', 'FAILED'). | 🟢 CONFIRMADO |
-| `tenantId` | UUID / String | Sim | Identificador do tenant. | 🟢 CONFIRMADO |
-
----
-
-### 3.4. Entidade: AgentExecution
-*Mapeada em:* [entities/index.ts](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/domain/entities/index.ts) / [AgentExecution.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/domain/entities/AgentExecution.java)
-
-| Campo | Tipo | Obrigatório | Descrição | Confiança |
-|-------|------|-------------|-----------|-----------|
-| `id` | UUID / String | Sim | Identificador único da tarefa de execução. | 🟢 CONFIRMADO |
-| `conversationId` | UUID / String | Sim | ID do chat de origem. | 🟢 CONFIRMADO |
-| `agentId` | UUID / String | Sim | ID do agente executor. | 🟢 CONFIRMADO |
-| `status` | String | Sim | Estado da execução ('REQUESTED', 'QUEUED', 'STARTED', 'RETRIEVAL_RUNNING', 'TOOL_RUNNING', 'THINKING', 'COMPLETED', 'FAILED'). | 🟢 CONFIRMADO |
-| `promptFinal` | String | Sim | Prompt original formatado enviado pelo usuário. | 🟢 CONFIRMADO |
-| `outputResult` | String | Não | Resposta consolidada gerada pela LLM. | 🟢 CONFIRMADO |
-| `errorMessage` | String | Não | Detalhes do erro em caso de falha. | 🟢 CONFIRMADO |
-| `tokensConsumed` | Integer | Não | Contagem de tokens consumidos no processamento. | 🟢 CONFIRMADO |
-| `startedAt` | Instant / String | Sim | Timestamp de início do request. | 🟢 CONFIRMADO |
-| `finishedAt` | Instant / String | Não | Timestamp de conclusão do processamento. | 🟢 CONFIRMADO |
-
----
-
-### 3.5. Entidade: Message
-*Mapeada em:* [entities/index.ts](file:///Users/vitortavares/Desktop/Alfabra-Vector/frontend/src/domain/entities/index.ts) / [Message.java](file:///Users/vitortavares/Desktop/Alfabra-Vector/java-core/src/main/java/com/company/core/domain/entities/Message.java)
-
-| Campo | Tipo | Obrigatório | Descrição | Confiança |
-|-------|------|-------------|-----------|-----------|
-| `id` | UUID / String | Sim | Identificador único da mensagem no histórico. | 🟢 CONFIRMADO |
-| `conversationId` | UUID / String | Sim | Relacionamento com o chat. | 🟢 CONFIRMADO |
-| `authorRole` | String | Sim | Papel do emissor ('USER', 'ASSISTANT', 'SYSTEM'). | 🟢 CONFIRMADO |
-| `content` | String | Sim | Texto da mensagem. | 🟢 CONFIRMADO |
-| `createdAt` | Instant / String | Sim | Data de envio da mensagem. | 🟢 CONFIRMADO |
-| `citation` | String | Não | Referência aos chunks ou documentos citados. | 🟡 INFERIDO |
+## Metadados e Configurações
+- **Caddy**: Usa variáveis como `ACME_CA_URL`, `ACME_EMAIL`, `DOMAIN_NAME`, `DUCKDNS_TOKEN`. O tempo de propagação do DNS é estipulado em 60s com timeout de 5m.
+- **Render**: Utiliza as variáveis `DATABASE_URL` (injetada a partir do banco provisionado), `RUST_LOG=info`, `RABBITMQ_URL` (manual sync).
+- **Postgres Initialization**: O arquivo `init.sql` carrega as dependências estritas necessárias logo no deploy (`pgvector`, `uuid-ossp`).

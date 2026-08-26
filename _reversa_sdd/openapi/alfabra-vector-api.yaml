@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: Alfabra-Vector API
+  description: API Gateway do orquestrador de IA Alfabra-Vector
+  version: 1.0.0
+servers:
+  - url: 'http://localhost:8080/api'
+    description: Servidor de desenvolvimento
+paths:
+  /agents:
+    get:
+      summary: Lista todos os agentes catalogados
+      tags:
+        - Agentes
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /agents/upload:
+    post:
+      summary: Realiza o upload de um ZIP contendo o pacote de um novo Agente
+      tags:
+        - Agentes
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Agente validado e salvo com sucesso.
+        '400':
+          description: Zip mal formatado (ausência de README.md ou excesso de tamanho).
+        '415':
+          description: Mime type ou magic bytes recusados.
+  /chat/stream:
+    post:
+      summary: Inicia execução de um Agente e abre conexão SSE
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+                - agentId
+              properties:
+                prompt:
+                  type: string
+                agentId:
+                  type: string
+                  format: uuid
+                conversationId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: OK. Retorna Server-Sent Events de texto e status assíncronos.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /knowledge:
+    get:
+      summary: Lista documentos da base
+      tags:
+        - Conhecimento
+      responses:
+        '200':
+          description: Sucesso
+  /knowledge/upload:
+    post:
+      summary: Sobe um documento PDF/DOCX para Ingestão e RAG
+      tags:
+        - Conhecimento
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Doc submetido e job `document.ingestion.jobs` enfileirado no AMQP.
+  /knowledge/{id}:
+    delete:
+      summary: Remove documento e seus chunks no DB
+      tags:
+        - Conhecimento
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Arquivo e Embeddings removidos com sucesso.

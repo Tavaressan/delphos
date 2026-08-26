@@ -1,69 +1,89 @@
 # Máquinas de Estado
 
-Documento gerado pelo agente **Detective** para mapear os ciclos de vida e as transições de estado das principais entidades do sistema.
+## 1. Agent Status (Agente)
+Entidade: `Agent`
 
----
-
-## 1. Ciclo de Vida do Documento (`documents.status`)
-
-A entidade `documents` possui uma máquina de estados estrita que acompanha o arquivo desde o envio inicial até a indexação final no banco de dados vetorial.
-
-### 1.1. Estados Definidos
-* **`UPLOADING` (Estado Inicial):** O documento foi registrado no banco e o arquivo físico/binário está sendo carregado no repositório de arquivos (S3/MinIO).
-* **`PROCESSING`:** O upload foi concluído com sucesso e o arquivo foi enviado para o pipeline de processamento (extração de texto, chunking e geração de embeddings).
-* **`INDEXED` (Estado Final de Sucesso):** O documento foi completamente processado, seus chunks foram gerados e armazenados com seus respectivos embeddings na tabela `document_chunks`. O documento está agora disponível para buscas semânticas (RAG).
-* **`FAILED` (Estado Final de Erro):** Ocorreu um erro em qualquer uma das etapas (upload, extração de texto ou geração de embeddings). O erro detalhado é persistido no campo `processing_error`.
-
-### 1.2. Tabela de Transições
-
-| Estado de Origem | Ação / Gatilho | Estado de Destino | Tipo de Transição | Confiança |
-|------------------|----------------|-------------------|-------------------|-----------|
-| *(Nenhum)* | Criação do registro no banco | `UPLOADING` | Automática (Default SQL) | 🟢 CONFIRMADO |
-| `UPLOADING` | Upload do arquivo concluído com sucesso | `PROCESSING` | Sistêmica | 🟡 INFERIDO |
-| `UPLOADING` | Falha na transferência ou timeout | `FAILED` | Sistêmica / Exceção | 🟡 INFERIDO |
-| `PROCESSING` | Extração e geração de embeddings concluídas | `INDEXED` | Sistêmica | 🟢 CONFIRMADO |
-| `PROCESSING` | Falha ao extrair texto, erro na API de embeddings ou falha na escrita do banco | `FAILED` | Sistêmica / Exceção | 🟢 CONFIRMADO |
-
-### 1.3. Diagrama Mermaid
+| Status | Gatilho para transição |
+|--------|------------------------|
+| `DRAFT` | Criação inicial do pacote pelo usuário |
+| `IN_REVIEW` | Solicitação de publicação para revisão |
+| `PUBLISHED` | Aprovação do agente |
+| `ARCHIVED` | Ação de arquivar pelo usuário ou descontinuação |
 
 ```mermaid
 stateDiagram-v2
-    [*] --> UPLOADING : Registro criado (Default)
-    
-    UPLOADING --> PROCESSING : Upload concluído com sucesso
-    UPLOADING --> FAILED : Falha na transferência / timeout
-    
-    PROCESSING --> INDEXED : Processamento & indexação vetorial OK
-    PROCESSING --> FAILED : Erro de processamento (salva erro em processing_error)
-    
-    INDEXED --> [*]
-    FAILED --> [*]
+    [*] --> DRAFT: create()
+    DRAFT --> IN_REVIEW: requestPublish()
+    IN_REVIEW --> PUBLISHED: approve()
+    IN_REVIEW --> DRAFT: reject()
+    PUBLISHED --> DRAFT: unpublish()
+    PUBLISHED --> ARCHIVED: archive()
+    ARCHIVED --> [*]
 ```
 
----
+## 2. Agent Execution Status (Execução)
+Entidade: `AgentExecution`
 
-## 2. Ciclo de Vida do Usuário (`users.status`)
-
-A entidade `users` gerencia a atividade de acesso dos operadores e administradores ao sistema.
-
-### 2.1. Estados Definidos
-* **`ACTIVE` (Estado Inicial):** Usuário registrado com sucesso e apto a fazer login e interagir com o sistema conforme seu papel.
-* **`INACTIVE` / `BANNED`:** Usuário desativado ou banido administrativamente, bloqueando qualquer tentativa de login ou requisição autenticada.
-
-### 2.2. Tabela de Transições
-
-| Estado de Origem | Ação / Gatilho | Estado de Destino | Tipo de Transição | Confiança |
-|------------------|----------------|-------------------|-------------------|-----------|
-| *(Nenhum)* | Criação do usuário | `ACTIVE` | Automática (Default SQL) | 🟢 CONFIRMADO |
-| `ACTIVE` | Administrador desativa/bane o usuário | `INACTIVE` / `BANNED` | Ação de Admin (`MANAGE_USERS`) | 🟡 INFERIDO |
-| `INACTIVE` / `BANNED` | Administrador reativa o usuário | `ACTIVE` | Ação de Admin (`MANAGE_USERS`) | 🟡 INFERIDO |
-
-### 2.3. Diagrama Mermaid
+| Status | Gatilho para transição |
+|--------|------------------------|
+| `REQUESTED` | Requisição feita no Frontend |
+| `QUEUED` | Salvo no banco de dados e colocado na fila do RabbitMQ |
+| `STARTED` | `Crew-worker` aceita o job e emite evento Started |
+| `THINKING` | LLM está formulando a resposta principal |
+| `RETRIEVAL_RUNNING` | Disparo de evento `RetrievalStarted` (Busca Semântica no Rust) |
+| `TOOL_RUNNING` | Disparo de evento `ToolCallStarted` (Sandbox Python rodando) |
+| `COMPLETED` | Tarefa finalizada com sucesso, evento `AgentExecutionCompleted` |
+| `FAILED` | Erro emitido pelo worker ou timeout, capturado por `AgentExecutionEventListener` |
+| `CANCELLED` | Cancelado via API antes do término |
+| `TIMEOUT` | Estourou tempo limite de execução |
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ACTIVE : Usuário criado (Default)
+    [*] --> REQUESTED: sendPrompt()
+    REQUESTED --> QUEUED: enqueue()
+    QUEUED --> STARTED: workerConsume()
+    STARTED --> THINKING: startLLM()
     
-    ACTIVE --> BANNED : Administrador executa banimento (MANAGE_USERS)
-    BANNED --> ACTIVE : Administrador reativa usuário
+    THINKING --> RETRIEVAL_RUNNING: needsContext()
+    RETRIEVAL_RUNNING --> THINKING: contextLoaded()
+    
+    THINKING --> TOOL_RUNNING: toolCall()
+    TOOL_RUNNING --> THINKING: toolResult()
+    
+    THINKING --> COMPLETED: finalize()
+    THINKING --> FAILED: runtimeError()
+    
+    STARTED --> FAILED: workerPoisoned()
+    
+    state "Cancelamento a qualquer momento" as Cancel
+    Cancel --> CANCELLED: userAction()
+    Cancel --> TIMEOUT: autoTimeout()
 ```
+
+## 3. Document Status (Documento)
+Entidade: `Document`
+
+| Status | Gatilho para transição |
+|--------|------------------------|
+| `UPLOADING` | Recebimento via multipart-form no Java Core e upload para o MinIO |
+| `PROCESSING` | Job enfileirado `document.ingestion.jobs` recebido pelo `ingestion-worker` |
+| `INDEXED` | Texto processado, chunking e embeddings inseridos no `pgvector` |
+| `FAILED` | Erro crítico no parse, rejeição por Magic Bytes/JavaScript, ou falha pós retries de DLQ |
+
+```mermaid
+stateDiagram-v2
+    [*] --> UPLOADING: uploadMinio()
+    UPLOADING --> PROCESSING: enqueueIngestion()
+    PROCESSING --> INDEXED: successVectorize()
+    PROCESSING --> PROCESSING: heartbeatReaperRetry()
+    PROCESSING --> FAILED: exceedRetriesOrInvalid()
+```
+
+## 4. Tool Call Status
+Entidade: `ToolCall`
+
+| Status | Gatilho para transição |
+|--------|------------------------|
+| `STARTED` | Disparo do evento `ToolCallStarted` via RabbitMQ |
+| `COMPLETED` | O subprocesso encerrou normalmente (código 0) e emitiu `ToolCallFinished` |
+| `FAILED` | O subprocesso falhou (código de erro) ou foi morto (excesso de tempo/uso) |

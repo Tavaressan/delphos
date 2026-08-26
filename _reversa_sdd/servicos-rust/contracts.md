@@ -1,86 +1,53 @@
-# Serviços Rust, Contratos HTTP Internos
+# Serviços Rust, Contratos e Integrações
 
-Este documento detalha os contratos e especificações das chamadas de rede que ocorrem na rede interna Docker entre o Ingestion Worker e as APIs locais Rust.
+Este arquivo consolida os contratos HTTP/AMQP dos micro-workers em Rust.
 
----
+## 1. REST API Interna (Axum)
 
-## 1. Document Processing API (`document-processing` na porta 8000)
-
-### `GET /healthz`
-Informa a saúde básica do serviço de extração de texto.
-
-* **Saída (Corpo da Resposta - HTTP 200 - Text):**
-```text
-OK
-```
-
-### `POST /process`
-*(Inferred contract)*
-Recebe o arquivo físico bruto e retorna a lista de trechos de texto extraídos e divididos (chunks) prontos para vetorização.
-
-* **Headers:** `Content-Type: multipart/form-data`
-* **Input (Form-Data):**
-  * `file`: Arquivo em formato binário (PDF, TXT, etc.).
-* **Saída (HTTP 200 - JSON):**
-```json
-{
-  "document_id": "e89ab157-94fa-4271-b63c-b2b2da7ef169",
-  "chunks": [
-    {
-      "chunk_index": 0,
-      "content": "Este é o conteúdo do primeiro parágrafo extraído do documento corporativo.",
-      "page_number": 1
-    },
-    {
-      "chunk_index": 1,
-      "content": "Este é o conteúdo do segundo parágrafo correspondente à seção de reembolsos.",
-      "page_number": 2
+### `embedding-service` API
+- **Endpoint:** `POST /v1/embeddings`
+- **Protocolo:** HTTP 1.1 / JSON
+- **Body (`EmbeddingsRequest`):**
+  ```json
+  {
+    "input": ["Chunk 1", "Chunk 2 text"],
+    "dimensions": 768
+  }
+  ```
+- **Response (`EmbeddingsResponse`):**
+  ```json
+  {
+    "object": "list",
+    "model": "gemini-embedding-001",
+    "data": [
+      {
+        "index": 0,
+        "embedding": [0.034, -0.012, 0.444, "..."]
+      },
+      {
+        "index": 1,
+        "embedding": [-0.011, 0.052, 0.999, "..."]
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 150,
+      "total_tokens": 150
     }
-  ]
-}
-```
+  }
+  ```
 
----
+## 2. Filas Consumidas (Inbound)
 
-## 2. Embedding Service API (`embedding-service` na porta 8000)
+### `document.ingestion.jobs` (`ingestion-worker`)
+- Evento postado pelo **Java Core**.
+- Espera um payload JSON com chaves UUID: `document_id`, `tenant_id`, path no MinIO e formato (`file_type`).
+- Envia resultado de Sucesso alterando o status no PostgreSQL diretamente, ou cai na `document.ingestion.jobs.dlq`.
 
-### `GET /healthz`
-Informa a saúde básica do serviço gerador de vetores.
+### `agent.retrieval.queue` (`rag-worker`)
+- Evento provável postado pelo **Python Worker** (quando detecta que a query tem RAG).
+- Requer `prompt_text`, `tenant_id` e limites extras opcionais.
+- A query processada tem seu resultado emitido de volta na fila principal (`agent.execution.events` como evento `RetrievalCompleted`).
 
-* **Saída (Corpo da Resposta - HTTP 200 - Text):**
-```text
-OK
-```
-
-### `POST /embeddings`
-*(Inferred contract)*
-Aceita strings e retorna os vetores numéricos gerados com a dimensionalidade correspondente ao modelo de embeddings configurado.
-
-* **Headers:** `Content-Type: application/json`
-* **Input (JSON):**
-```json
-{
-  "texts": [
-    "Este é o conteúdo do primeiro parágrafo extraído do documento corporativo.",
-    "Este é o conteúdo do segundo parágrafo correspondente à seção de reembolsos."
-  ]
-}
-```
-* **Saída (HTTP 200 - JSON):**
-```json
-{
-  "embeddings": [
-    {
-      "chunk_index": 0,
-      "embedding": [0.0023, -0.0142, 0.3452, "... N dimensões ..."]
-    },
-    {
-      "chunk_index": 1,
-      "embedding": [-0.0125, 0.0891, 0.1223, "... N dimensões ..."]
-    }
-  ]
-}
-```
-* **Códigos de Resposta:**
-  * `200 OK`: Geração realizada com sucesso.
-  * `502 Bad Gateway`: Erro ao contatar a API externa de LLM (OpenAI/Gemini).
+### `agent.workflow.queue` (`workflow-worker`)
+- Evento postado pelo Core quando um DAG é acionado.
+- Consome passos e re-escreve status de sucesso via banco ou enfileira próximo nó.
