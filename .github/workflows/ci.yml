@@ -97,7 +97,7 @@ jobs:
       # Pula toda a tentativa de self-hosted/EC2 para esse actor.
       - name: Configure AWS credentials (OIDC)
         if: github.actor != 'dependabot[bot]' && github.run_attempt > 1
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::076248672901:role/alfabra-ci-github-actions-start
           aws-region: us-east-1
