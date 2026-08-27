@@ -1,0 +1,94 @@
+# .github/workflows/ci-select-runner-test.yml
+#
+# Issue #426: valida em um workflow real (não só localmente) que a inversão
+# de prioridade GitHub-hosted -> self-hosted funciona. Dois jobs:
+#
+# 1. unit-tests: roda scripts/ci-select-runner.test.sh (mock do `gh`, sem
+#    chamada de rede) - cobre 1ª tentativa x retry x dependabot x
+#    disponibilidade do self-hosted.
+# 2. simulate-primary-runner-allocation-failure: simula a falha de alocação
+#    do runner primário citada no critério de aceite da issue #426 (mockando
+#    RUN_ATTEMPT=2, equivalente a um `job cancelado`/`runner_id: 0` na
+#    tentativa anterior) com o self-hosted "online" via stub, e confirma que
+#    scripts/ci-select-runner.sh resolve para o pool self-hosted como
+#    fallback - dentro de uma run real do Actions, não apenas em bash local.
+name: Test - CI runner selection fallback (issue #426)
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - "scripts/ci-select-runner.sh"
+      - "scripts/ci-select-runner.test.sh"
+      - ".github/workflows/ci-select-runner-test.yml"
+  pull_request:
+    paths:
+      - "scripts/ci-select-runner.sh"
+      - "scripts/ci-select-runner.test.sh"
+      - ".github/workflows/ci-select-runner-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit tests (ci-select-runner.test.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ci-select-runner.test.sh
+        run: bash scripts/ci-select-runner.test.sh
+
+  simulate-primary-runner-allocation-failure:
+    name: Simulate GitHub-hosted allocation failure -> self-hosted fallback
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Sem chamada de rede real: um stub `gh` no PATH que responde "1
+      # runner online" a qualquer `gh api .../actions/runners`, simulando o
+      # self-hosted disponível no momento do fallback.
+      - name: Instala stub do gh (self-hosted sempre "online")
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/stub-bin"
+          cat > "$RUNNER_TEMP/stub-bin/gh" <<'EOF'
+          #!/usr/bin/env bash
+          echo 1
+          EOF
+          chmod +x "$RUNNER_TEMP/stub-bin/gh"
+          echo "$RUNNER_TEMP/stub-bin" >> "$GITHUB_PATH"
+
+      # RUN_ATTEMPT=2 simula o cenário do critério de aceite: a tentativa
+      # primária (RUN_ATTEMPT=1, GitHub-hosted) já foi contabilizada como
+      # não bem-sucedida - seja por um runner nunca atribuído (runner_id: 0)
+      # seja por um job cancelado sem rodar nenhum step - e este é o retry
+      # que deve cair no fallback self-hosted.
+      - name: Roda ci-select-runner.sh com RUN_ATTEMPT=2 (retry pós-falha simulada)
+        id: select
+        env:
+          RUN_ATTEMPT: "2"
+          ACTOR: "someone"
+          REPOSITORY: ${{ github.repository }}
+          SELF_HOSTED_LABEL: alfabra-local
+          POLL_ATTEMPTS: "1"
+          POLL_SLEEP_SECONDS: "0"
+        run: bash scripts/ci-select-runner.sh
+
+      - name: Confirma que o fallback self-hosted disparou
+        env:
+          RUNNER_OUTPUT: ${{ steps.select.outputs.runner }}
+        run: |
+          set -euo pipefail
+          echo "runner=$RUNNER_OUTPUT"
+          EXPECTED='["self-hosted","alfabra-local"]'
+          if [ "$RUNNER_OUTPUT" != "$EXPECTED" ]; then
+            echo "::error::Fallback nao disparou - esperado $EXPECTED, obtido $RUNNER_OUTPUT"
+            exit 1
+          fi
+          echo "OK: fallback self-hosted disparou corretamente apos falha simulada do runner primario"

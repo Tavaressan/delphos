@@ -1,7 +1,7 @@
 # Dockerfile for Java Core (Spring Boot)
 
 # Stage 1: Build the application using Gradle
-FROM gradle:8.14-jdk21 AS builder
+FROM gradle:9.7-jdk21 AS builder
 WORKDIR /app
 
 # Copy gradle configuration files

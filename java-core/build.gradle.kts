@@ -1,6 +1,6 @@
 plugins {
     java
-    id("org.springframework.boot") version "4.1.0"
+    id("org.springframework.boot") version "4.1.1"
     id("io.spring.dependency-management") version "1.1.7"
 }
 
@@ -25,16 +25,16 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("io.minio:minio:9.0.3")
-    implementation("org.apache.tika:tika-core:3.3.2")
+    implementation("org.apache.tika:tika-core:4.0.0")
     runtimeOnly("org.postgresql:postgresql")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
-    testImplementation("io.cucumber:cucumber-java:7.34.6")
-    testImplementation("io.cucumber:cucumber-spring:7.34.6")
-    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.6")
+    testImplementation("io.cucumber:cucumber-java:7.34.7")
+    testImplementation("io.cucumber:cucumber-spring:7.34.7")
+    testImplementation("io.cucumber:cucumber-junit-platform-engine:7.34.7")
     testImplementation("org.junit.platform:junit-platform-suite:6.1.3")
 }
 
