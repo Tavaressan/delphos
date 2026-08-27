@@ -1,31 +1,18 @@
-# Fluxograma de Controle: java-core 🟢 **CONFIRMADO**
-
-Este fluxograma ilustra o ciclo de inicialização do Spring Boot e o processo automático de migração/validação do esquema do banco de dados (Flyway & Hibernate).
+# Fluxograma: java-core
 
 ```mermaid
-flowchart TD
-    Start([Execução do java-core Application.java]) --> MainCall[Chamar Application.mainArgs]
-    MainCall --> SpringRun[SpringApplication.run]
+graph TD
+    A[Client] -->|Upload ZIP| B(AgentController)
+    B --> C{AgentService}
+    C -->|parseZip| D[Validação de Pacote e Arquivos .md]
+    C -->|putObject| E[(MinIO: agents-data)]
+    C -->|save| F[(PostgreSQL: Agent)]
+    C -->|afterCommit Publish| G((RabbitMQ: document.ingestion.jobs))
     
-    SpringRun --> LoadProperties[Carregar application.yml]
-    LoadProperties --> ConnectDB[Inicializar Datasource PostgreSQL]
-    
-    ConnectDB --> FlywayCheck{spring.flyway.enabled == true?}
-    FlywayCheck -->|Sim| RunFlyway[Executar Flyway Migrations db/migration/*]
-    FlywayCheck -->|Não| HibernateCheck
-    
-    RunFlyway --> DatabaseMutations[Aplicar Tabelas, Índices e Seeds SQL]
-    DatabaseMutations --> HibernateCheck
-    
-    HibernateCheck --> JPALoad[Carregar Hibernate JPA Context]
-    JPALoad --> HibernateDDL{spring.jpa.hibernate.ddl-auto == validate?}
-    
-    HibernateDDL -->|Sim| ValidateSchema[Validar conformidade das Entidades com Banco]
-    HibernateDDL -->|Não| AppReady
-    
-    ValidateSchema --> SchemaMatch{Schema coincide?}
-    SchemaMatch -->|Sim| AppReady[Servidor Spring Boot Pronto - Porta 8080]
-    SchemaMatch -->|Não| SchemaError[Lançar SchemaValidationException] --> Fail([Falha na Inicialização])
-    
-    AppReady --> End([Aguardando conexões HTTP REST])
+    H((RabbitMQ: agent.execution.events)) --> I(AgentExecutionEventListener)
+    I -->|AgentExecutionStarted| J[Update: STARTED]
+    I -->|RetrievalCompleted| K[Update: THINKING + save RetrievalEvent]
+    I -->|ToolCallStarted| L[Update: TOOL_RUNNING + save ToolCall]
+    I -->|AgentExecutionFinished| M[Update: COMPLETED + save Message]
+    I -->|AgentExecutionFailed| N[Update: FAILED]
 ```
