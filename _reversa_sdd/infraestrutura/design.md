@@ -1,68 +1,39 @@
-# Infraestrutura, Design Técnico
+# Infraestrutura (CI/CD), Design Técnico
 
-## Interface
-
-### Variáveis de Ambiente Necessárias (Configuration)
-
-| Variável | Descrição | Onde é Usada | Exemplo de Valor |
-|---|---|---|---|
-| `DOMAIN_NAME` | Domínio DNS da plataforma | `Caddyfile` | `empresa-rag.duckdns.org` |
-| `DUCKDNS_TOKEN` | Token secreto do DuckDNS | `Caddyfile` | `a1b2c3d4-e5f6-...` |
-| `INFRA_IP_RANGE` | Bloco CIDR dos IPs de Infraestrutura | `setup_firewall.sh` | `10.10.10.0/24` |
-| `CORP_WHITELIST_RANGE` | Bloco CIDR dos IPs Corporativos autorizados | `setup_firewall.sh` | `192.168.100.0/24` |
-
----
-
-## Fluxo Principal
-
-### 1. Inicialização do Caddy e TLS
-1. O Caddy inicia e lê a variável `${DOMAIN_NAME}` e `${DUCKDNS_TOKEN}`.
-2. Contata a autoridade de certificação (Let's Encrypt / ZeroSSL) e utiliza o módulo DuckDNS para criar um registro TXT temporário comprovando propriedade via DNS-01 challenge.
-3. Define resolvers primários como `1.1.1.1` com delay de propagação de 60s.
-4. Concluído o desafio, o Caddy serve o tráfego HTTP na porta 80 e HTTPS na 443, direcionando todo o tráfego de entrada para o container `frontend:3000`.
-
-### 2. Configuração do Firewall Host (UFW)
-1. O administrador executa o script `./setup_firewall.sh` como root.
-2. O script instala o UFW via apt-get se não estiver presente.
-3. Executa um reset completo das regras atuais (`ufw --force reset`).
-4. Aplica políticas padrão: nega entrada (`deny incoming`), libera saída (`allow outgoing`).
-5. Cria regras de entrada específicas:
-   - Libera SSH (porta 22) apenas para requisições vindas do CIDR de `$INFRA_IP_RANGE`.
-   - Libera HTTP e HTTPS (portas 80 e 443) apenas para requisições vindas do CIDR de `$CORP_WHITELIST_RANGE`.
-6. Ativa o firewall (`ufw --force enable`).
-
----
+## Fluxo Principal (Pipeline CI - GitHub Actions)
+1. **Gatilho**: Push na branch master ou Pull Request (não-draft).
+2. **Setup Runner**: 
+   - Script analisa as _labels_ do PR e _paths_ afetados (via Turborepo).
+   - Se for um pacote Rust puro, chama a _OIDC_ na AWS, acorda a instância EC2. O Worker da EC2 puxa o job GitHub.
+3. **Build & Test**:
+   - `frontend`: Deno test + Playwright UI.
+   - `java-core`: Gradle Build e JUnit. O ambiente no runner puxa um `postgres` e `rabbitmq` efêmeros em portas randômicas (Issue #378) pra testes de Integração Testcontainers.
+   - `rust-services`: `cargo clippy`, `cargo test` num container builder pinado.
+   - `python-services`: `pytest` no sandbox mockado.
+4. **Security Scan**:
+   - CodeQL roda análise estática SAST (injetando SARIF).
+   - Trivy faz scan de vulnerabilidades nas dependências e base images.
+5. **Publish**:
+   - Docker buildx compila e pusha para `ghcr.io` como `latest` (na branch master) ou `pr-XXX`.
+6. **CD (Opcional)**:
+   - Se o deploy estiver liberado para Cloud Run, as imagens do GHCR são puxadas lá usando Cloud Build ou `gcloud run deploy` direto da pipeline.
+7. **Cleanup**: Instância EC2 recebe script de *idle stop* e entra em hibernação/stop automático.
 
 ## Dependências
-* **Caddy Server:** Módulo compilado com suporte a duckdns plugin.
-* **UFW tool:** Utilitário Ubuntu para gerenciamento simples de regras iptables.
-* **PostgreSql database:** Configuração para montagem de volumes persistentes.
-
----
+- **GitHub Actions**: Orquestrador YAML.
+- **AWS OIDC Provider**: Configuração federada de acesso para boot do EC2 sem hardcoded secrets.
+- **Docker Compose / Docker Buildx**: Ferramentas de mount nativas.
+- **Turborepo**: Engine Javascript de Monorepo (migrado para substituir actions nativas e acelerar diff de diretórios afetados).
 
 ## Decisões de Design Identificadas
 
 | Decisão | Evidência no código | Confiança |
 |---------|---------------------|-----------|
-| DNS-01 TLS Challenge | `infrastructure/caddy/Caddyfile:5-10` | 🟢 CONFIRMADO |
-| Regras UFW Restritivas | `infrastructure/setup_firewall.sh:56-61` | 🟢 CONFIRMADO |
-| Carga inicial de Extensões | `infrastructure/postgres/init.sql:4-5` | 🟢 CONFIRMADO |
-| Escopo do Structurizr | Restrito a desenvolvimento local e documentação | 🟢 CONFIRMADO (Confirmado pelo usuário) |
-| Imagem Docker Caddy Customizada | `infrastructure/caddy/Dockerfile` definindo build com plugin DuckDNS | 🟢 CONFIRMADO |
-
----
-
-## Detalhamento Técnico dos Componentes de Infraestrutura
-
-### Structurizr (Ferramenta de Design C4)
-* **Escopo:** Exclusivamente local para desenvolvimento, visualização dos diagramas C4 e apoio à engenharia reversa/evolução do sistema.
-* **Configuração de Execução:**
-  * Declarado sob o perfil `dev` no Docker Compose.
-  * Porta exposta localmente: `8081:8080` (recomenda-se binding exclusivo a localhost: `127.0.0.1:8081:8080`).
-  * Não participa da pipeline produtivo e não deve ser implantado no ambiente produtivo corporativo.
-  * Isento de regras adicionais de UFW, certificados TLS ou autenticação externa.
-
----
+| Fallback dinâmico GitHub-hosted vs EC2 | `.github/workflows` / Script Bash | 🟢 |
+| Montagem local de Workdir no EC2 via Docker-out-of-Docker (DooD) | Parametros da EC2 action | 🟢 |
+| Rede `--network host` para o Runner | ADR-like git commit (Issue #356) | 🟢 |
+| Prevenção de scans caros do Trivy em PRs de Draft | Gate lógico de Job | 🟢 |
 
 ## Riscos e Lacunas
-*(Nenhuma lacuna crítica pendente neste módulo)*
+- 🟢 Para evitar o desligamento prematuro do runner EC2 (Issue #349), a heurística de _Idle Stop_ será modificada para utilizar uma abordagem arquitetural baseada em webhooks (ex: eventos do GitHub Actions) ao invés da leitura frágil de logs/uptime.
+- 🟡 Falta rastreabilidade de como o `GOOGLE_AI_STUDIO_API_KEY` trafega do secrets do github para a release no GCP (suspeita-se mapeamento manual via Vault ou GCP Secret Manager).
