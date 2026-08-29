@@ -72,7 +72,7 @@ jobs:
 
       # Mesmo filtro por módulo do job `changes` de ci.yml (issue #159 pede
       # explicitamente reaproveitar esse path-filter para escopar o deploy).
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         continue-on-error: true
         with:
