@@ -1,66 +1,57 @@
 {
-  "generated_at": "2026-06-16T14:20:00Z",
-  "project_root": "/Users/vitortavares/Desktop/Alfabra-Vector",
-  "languages": [
-    { "name": "Java", "extensions": [".java"], "file_count": 41 },
-    { "name": "TypeScript", "extensions": [".ts", ".tsx"], "file_count": 34 },
-    { "name": "Rust", "extensions": [".rs"], "file_count": 18 },
-    { "name": "JavaScript", "extensions": [".js", ".mjs"], "file_count": 8 },
-    { "name": "Python", "extensions": [".py"], "file_count": 6 },
-    { "name": "SQL", "extensions": [".sql"], "file_count": 6 }
-  ],
-  "primary_language": "Java",
-  "frameworks": [
-    { "name": "Spring Boot", "version": "3.2.5", "source": "java-core/build.gradle.kts" },
-    { "name": "Next.js", "version": "14.2.35", "source": "frontend/package.json" },
-    { "name": "CrewAI", "version": ">=1.0.0", "source": "python-services/crew-worker/requirements.txt" }
-  ],
-  "package_manager": "gradle / npm / cargo",
-  "entry_points": [
-    { "path": "java-core/src/main/java/com/company/core/Application.java", "type": "server_entry" },
-    { "path": "frontend/src/app/layout.tsx", "type": "app_entry" },
-    { "path": "rust-services/rag-worker/src/main.rs", "type": "worker_entry" },
-    { "path": "rust-services/ingestion-worker/src/main.rs", "type": "worker_entry" },
-    { "path": "rust-services/workflow-worker/src/main.rs", "type": "worker_entry" },
-    { "path": "python-services/crew-worker/src/main.py", "type": "worker_entry" }
-  ],
-  "config_files": [
-    "docker-compose.yml",
-    "java-core/build.gradle.kts",
-    "rust-services/Cargo.toml",
-    "python-services/crew-worker/requirements.txt",
-    "frontend/package.json",
-    ".env.example"
-  ],
-  "docker": {
-    "compose": "docker-compose.yml"
+  "languages": {
+    "java": 50,
+    "typescript": 40,
+    "rust": 10,
+    "python": 5,
+    "sql": 19
   },
-  "database_hints": [
-    { "path": "infrastructure/postgres/init.sql", "type": "init_sql" },
-    { "path": "java-core/src/main/resources/db/migration/", "type": "flyway_migrations" }
+  "frameworks": [
+    "Spring Boot",
+    "Next.js",
+    "CrewAI",
+    "RabbitMQ"
   ],
-  "test_framework": "JUnit / Cucumber / Node-Test",
-  "test_file_count": 29,
-  "modules": [
-    "frontend",
-    "java-core",
-    "rust-services",
-    "python-services",
-    "infrastructure"
+  "entry_points": [
+    "java-core/src/main/java/com/company/core/Application.java",
+    "frontend/src/app/layout.tsx"
   ],
-  "total_files": 300,
+  "database": {
+    "has_database": true,
+    "evidence": [
+      "java-core/src/main/resources/db/migration/V1__init_schema.sql"
+    ]
+  },
+  "tests": {
+    "frameworks": ["JUnit", "Cucumber", "Playwright"],
+    "evidence": [
+      "java-core/src/test/resources/features/",
+      "frontend/tests/"
+    ]
+  },
   "organization_suggestion": {
-    "granularity": "module",
-    "rationale": "A estrutura de pastas top-level do projeto está dividida em módulos/serviços de tecnologias específicas: java-core, rust-services, python-services, frontend e infrastructure.",
+    "granularity": "hybrid",
+    "rationale": "Sinais de roteamento (Controllers), BDD (Cucumber features) e módulos isolados coexistem, sugerindo uma abordagem híbrida.",
     "signals": [
       {
-        "type": "top_level_domain_folders",
+        "type": "endpoint",
         "evidence": [
-          "java-core/",
-          "rust-services/",
-          "python-services/",
-          "frontend/",
-          "infrastructure/"
+          "java-core/src/main/java/com/company/core/interfaces/rest/AgentController.java"
+        ]
+      },
+      {
+        "type": "use-case",
+        "evidence": [
+          "java-core/src/test/resources/features/01-agent-execution-audit.feature"
+        ]
+      },
+      {
+        "type": "module",
+        "evidence": [
+          "frontend",
+          "java-core",
+          "rust-services",
+          "python-services/crew-worker"
         ]
       }
     ],
