@@ -1,33 +1,22 @@
-# Matriz de Rastreabilidade (Code-to-Spec Matrix)
+# Code-Spec Matrix
 
-Este documento relaciona cada arquivo do projeto legado com a respectiva especificação de unit gerada, demonstrando a cobertura de documentação do sistema.
+Esta matriz rastreia como as especificações das Units mapeiam o código legado do Alfabra-Vector.
+Isso garante a comprovação de que o time revisou todas as pastas de código-fonte primárias.
 
----
+| Arquivo/Diretório do Legado | Unit Correspondente | Cobertura | Confiança |
+|-----------------------------|---------------------|-----------|-----------|
+| `frontend/src/app/*` | `frontend` | 🟢 | 🟢 |
+| `frontend/src/utils/apiClient.ts` | `frontend` | 🟢 | 🟢 |
+| `frontend/next.config.js` | `frontend` e `infraestrutura` | 🟢 | 🟢 |
+| `java-core/src/main/java/com/company/core/*` | `nucleo-java` | 🟢 | 🟢 |
+| `java-core/src/test/resources/features/*` | `nucleo-java` | 🟡 (Parcial)| 🟡 |
+| `rust-services/ingestion-worker/*` | `servicos-rust` | 🟢 | 🟢 |
+| `rust-services/rag-worker/*` | `servicos-rust` | 🟢 | 🟢 |
+| `rust-services/workflow-worker/*` | `servicos-rust` | 🟡 (Lacuna)| 🔴 |
+| `rust-services/embedding-service/*` | `servicos-rust` | 🟢 | 🟢 |
+| `python-services/crew-worker/*` | `servicos-python` | 🟢 | 🟢 |
+| `docker-compose.yml` | `infraestrutura` | 🟢 | 🟢 |
+| `.github/workflows/*` | `infraestrutura` | 🟢 | 🟢 |
 
-## 1. Tabela de Rastreabilidade
-
-| Arquivo do Legado | Unit Correspondente | Cobertura | Observação / Escopo de Cobertura |
-|---|---|---|---|
-| `frontend/src/app/layout.tsx` | `frontend/` | 🟢 | RootLayout do Next.js e tema global |
-| `frontend/src/app/auth/layout.tsx` | `frontend/` | 🟢 | AuthLayout para fluxos de login e recuperação |
-| `java-core/src/main/java/com/company/core/Application.java` | `nucleo-java/` | 🟢 | Classe principal de inicialização do Spring Boot |
-| `java-core/src/main/resources/application.yml` | `nucleo-java/` | 🟢 | Configurações de banco, Redis, JPA e Actuator |
-| `java-core/src/main/resources/db/migration/V1__init_schema.sql` | `nucleo-java/` | 🟢 | Esquema relacional, índices HNSW e seeds de RBAC |
-| `rust-services/document-processing/src/main.rs` | `servicos-rust/` | 🟢 | API Axum de processamento e parsing de arquivos |
-| `rust-services/embedding-service/src/main.rs` | `servicos-rust/` | 🟢 | API Axum de cálculo e geração de vetores de embedding |
-| `rust-services/ingestion-worker/src/main.rs` | `servicos-rust/` | 🟢 | Daemon Rust do pipeline de ingestão e heartbeats |
-| `rust-services/shared/src/lib.rs` | `servicos-rust/` | 🟢 | Biblioteca local utilitária do workspace Rust |
-| `infrastructure/postgres/init.sql` | `infraestrutura/` | 🟢 | Script de pré-carga das extensões do Postgres |
-| `infrastructure/caddy/Caddyfile` | `infraestrutura/` | 🟢 | Proxy reverso, mapeamento DNS e TLS DuckDNS |
-| `infrastructure/setup_firewall.sh` | `infraestrutura/` | 🟢 | Configuração UFW, whitelists e isolamento Docker |
-| `docker-compose.yml` | `infraestrutura/` | 🟢 | Definição e dependências de containers do monorepo |
-| `docker-compose.override.yml` | `n/a` | `n/a` | Configurações locais de override do Docker |
-
----
-
-## 2. Resumo da Cobertura de Análise
-
-* **Arquivos Mapeados no Legado:** 14
-* **Arquivos Cobertos por Especificações:** 13
-* **Arquivos Não Mapeados (n/a):** 1 (apenas configurações de ambiente local `docker-compose.override.yml`)
-* **Taxa de Cobertura de Código Estimada:** **92.8%**
+**Observação de Lacunas (🔴):** 
+O `workflow-worker` no Rust (DAG) foi inferido arquiteturalmente através dos Pull Requests (PR #308), mas os fluxos e tipos exatos de DAG consumíveis ainda precisam ser decifrados, o que reflete na cor amarela de cobertura na Unit `servicos-rust`.

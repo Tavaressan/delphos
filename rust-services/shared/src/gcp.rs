@@ -9,7 +9,8 @@ pub struct GcpAuthenticator {
 impl GcpAuthenticator {
     pub async fn new() -> Result<Self, String> {
         let path = std::env::var("GOOGLE_APPLICATION_CREDENTIALS").map_err(|_| {
-            "A variável de ambiente GOOGLE_APPLICATION_CREDENTIALS não está definida.".to_string()
+            "A variável de ambiente GOOGLE_APPLICATION_CREDENTIALS não está definida."
+                .to_string()
         })?;
 
         // Issue #358/#389: o docker-compose.yml monta
