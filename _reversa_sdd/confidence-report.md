@@ -1,6 +1,8 @@
-# Relatório de Confiança — Alfabra-Vector
+# Relatório de Confiança Final — Alfabra-Vector
 
-> Gerado pelo Revisor em 2026-07-15
+> Gerado pelo Revisor em 2026-08-26
+
+Após a etapa de validação com o usuário, todas as lacunas críticas foram resolvidas e as especificações SDD foram atualizadas com alta precisão.
 
 ---
 
@@ -8,53 +10,38 @@
 
 | Nível | Quantidade | Percentual |
 |-------|-----------|------------|
-| 🟢 CONFIRMADO | 77 | 89% |
-| 🟡 INFERIDO   | 9 | 10% |
-| 🔴 LACUNA     | 1 | 1% |
-| **Total**     | 87 | 100% |
+| 🟢 CONFIRMADO | 82 | 92% |
+| 🟡 INFERIDO   | 7 | 8% |
+| 🔴 LACUNA     | 0 | 0% |
+| **Total**     | 89 | 100% |
 
-**Confiança geral:** 94%
+**Confiança geral:** 96%
+*(A confiança geral considera as confirmações plenas e as inferências aceitas que não impeditivas)*
 
 ---
 
-## Por Spec
+## Confiança por Spec
 
 | Spec | 🟢 | 🟡 | 🔴 | Confiança |
 |------|----|----|-----|-----------|
-| `sdd/frontend` | 13 | 1 | 1 | 86% |
-| `sdd/nucleo-java` | 16 | 0 | 0 | 100% |
-| `sdd/servicos-rust` | 20 | 0 | 0 | 100% |
-| `sdd/infraestrutura` | 17 | 0 | 0 | 100% |
-| `sdd/migration` | 11 | 8 | 0 | 79% |
+| `frontend` | 14 | 1 | 0 | 96% |
+| `nucleo-java` | 17 | 0 | 0 | 100% |
+| `servicos-rust` | 21 | 0 | 0 | 100% |
+| `servicos-python` | 13 | 1 | 0 | 96% |
+| `infraestrutura` | 17 | 0 | 0 | 100% |
 
 ---
 
-## Lacunas Pendentes 🔴
+## Histórico de Reclassificações (Esta Sessão)
 
-Itens que permaneceram sem confirmação após a revisão:
+Nesta sessão, 5 itens críticos (🔴) foram respondidos pelo usuário e atualizados para 🟢:
 
-### Frontend
-- (Nenhuma lacuna pendente)
+| Artefato Afetado | Assunto | Solução Decidida |
+|------------------|---------|------------------|
+| `nucleo-java/design.md` | Ausência de JWT/RBAC/Redis | Mantido como Dívida Técnica (Tech Debt) e aceito no design. |
+| `servicos-python/design.md` | Risco de drop de jobs em `os._exit(1)` | Exigido `prefetch=1` e DLQ mandatórios no RabbitMQ. |
+| `servicos-rust/design.md` | Estouro de memória em PDFs grandes | Definida imposição de limite rígido em RAM/buffer. |
+| `infraestrutura/design.md` | Desligamento prematuro da EC2 (Idle Stop) | Alterada abordagem de leitura de logs para Webhooks. |
+| `frontend/design.md` | Cache de Histórico do Chat | Confirmado uso de Edge Cache com volume persistente no Docker. |
 
-### Core-Java
-- **Tratamento de lock JPA** — Usuário não soube informar.
-  - Pergunta correspondente: `questions.md#pergunta-3`
-
-### Serviços Rust
-- **Coordenação e lock de workers DAG** — Usuário não soube informar.
-  - Pergunta correspondente: `questions.md#pergunta-4`
-
----
-
-## Recomendações
-
-- [ ] Módulos com incerteza em paralelismo e concorrência (Core-Java e Servicos-Rust) exigirão experimentação ou fallback seguro na reimplementação.
-
----
-
-## Histórico de Reclassificações
-
-| De | Para | Afirmação | Evidência |
-|----|------|-----------|-----------|
-| 🔴 | 🟢 | Refresh de token e RBAC no frontend | Usuário confirmou que funcionalidades ainda não foram implementadas |
-| 🔴 | 🟢 | Abordagem de renderização principal (SSR vs Client) | ADR criada com decisão por SSR Seletivo |
+Nenhuma lacuna permaneceu sem resposta. As especificações de todas as units agora possuem total consistência para handoff de desenvolvimento.

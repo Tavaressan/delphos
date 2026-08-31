@@ -1,207 +1,230 @@
 {
-  "generated_at": "2026-06-16T14:40:00Z",
-  "modules": [
-    {
-      "name": "frontend",
-      "path": "frontend",
-      "purpose": "Interface Next.js (React) com o usuário para chat com agentes de IA, carregamento de documentos e logs.",
-      "primary_files": [
-        "frontend/src/app/page.tsx",
-        "frontend/src/hooks/useExecution.ts",
-        "frontend/src/domain/entities/index.ts",
-        "frontend/src/domain/use-cases/execution.ts"
-      ],
-      "functions": [
-        {
-          "name": "useExecution.submitPrompt",
-          "file": "frontend/src/hooks/useExecution.ts",
-          "params": ["prompt: string", "agentId?: string", "conversationId?: string"],
-          "returns": "void",
-          "confidence": "confirmed"
-        }
-      ],
-      "entities": [
-        {
-          "name": "AgentExecution",
-          "fields": [
-            { "name": "id", "type": "string", "required": true },
-            { "name": "status", "type": "ExecutionStatus", "required": true },
-            { "name": "prompt", "type": "string", "required": true },
-            { "name": "output", "type": "string", "required": false }
-          ],
-          "confidence": "confirmed"
-        }
-      ],
-      "business_rules": [
-        {
-          "description": "Exibe timeline de execução em 5 etapas baseadas no status (REQUESTED, QUEUED, THINKING, TOOL_RUNNING, COMPLETED/FAILED).",
-          "location": "frontend/src/hooks/useExecution.ts:47",
-          "confidence": "confirmed"
-        },
-        {
-          "description": "Polling de execução a cada 2 segundos com timeout máximo de 2 minutos (60 tentativas).",
-          "location": "frontend/src/hooks/useExecution.ts:120",
-          "confidence": "confirmed"
-        }
-      ],
-      "dependencies": ["java-core"],
-      "algorithms": [],
-      "complexity": "medium"
-    },
-    {
-      "name": "java-core",
-      "path": "java-core",
-      "purpose": "API gateway e núcleo de negócio em Spring Boot. Gerencia cadastros de agentes, documentos e persistência de chats.",
-      "primary_files": [
-        "java-core/src/main/java/com/company/core/interfaces/rest/ExecutionController.java",
-        "java-core/src/main/java/com/company/core/application/AgentService.java",
-        "java-core/src/main/java/com/company/core/infrastructure/external/AgentExecutionEventListener.java"
-      ],
-      "functions": [
-        {
-          "name": "createAgent",
-          "file": "java-core/src/main/java/com/company/core/application/AgentService.java",
-          "params": ["name: String", "file: MultipartFile", "tenantId: UUID"],
-          "returns": "Agent",
-          "confidence": "confirmed"
-        },
-        {
-          "name": "submitExecution",
-          "file": "java-core/src/main/java/com/company/core/interfaces/rest/ExecutionController.java",
-          "params": ["request: Map<String, String>"],
-          "returns": "ResponseEntity<Map<String, Object>>",
-          "confidence": "confirmed"
-        }
-      ],
-      "entities": [
-        {
-          "name": "Agent",
-          "fields": [
-            { "name": "id", "type": "UUID", "required": true },
-            { "name": "name", "type": "String", "required": true },
-            { "name": "systemInstructions", "type": "String", "required": false },
-            { "name": "zipPath", "type": "String", "required": false }
-          ],
-          "confidence": "confirmed"
-        }
-      ],
-      "business_rules": [
-        {
-          "description": "O ZIP do agente deve conter pelo menos um arquivo .md na raiz como diretrizes/instruções de comportamento.",
-          "location": "java-core/src/main/java/com/company/core/application/AgentService.java:100",
-          "confidence": "confirmed"
-        },
-        {
-          "description": "O tamanho total descompactado do ZIP de conhecimento do agente não pode exceder 20MB.",
-          "location": "java-core/src/main/java/com/company/core/application/AgentService.java:104",
-          "confidence": "confirmed"
-        },
-        {
-          "description": "Ao carregar documentos do ZIP (.pdf, .docx, .txt, .md), publica no RabbitMQ (exchange: agent.execution.exchange, routing key: document.ingestion.jobs) para o ingestion-worker do Rust.",
-          "location": "java-core/src/main/java/com/company/core/application/AgentService.java:177",
-          "confidence": "confirmed"
-        }
-      ],
-      "dependencies": ["rust-services", "python-services"],
-      "algorithms": [],
-      "complexity": "high"
-    },
-    {
-      "name": "rust-services",
-      "path": "rust-services",
-      "purpose": "Workers assíncronos de alta performance para execução RAG e ingestão de documentos.",
-      "primary_files": [
-        "rust-services/rag-worker/src/main.rs",
-        "rust-services/rag-worker/src/rabbitmq.rs",
-        "rust-services/workflow-worker/src/rabbitmq.rs"
-      ],
-      "functions": [
-        {
-          "name": "execute_rag",
-          "file": "rust-services/rag-worker/src/rabbitmq.rs",
-          "params": ["job: &RetrievalJob", "db_pool: &PgPool", "authenticator: &Option<GcpAuthenticator>"],
-          "returns": "Result<(String, Vec<ChunkData>), WorkerError>",
-          "confidence": "confirmed"
-        }
-      ],
-      "entities": [],
-      "business_rules": [
-        {
-          "description": "Faz busca vetorial baseada na distância de cosseno (op <=> com vetor) limitada a 5 chunks, filtrando pelo tenant_id e opcionalmente agent_id.",
-          "location": "rust-services/rag-worker/src/rabbitmq.rs:360",
-          "confidence": "confirmed"
-        },
-        {
-          "description": "Chama a API do Vertex AI Gemini passando as system_instructions obtidas do agente e o contexto com os chunks.",
-          "location": "rust-services/rag-worker/src/rabbitmq.rs:444",
-          "confidence": "confirmed"
-        }
-      ],
-      "dependencies": ["java-core"],
-      "algorithms": [
-        {
-          "name": "Busca Vetorial pgvector",
-          "description": "Cálculo de similaridade de cosseno usando operador <=> do pgvector para ordenar os document_chunks mais próximos do embedding do prompt.",
-          "confidence": "confirmed"
-        }
-      ],
-      "complexity": "high"
-    },
-    {
-      "name": "python-services",
-      "path": "python-services",
-      "purpose": "Worker baseado em CrewAI para orquestração de agentes autônomos cognitivos.",
-      "primary_files": [
-        "python-services/crew-worker/src/main.py",
-        "python-services/crew-worker/src/runtime/crewai_adapter.py"
-      ],
-      "functions": [
-        {
-          "name": "execute",
-          "file": "python-services/crew-worker/src/runtime/crewai_adapter.py",
-          "params": [],
-          "returns": "str",
-          "confidence": "confirmed"
-        }
-      ],
-      "entities": [],
-      "business_rules": [
-        {
-          "description": "Executa fluxo RAG inicial em Python, depois instancia o agente do CrewAI 'Elevator Specialist' com ferramentas locais de busca na base vetorial e cálculo de cota de sandbox.",
-          "location": "python-services/crew-worker/src/runtime/crewai_adapter.py:208",
-          "confidence": "confirmed"
-        }
-      ],
-      "dependencies": ["java-core", "rust-services"],
-      "algorithms": [],
-      "complexity": "medium"
-    },
-    {
-      "name": "infrastructure",
-      "path": "infrastructure",
-      "purpose": "Roteamento reverso com gateway HTTPS (Caddy) e restrições de firewall de rede local.",
-      "primary_files": [
-        "infrastructure/caddy/Caddyfile",
-        "infrastructure/setup_firewall.sh",
-        "infrastructure/postgres/init.sql"
-      ],
-      "functions": [],
-      "entities": [],
-      "business_rules": [
-        {
-          "description": "O Caddy redireciona caminhos /api/* e /actuator/* para o core de Spring Boot (porta 8080) e o restante do tráfego HTTP para o frontend Next.js (porta 3000).",
-          "location": "infrastructure/caddy/Caddyfile:16",
-          "confidence": "confirmed"
-        },
-        {
-          "description": "Configura UFW para restringir SSH à faixa INFRA_IP_RANGE e portas HTTP/HTTPS para CORP_WHITELIST_RANGE, aplicando default deny incoming e default allow outgoing (para contato com APIs de IA).",
-          "location": "infrastructure/setup_firewall.sh:45",
-          "confidence": "confirmed"
-        }
-      ],
-      "dependencies": [],
-      "algorithms": [],
-      "complexity": "low"
+  "frontend": {
+    "name": "frontend",
+    "path": "frontend/src",
+    "purpose": "Interface de usuário Next.js para interação com agentes, catálogo de agentes, base de conhecimento e agendamentos",
+    "primary_files": [
+      "features/chat/ChatCanvas.tsx",
+      "app/(main)/catalog/CatalogClient.tsx",
+      "app/(main)/knowledge-base/page.tsx",
+      "app/(main)/schedule/page.tsx",
+      "infrastructure/api/apiClient.ts",
+      "domain/entities/index.ts"
+    ],
+    "functions": [
+      "handleSend",
+      "fetchAgents",
+      "startStreaming",
+      "handleFileSelect",
+      "saveEdit",
+      "createSchedule"
+    ],
+    "entities": [
+      "User",
+      "Agent",
+      "Document",
+      "Conversation",
+      "Message",
+      "AgentExecution",
+      "Schedule",
+      "McpServerConfig"
+    ],
+    "business_rules": [
+      "Agentes não podem ser modificados para um ZIP sem .md interno",
+      "Servidores MCP devem ter nome e comando únicos",
+      "Documentos sendo enviados/processados sofrem polling a cada 3s",
+      "Respostas do agente no chat utilizam SSE se disponível"
+    ],
+    "dependencies": [
+      "backend API"
+    ],
+    "algorithms": [
+      "Validação de MCP (addMcpConfig)",
+      "timelineToTasks",
+      "Filtragem e ordenação de documentos de knowledge base"
+    ],
+    "complexity": "Alta",
+    "confidence": {
+      "purpose": "CONFIRMADO",
+      "business_rules": "CONFIRMADO",
+      "algorithms": "CONFIRMADO"
     }
-  ]
+  },
+  "java-core": {
+    "name": "java-core",
+    "path": "java-core/src/main/java",
+    "purpose": "Orquestração central em Spring Boot, gerindo pacotes de agentes, ciclo de vida de execuções via RabbitMQ e integrações MinIO/PostgreSQL.",
+    "primary_files": [
+      "com/company/core/application/AgentService.java",
+      "com/company/core/infrastructure/external/AgentExecutionEventListener.java",
+      "com/company/core/domain/entities/AgentExecution.java",
+      "com/company/core/domain/entities/ToolCall.java"
+    ],
+    "functions": [
+      "createAgent",
+      "updateAgentPackage",
+      "parseZip",
+      "handleExecutionEvent"
+    ],
+    "entities": [
+      "AgentExecution",
+      "AgentCustomTool",
+      "ToolCall",
+      "RetrievalEvent",
+      "AuditLog"
+    ],
+    "business_rules": [
+      "O pacote do agente deve possuir um .md na raiz.",
+      "Custom tools devem ficar no pacote tools/ e ter formato .py com nome válido.",
+      "A publicação de eventos no RabbitMQ pós-API usa sincronização de transação (afterCommit).",
+      "Documentos validados pelo zip são armazenados no MinIO sob o tenant/agente."
+    ],
+    "dependencies": [
+      "PostgreSQL (via JPA)",
+      "RabbitMQ (via Spring AMQP)",
+      "MinIO"
+    ],
+    "algorithms": [
+      "Máquina de estados baseada em eventos RabbitMQ",
+      "Validação de integridade e segurança de ZIP",
+      "Unificação semântica de erros (Rust vs Python)"
+    ],
+    "complexity": "Alta",
+    "confidence": {
+      "purpose": "CONFIRMADO",
+      "business_rules": "CONFIRMADO",
+      "algorithms": "CONFIRMADO"
+    }
+  },
+  "rust-services": {
+    "name": "rust-services",
+    "path": "rust-services/",
+    "purpose": "Workers paralelos e de alto desempenho (Ingestão, RAG, Engine de DAGs) e serviço auxiliar de Embeddings integrados por filas do RabbitMQ.",
+    "primary_files": [
+      "ingestion-worker/src/main.rs",
+      "rag-worker/src/main.rs",
+      "workflow-worker/src/main.rs",
+      "embedding-service/src/main.rs",
+      "document-processing/src/main.rs"
+    ],
+    "functions": [
+      "process_delivery",
+      "extract_text_from_pdf",
+      "chunk_text",
+      "get_embeddings_from_service",
+      "stale_processing_reaper_loop"
+    ],
+    "entities": [
+      "IngestionJob",
+      "EmbeddingsRequest",
+      "EmbeddingsResponse",
+      "DocumentChunk"
+    ],
+    "business_rules": [
+      "Processamento travado por mais de 10 minutos (padrão) em INGESTION sofre transição autônoma para FAILED.",
+      "Falha repetida na extração encaminha mensagem para fila de dead letter (DLQ).",
+      "As credenciais do GCP são preferencialmente recuperadas via ADC e enviadas aos LLMs, mas contam com fallback API Key ou mock determinístico."
+    ],
+    "dependencies": [
+      "PostgreSQL (via sqlx)",
+      "RabbitMQ (via lapin)",
+      "MinIO (aws-sdk-s3)",
+      "Vertex AI / Google AI Studio",
+      "Axum (healthchecks e api interna)"
+    ],
+    "algorithms": [
+      "Validação robusta e particionamento (Chunking) de arquivos não-estruturados",
+      "Heartbeat reaper para recuperação de estado inconsistente de workers mortos",
+      "Vector Embeddings via GCP com mock em ambiente de dev"
+    ],
+    "complexity": "Muito Alta",
+    "confidence": {
+      "purpose": "CONFIRMADO",
+      "business_rules": "CONFIRMADO",
+      "algorithms": "CONFIRMADO"
+    }
+  },
+  "python-services": {
+    "name": "python-services",
+    "path": "python-services/",
+    "purpose": "Worker assíncrono (crew-worker) que consome do RabbitMQ para executar fluxos do CrewAI com Sandboxing de scripts e ferramentas dinâmicas.",
+    "primary_files": [
+      "crew-worker/src/main.py",
+      "crew-worker/src/runtime/crewai_adapter.py",
+      "crew-worker/src/sandbox/executor_core.py",
+      "crew-worker/src/tools/sandboxed_script_tool.py"
+    ],
+    "functions": [
+      "process_job",
+      "_rewrite_query",
+      "_search_db",
+      "calculate_sandbox_quota",
+      "execute_script"
+    ],
+    "entities": [
+      "QuotaValue",
+      "CrewAiRuntimeAdapter",
+      "FallbackLLM"
+    ],
+    "business_rules": [
+      "Query rewriting é opt-in via env CREW_QUERY_REWRITING_ENABLED e usa o LLM primário.",
+      "Validação AST rigorosa para tools customizadas (allowlist).",
+      "Execução de script ocorre em sandbox via subprocess python3 -I isolado.",
+      "O worker reseta (os._exit) após falhas consecutivas de StackDepthExceededError (issue #391)."
+    ],
+    "dependencies": [
+      "CrewAI",
+      "RabbitMQ (pika)",
+      "PostgreSQL (psycopg2)",
+      "Vertex AI / Google AI Studio",
+      "Requests"
+    ],
+    "algorithms": [
+      "LLM Fallback Pattern (Google AI Studio -> Vertex)",
+      "Ast Validation e Sandbox Execution (Contenção de kernel/recursos)",
+      "Context Isolation via contextvars.copy_context (mitigação Issue #391)"
+    ],
+    "complexity": "Alta",
+    "confidence": {
+      "purpose": "CONFIRMADO",
+      "business_rules": "CONFIRMADO",
+      "algorithms": "CONFIRMADO"
+    }
+  },
+  "infrastructure": {
+    "name": "infrastructure",
+    "path": "infrastructure/",
+    "purpose": "Configurações de implantação, infraestrutura como código (Caddy, Docker, Render POC) e scripts de provisionamento de segurança (UFW) e banco de dados.",
+    "primary_files": [
+      "caddy/Caddyfile",
+      "postgres/init.sql",
+      "render/render.yaml",
+      "setup_firewall.sh"
+    ],
+    "functions": [],
+    "entities": [],
+    "business_rules": [
+      "HTTPS automático gerenciado pelo Caddy via DNS Challenge (DuckDNS).",
+      "Acesso de rede protegido por UFW estritamente em whitelist (SSH para Infra, HTTP/S para rede corporativa).",
+      "Postgres instanciado com pgvector e uuid-ossp pré-carregados.",
+      "O Docker não expõe as portas diretamente sem obedecer às restrições do firewall (Docker bind isolation esperado)."
+    ],
+    "dependencies": [
+      "Caddy",
+      "Docker",
+      "PostgreSQL",
+      "Render",
+      "UFW"
+    ],
+    "algorithms": [
+      "Caddy Reverse Proxy Routing",
+      "UFW Security Policy Automation"
+    ],
+    "complexity": "Baixa",
+    "confidence": {
+      "purpose": "CONFIRMADO",
+      "business_rules": "CONFIRMADO",
+      "algorithms": "CONFIRMADO"
+    }
+  }
 }
