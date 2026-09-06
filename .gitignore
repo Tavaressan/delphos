@@ -91,3 +91,10 @@ AGENT_STATUS.md
 # volte a captura-las.
 .claude/skills/
 .claude/agents/
+
+report.md
+
+# Backups de .env gerados ad-hoc antes de editar variaveis de ambiente
+# (ex.: `cp .env .env.bak-$(date +%s)`). Contem segredos — nunca versionar.
+.env.bak*
+.env.*.bak

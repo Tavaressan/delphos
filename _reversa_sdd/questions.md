@@ -1,52 +1,69 @@
-# Perguntas para Validação — alfabra_vector
+# Perguntas para Validação — Alfabra-Vector
 
-> Gerado pelo Revisor em 2026-05-25
-> Responda cada pergunta e me avise quando terminar.
+> Gerado pelo Revisor em 2026-08-26
+> Todas as perguntas desta sessão foram respondidas e as especificações foram atualizadas.
 
 ---
 
 ## Pergunta 1
 
-**Contexto:** Módulo `java-core` — arquivo `java-core/src/main/resources/application.yml`
-**Spec afetada:** [`_reversa_sdd/nucleo-java/design.md`](file:///Users/vitortavares/Desktop/Alfabra%20Vector/_reversa_sdd/nucleo-java/design.md#L46-L48)
-**Pergunta:** Como o Spring Security deve ser configurado para validar/gerar os tokens JWT? Onde a chave secreta (secret key) e o tempo de expiração do token devem ser definidos (ex: variáveis de ambiente no `.env`)?
-**Impacto:** Se for definido no `.env`, a spec precisa documentar as variáveis de ambiente necessárias para a autenticação.
+**Contexto:** Segurança e Sessões (Java Core)
+**Spec afetada:** `_reversa_sdd/nucleo-java/design.md`
+**Pergunta:** O código atual do `SecurityConfig` libera tudo com `permitAll()`, ignorando a estrutura de JWT/RBAC existente no banco. Além disso, o Redis não está sendo usado para gerenciar sessões/SSE. Devemos documentar a implementação dessas travas de segurança como um requisito imediato/bloqueante, ou mantemos como dívida técnica para o próximo ciclo?
+**Impacto:** Define se a falta de segurança bloqueia o design atual ou é registrada como tech debt.
 
 `✅ Respondida`
-**Resposta:** Usar Spring Security + OAuth2 Resource Server + JWT stateless, com AuthenticationManager, JwtEncoder/JwtDecoder, SecurityFilterChain stateless, filtro JWT baseado em Bearer Token e sem sessões HTTP. Variáveis no .env: JWT_SECRET, JWT_EXPIRATION (3600000ms / 1h) e JWT_REFRESH_EXPIRATION (604800000ms / 7d). Estratégia de assinatura simétrica inicial (HS256) com possível evolução futura para RS256 com chave pública/privada + KMS.
+**Resposta do Usuário:** Dívida técnica.
+**Ação:** Lacuna reclassificada para 🟢. Documentado em `nucleo-java/design.md` que a ausência de JWT/RBAC ativo e uso do Redis é uma dívida técnica aceita para o próximo ciclo, mantendo o design stateful.
 
 ---
 
 ## Pergunta 2
 
-**Contexto:** Módulo `servicos-rust` — arquivos `rust-services/document-processing/src/main.rs` e `rust-services/embedding-service/src/main.rs`
-**Spec afetada:** [`_reversa_sdd/servicos-rust/design.md`](file:///Users/vitortavares/Desktop/Alfabra%20Vector/_reversa_sdd/servicos-rust/design.md#L50-L52)
-**Pergunta:** Quais são as bibliotecas ou engines de parsing de PDF/documentos esperadas no microsserviço `document-processing`? Além disso, qual é a API/serviço externo de embeddings (OpenAI, Gemini, etc.) que o `embedding-service` deve chamar e quais são suas variáveis de ambiente?
-**Impacto:** Detalha as dependências e o comportamento funcional de extração e vetorização na spec `design.md` e `requirements.md` de Rust.
+**Contexto:** Mensageria e DLQ (Python e Rust)
+**Spec afetada:** `_reversa_sdd/servicos-python/design.md` e `_reversa_sdd/servicos-rust/design.md`
+**Pergunta:** No `crew-worker` (Python), uma falha dura (`os._exit(1)`) pode matar jobs paralelos se o `prefetch` do RabbitMQ for maior que 1. No `ingestion-worker` (Rust), falhas resultam em NACK sem ir para uma Dead Letter Queue (DLQ), sendo descartados silenciosamente. Devemos especificar `prefetch=1` e criação de DLQs obrigatórias no design de mensageria?
+**Impacto:** Evita perda silenciosa de dados/jobs de processamento.
 
 `✅ Respondida`
-**Resposta:** Decisão de usar lopdf, pdf-extract, tesseract, docx-rs, scraper e pulldown-cmark no processamento de parsing de documentos. Para embeddings, o provedor oficial inicial é o Google Vertex AI (modelos text-embedding-005 ou gemini-embedding-001) com suporte a outras opções no padrão Provider Abstraction. Variáveis de ambiente configuradas para GCP Vertex e montagem de volumes Docker para credentials.
+**Resposta do Usuário:** Sim.
+**Ação:** Lacuna reclassificada para 🟢. Atualizadas as specs do Python e Rust exigindo `prefetch=1` obrigatório e configuração de Dead Letter Queues (DLQs) para tratar NACKs de falhas.
 
 ---
 
 ## Pergunta 3
 
-**Contexto:** Módulo `frontend`
-**Spec afetada:** [`_reversa_sdd/frontend/design.md`](file:///Users/vitortavares/Desktop/Alfabra%20Vector/_reversa_sdd/frontend/design.md#L42-L44)
-**Pergunta:** O estado de autenticação do usuário (como o token JWT) no cliente Next.js deve ser gerenciado por cookies seguros (ex: usando NextAuth.js/Auth.js), por um gerenciador de estado dedicado (Zustand/Redux) ou simplesmente armazenado em localStorage com Context API?
-**Impacto:** Define a arquitetura do cliente Next.js na spec `design.md`.
+**Contexto:** Limite de Memória em RAG (Rust)
+**Spec afetada:** `_reversa_sdd/servicos-rust/design.md`
+**Pergunta:** A ingestão de PDFs gigantescos não tem limite de memória explícito mapeado. Dependemos inteiramente do *OOM Killer* do Docker para derrubar o contêiner se estourar a RAM, ou devemos exigir limites rígidos de buffer/streaming no código Rust?
+**Impacto:** Afeta a estabilidade dos workers durante ingestão pesada.
 
 `✅ Respondida`
-**Resposta:** Sessão de autenticação será armazenada de forma segura usando cookies HTTPOnly (`Secure=true`, `HttpOnly=true`, `SameSite=Strict` em produção) gerenciados via Auth.js (NextAuth.js). O JWT não será armazenado em localStorage ou gerenciadores de estado globais como Zustand/Redux (que serão limitados a UI e dados de visualização). Context API será usada apenas para dados de leitura rápida derivados da sessão.
+**Resposta do Usuário:** Podemos exigir limites, quero definir isso.
+**Ação:** Lacuna reclassificada para 🟢. Incluída restrição rígida de RAM/buffer no código Rust para prevenir Memory Leaks proativamente no design.
 
 ---
 
 ## Pergunta 4
 
-**Contexto:** Arquivo `docker-compose.yml:90` (serviço `structurizr`)
-**Spec afetada:** [`_reversa_sdd/infraestrutura/design.md`](file:///Users/vitortavares/Desktop/Alfabra%20Vector/_reversa_sdd/infraestrutura/design.md)
-**Pergunta:** O container `structurizr` é de uso estritamente local (desenvolvimento) para visualização dos diagramas C4 do projeto, ou ele deve ser implantado no ambiente de produção corporativo?
-**Impacto:** Define se a tarefa de implantação/configuração do Structurizr e sua segurança no host (UFW) devem ser especificadas.
+**Contexto:** Infraestrutura AWS
+**Spec afetada:** `_reversa_sdd/infraestrutura/design.md`
+**Pergunta:** O script de *Idle Stop* da EC2 tem histórico de desligar a máquina prematuramente (Issue #349). Aceitamos esse risco mapeado ou devemos especificar uma mudança na heurística (ex: via webhooks do GitHub Actions em vez de checar logs)?
+**Impacto:** Resolve instabilidade na infraestrutura CI/CD.
 
 `✅ Respondida`
-**Resposta:** O container Structurizr é de uso exclusivo para desenvolvimento local e suporte a documentação de arquitetura, sendo executado opcionalmente através do profile docker compose `dev`. Não fará parte do deploy em produção corporativo e, portanto, não requer tarefas de firewall UFW, HTTPS ou autenticação dedicada.
+**Resposta do Usuário:** Especificar mudança.
+**Ação:** Lacuna reclassificada para 🟢. A especificação agora aponta que o Idle Stop deve usar webhooks ao invés de leitura de logs.
+
+---
+
+## Pergunta 5
+
+**Contexto:** Cache de Frontend (Next.js)
+**Spec afetada:** `_reversa_sdd/frontend/design.md`
+**Pergunta:** O chat armazena o histórico em *Edge Cache* (via Next.js Data Cache) ou as requisições de conversa são sempre dinâmicas/diretas no backend (SSR/Server Components sem cache persistente)?
+**Impacto:** Define a estratégia de cacheamento das conversas.
+
+`✅ Respondida`
+**Resposta do Usuário:** Creio que seja edge cache, mas são persistidas em volumes docker.
+**Ação:** Lacuna reclassificada para 🟢. Adicionado ao design do frontend a persistência via Edge Cache integrada com Next.js Data Cache e armazenamento persistente em volume Docker.

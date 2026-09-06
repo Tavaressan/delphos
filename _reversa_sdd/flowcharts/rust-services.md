@@ -1,26 +1,38 @@
-# Fluxograma de Controle: rust-services 🟢 **CONFIRMADO**
-
-Este fluxograma ilustra o controle de execução em paralelo de dois fluxos principais de microsserviços em Rust: os servidores HTTP (Axum) e o processo em background (Ingestion Worker).
+# Fluxograma: rust-services
 
 ```mermaid
-flowchart TD
-    subgraph Servidores HTTP (document-processing & embedding-service)
-        StartHTTP([Início main.rs]) --> InitAxum[Instanciar Router Axum]
-        InitAxum --> MapHealthz[Mapear Rota GET /healthz]
-        MapHealthz --> BindPort[Vincular TcpListener 0.0.0.0:8000]
-        BindPort --> Serve[axum::serve]
-        Serve --> ListenLoop{Recebeu Request?}
-        
-        ListenLoop -->|Sim| RouteRequest{Caminho}
-        RouteRequest -->|/healthz| ResponseOK[Retornar 'OK' 200] --> ListenLoop
-        RouteRequest -->|Outro| ResponseNotFound[Retornar 404] --> ListenLoop
-    end
+graph TD
+    %% Queues
+    Q_IN[RabbitMQ: document.ingestion.jobs]
+    Q_RAG[RabbitMQ: agent.retrieval.queue]
+    Q_WF[RabbitMQ: agent.workflow.queue]
+    Q_EVT[RabbitMQ: agent.execution.events]
+    Q_DLQ[RabbitMQ: document.ingestion.jobs.dlq]
 
-    subgraph Daemon Ingestão (ingestion-worker)
-        StartWorker([Início main.rs]) --> WorkerLog[Print 'Ingestion Worker starting...']
-        WorkerLog --> WorkerLoop[Loop de Ingestão]
-        WorkerLoop --> Sleep[tokio::time::sleep 60 segundos]
-        Sleep --> Heartbeat[Print 'Ingestion Worker heartbeat']
-        Heartbeat --> WorkerLoop
-    end
+    %% Workers
+    IW(ingestion-worker)
+    RW(rag-worker)
+    WW(workflow-worker)
+    ES(embedding-service)
+    
+    %% APIs / Bancos Externos
+    M[(MinIO: agents-data)]
+    PG[(PostgreSQL: pgvector)]
+    GCP[Vertex AI / AI Studio]
+
+    Q_IN --> IW
+    IW -->|Download| M
+    IW -->|POST /embeddings| ES
+    ES -->|Gera Vetor| GCP
+    IW -->|Insert vector| PG
+    IW -->|Erros persistentes| Q_DLQ
+
+    Q_RAG --> RW
+    RW -->|Busca HNSW| PG
+    RW -->|LLM Synthesis| GCP
+    RW -->|RetrievalCompleted| Q_EVT
+
+    Q_WF --> WW
+    WW -->|Grava estado DAG| PG
+    WW -->|workflow.completed| Q_EVT
 ```
