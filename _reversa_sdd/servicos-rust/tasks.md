@@ -1,40 +1,48 @@
 # Serviços Rust, Tarefas de Implementação
 
 ## Pré-requisitos
-- [ ] Rust v1.75+ instalado e cargo ativo.
-- [ ] Docker configurado para build multi-stage de imagens Rust.
-
----
+- [ ] Toolchain Rust atualizada (Cargo/rustc).
+- [ ] Servidor MinIO/S3 online e credenciais providenciadas.
+- [ ] Banco de Dados PostgreSQL configurado via Pool (com pgvector disponível).
 
 ## Tarefas
 
-- [ ] **T-01: Setup do Workspace Cargo e Crate Compartilhado**
-  - Origem no legado: `rust-services/Cargo.toml` / `rust-services/shared/src/lib.rs`
-  - Critério de pronto: Configurar workspace Cargo. A função `common_utility` da lib `shared` deve compilar e ser importável por outros crates.
-  - Confiança: 🟢 CONFIRMADO
-  
-- [ ] **T-02: Implementação do Document Processing Service**
-  - Origem no legado: `rust-services/document-processing/src/main.rs`
-  - Critério de pronto: Criar API Axum executando na porta 8000, servindo GET `/healthz` respondendo "OK" no corpo.
-  - Confiança: 🟢 CONFIRMADO
+- [ ] T-01, Inicializar Cargo Workspace com os 4 pacotes (`ingestion`, `rag`, `workflow`, `embedding`).
+  - Origem no legado: `rust-services/Cargo.toml`
+  - Critério de pronto: Builds de `cargo check` devem passar na raiz e em isolado.
+  - Confiança: 🟢
 
-- [ ] **T-03: Implementação do Embedding Service**
-  - Origem no legado: `rust-services/embedding-service/src/main.rs`
-  - Critério de pronto: Criar API Axum executando na porta 8000, servindo GET `/healthz` respondendo "OK" no corpo.
-  - Confiança: 🟢 CONFIRMADO
+- [ ] T-02, Implementar `embedding-service` (API Axum).
+  - Origem no legado: Sub-projeto `embedding-service`
+  - Critério de pronto: Servidor HTTP exposto que recebe JSON genérico e devolve Array Float usando API do Google, suportando fallbacks.
+  - Confiança: 🟢
 
-- [ ] **T-04: Implementação do Ingestion Worker Daemon**
-  - Origem no legado: `rust-services/ingestion-worker/src/main.rs`
-  - Critério de pronto: Executar loop de heartbeat que imprime log no console a cada 60 segundos exatos utilizando sleep assíncrono Tokio.
-  - Confiança: 🟢 CONFIRMADO
+- [ ] T-03, Lógica Core do `ingestion-worker`.
+  - Origem no legado: Filas AMQP em `rust-services/ingestion-worker`
+  - Critério de pronto: Parsing assíncrono. Consumo atômico da Fila. Apaga records pre-existentes do Document (Delete transacional) e grava chunks + vetores em batch.
+  - Confiança: 🟢
 
----
+- [ ] T-04, Implementar Motor de RAG HNSW no `rag-worker`.
+  - Origem no legado: SQL Query nativa em `rust-services/rag-worker`
+  - Critério de pronto: Consulta vetor usando `<=>` limitando pelos `RAG_TOP_K` definidos na env. Retorna strings formatadas para compor o System Prompt do Agente.
+  - Confiança: 🟢
+
+- [ ] T-05, Loop secundário Heartbeat Reaper.
+  - Origem no legado: `rust-services/ingestion-worker/reaper.rs` (Inferido logicamente)
+  - Critério de pronto: Monitorar na base via query periódica jobs com mais de 15 minutos em andamento para marcar falha total e liberar fila.
+  - Confiança: 🟢
 
 ## Tarefas de Teste
 
-- [ ] **TT-01: Teste de endpoints de saúde (/healthz)**
-  - Validar se requisições HTTP GET nas rotas `/healthz` de ambos os serviços respondem com HTTP 200 e o payload "OK".
-- [ ] **TT-02: Teste de logs de inicialização e heartbeat**
-  - Validar se o daemon de ingestão imprime o log de inicialização e os batimentos subsequentes nos tempos estipulados de 60 segundos.
-- [ ] **TT-03: Teste de compilação cruzada**
-  - Rodar `cargo build --workspace` e garantir compilação limpa de todos os microsserviços.
+- [ ] TT-01, Teste unitário de Mock do Embedding Service (bypassando HTTP real e forçando geração hash matemática de embedding) (variável `EMBEDDING_PROVIDER=mock`).
+- [ ] TT-02, Forjar documento PDF corrompido em teste end-to-end e garantir que o message rejection incrementa a contagem de entrega do RabbitMQ.
+- [ ] TT-03, Testar transação atômica do ingestor: falhar no meio do Batch Insert para verificar se o Delete anterior da transação também sofre rollback corretamente (sem lixo no banco).
+
+## Ordem Sugerida
+1. T-01 (Workspace Core)
+2. T-02 (Embedding Service - Dependência dos demais)
+3. T-03 e T-04 (Os consumidores RabbitMQ reais)
+4. T-05 (Resiliência)
+
+## Lacunas Pendentes (🔴)
+- A implementação do `workflow-worker` (Engine DAG - PR #308) tem baixa confiança, necessita leitura aprofundada dos modelos JSON e como o Grafo é enfileirado para ser reimplementado corretamente.

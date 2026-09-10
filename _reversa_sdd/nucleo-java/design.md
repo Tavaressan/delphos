@@ -2,61 +2,53 @@
 
 ## Interface
 
-### Estrutura de Tabelas (PostgreSQL)
+### Endpoints (Expostos)
+| Método | Caminho | Entrada | Saída | Status codes |
+|--------|---------|---------|-------|--------------|
+| GET | `/api/agents` | Parâmetros de página | `Page<Agent>` | 200, 401 |
+| POST | `/api/agents/upload` | `multipart/form-data` | `Agent` | 201, 400, 415 |
+| POST | `/api/knowledge/upload`| `multipart/form-data` | `Document` | 201, 400 |
+| POST | `/api/chat/stream` | `{ prompt, agentId }` | `text/event-stream` | 200, 400 |
+| DELETE| `/api/knowledge/:id` | UUID | HTTP 204 | 204, 404 |
 
-| Tabela | Chave Primária | Relacionamentos Críticos | Descrição |
-|---|---|---|---|
-| `users` | `id` (UUID) | N:M com `roles` via `user_roles` | Contém dados de autenticação e status do operador. |
-| `documents` | `id` (UUID) | 1:N com `document_chunks`, N:1 com `users` | Metadados de arquivos carregados. |
-| `document_chunks`| `id` (UUID) | N:1 com `documents` | Armazena trechos textuais e o vetor `vector` (dimensão parametrizável). |
-| `chats` | `id` (UUID) | N:1 com `users`, 1:N com `chat_messages` | Sessões de chat do usuário. |
-| `audit_logs` | `id` (UUID) | N:1 com `users` (opcional) | Logs detalhados em JSONB. |
+### Message Brokers (Eventos RabbitMQ)
+| Símbolo (Fila/Exchange) | Tipo Evento | Origem | Ação Observada |
+|---------|-----------|---------|------------|
+| `agent.execution.events` | Inbound | Worker (Python/Rust) | Extrai payload, processa `ToolCall` ou transiciona estado `AgentExecution` e dispara SSE para o client web. |
+| `document.ingestion.jobs` | Outbound| Java Core | Evento disparado pós-commit no JPA para o Rust iniciar a vetorização RAG. |
+| `agent.execution.jobs` | Outbound| Java Core | Evento contendo o prompt inicial enviado para fila para ser engolido pelo Python CrewAI Worker. |
 
----
+## Fluxo Principal (Exemplo: Upload de Agente)
+1. Recebe o ZIP em `AgentController`.
+2. `AgentService.createAgent` inspeciona o ZIP em memória (tamanho < 20MB, regex `TOOL_NAME_PATTERN` para extensões python e ausência de directory traversal).
+3. Salva a entidade `Agent` e os scripts `AgentCustomTool` no Postgres via repositórios JPA.
+4. Conecta-se ao SDK MinIO (S3) para realizar upload dos anexos de knowledge do Agente.
+5. Injeta no Transactional Observer (após comitar banco relacional) o envio da mensagem ao RabbitMQ para `document.ingestion.jobs`.
 
-## Fluxo Principal
-
-### 1. Inicialização do Backend e Migrações
-1. O Spring Boot inicializa e carrega o arquivo `application.yml`.
-2. O Flyway é disparado, lendo os scripts de migração em `db/migration/`.
-3. Executa `V1__init_schema.sql`, habilitando as extensões `vector` e `uuid-ossp`, criando as tabelas, índices padrão, índice vetorial HNSW e seeds de papéis (`ROLE_ADMIN`, `ROLE_USER`) e permissões (`READ_DOCUMENTS`, `WRITE_DOCUMENTS`, etc.).
-4. O Spring Security valida as sessões/conexões usando o Redis como suporte a cache.
-
----
+## Fluxos Alternativos
+- **Erro de Consumo de Fila:** Se a deserialização do JSON ou persistência em `AgentExecutionEventListener` falhar, o core inicia uma transação paralela `REQUIRES_NEW`, grava status = FAILED na execução para não perder visibilidade de erro, e então lança o throw permitindo que o `AmqpRejectAndDontRequeueException` mate a mensagem.
 
 ## Dependências
-* **Spring Security / RBAC:** Filtra e garante restrição de acessos.
-* **Flyway Core:** Gerencia migrations em banco Postgres.
-* **pgvector Extension:** Adiciona suporte a armazenamento e pesquisa de vetores no Postgres.
-* **Redis Client:** Fornece conexões e cache temporário.
-
----
+- **Spring Boot 3+ (Java 21+)**: Framework core injetando Data JPA, Web, RabbitMQ (AMQP).
+- **PostgreSQL**: Driver JDBC para o banco central.
+- **MinIO SDK**: Para integração S3-compatible.
 
 ## Decisões de Design Identificadas
 
 | Decisão | Evidência no código | Confiança |
 |---------|---------------------|-----------|
-| Hibernate `ddl-auto: validate` | `java-core/src/main/resources/application.yml:15` | 🟢 CONFIRMADO |
-| HNSW Index para cosseno | `V1__init_schema.sql:114` | 🟢 CONFIRMADO |
-| Spring Boot Actuator | `java-core/src/main/resources/application.yml:35-39` | 🟢 CONFIRMADO |
-| UUID como PK padrão | `V1__init_schema.sql` (uso de `DEFAULT gen_random_uuid()`) | 🟢 CONFIRMADO |
-| Autenticação Stateless (JWT) | Decisão arquitetural homologada | 🟢 CONFIRMADO (Confirmado pelo usuário) |
+| Prevenção atômica de Dirty-Reads enviando filas pós-commit | `TransactionSynchronizationManager` | 🟢 |
+| Tratamento de `AmqpRejectAndDontRequeueException` | Listener | 🟢 |
+| Sanitização de nomes de arquivo de ZIPs de agentes | `validateDocumentEntryName` | 🟢 |
+| Filas Dead-Letter-Queues (DLQ) pré-configuradas no Rabbit | Config Beans Rabbit | 🟢 |
 
----
+## Estado Interno
+O Java não mantém estado de longo prazo em memória. Ele delega para:
+- Banco de Dados (Configurações, Logs, Usuários, Status das Tarefas).
+- Fila AMQP (Gestão de Retry e Estado assíncrono).
 
-## Configuração de Segurança (Security Configuration)
-
-A autenticação é stateless baseada em tokens JWT assinados simetricamente (HS256):
-
-* **Autenticação:** Spring Security + OAuth2 Resource Server + JWT Stateless
-* **Componentes:** `AuthenticationManager` para login, `JwtEncoder`/`JwtDecoder` para geração/validação, filtro de segurança baseado em Bearer Token e sem sessões HTTP (`SessionCreationPolicy.STATELESS`).
-* **Parâmetros e Variáveis de Ambiente:**
-  * `JWT_SECRET`: Chave secreta de no mínimo 256 bits codificada em Base64.
-  * `JWT_EXPIRATION`: Tempo de expiração do Access Token (sugerido: `3600000`ms / 1 hora).
-  * `JWT_REFRESH_EXPIRATION`: Tempo de expiração do Refresh Token (sugerido: `604800000`ms / 7 dias).
-* **Evolução Arquitetural:** Inicialmente HS256 com variáveis de ambiente. Em caso de expansão de microserviços/consumidores externos, planeja-se migrar para **RS256** com par de chaves pública/privada integrada a um KMS (Vault).
-
----
+## Observabilidade
+- Emite logs internos padronizados e grava `AuditLog` no banco detalhando IP e ações sensíveis feitas por `ROLE_ADMIN` (ex. Exclusão de Bases de Conhecimento).
 
 ## Riscos e Lacunas
-*(Nenhuma lacuna crítica pendente neste módulo)*
+- 🟢 Sessões HTTP, Limites de Taxa e JWT/RBAC atualmente não usam Redis e não possuem replicação distribuída (stateful no contêiner Java). Foi decidido que a implementação de Redis e validações rígidas de JWT/RBAC ficarão como dívida técnica para um próximo ciclo.

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "deno test -A tests/",
     "test:viewport": "playwright test"
   },
@@ -15,10 +15,10 @@
     "@tailwindcss/postcss": "^4.3.3",
     "clsx": "^2.1.1",
     "framer-motion": "^12.41.0",
-    "lucide-react": "^0.378.0",
-    "next": "^14.2.35",
-    "react": "^18",
-    "react-dom": "^18",
+    "lucide-react": "^1.24.0",
+    "next": "^15.5.20",
+    "react": "^19",
+    "react-dom": "^19",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.3.0"
@@ -26,16 +26,13 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "autoprefixer": "^10.5.0",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "^14.2.35",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.2.9",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.3",
     "typescript": "^5"
-  },
-  "overrides": {
-    "eslint": "^8.57.1"
   }
 }

@@ -1,73 +1,67 @@
-# Frontend, Requisitos
+# Frontend
 
 ## Visão Geral
-O módulo Frontend é a interface gráfica web da plataforma, construída em Next.js com App Router e estilizada com Tailwind CSS. Ele permite que usuários finais façam login, realizem uploads de documentos, vejam o progresso de processamento e utilizem uma interface de chat interativo com o assistente IA.
-
----
+Aplicação Single Page Application (SPA) desenvolvida em Next.js (com suporte ao runtime Deno e Tailwind CSS v4) responsável pela interface do usuário. Permite chat com agentes, gerenciamento do catálogo de agentes e upload de base de conhecimento.
 
 ## Responsabilidades
-* **Autenticação Visual:** Fornecer telas de login e layouts específicos para autenticação.
-* **Envio de Documentos (Ingestão):** Disponibilizar interface intuitiva de upload de arquivos (PDF, TXT, etc.).
-* **Interface de Chat:** Oferecer uma área de conversa por chat em tempo real com o assistente RAG.
-* **Controle de Acesso Visual:** Ocultar ou desabilitar funcionalidades administrativas (ex: logs de auditoria) com base no papel do usuário.
-
----
+- Prover interface de chat iterativo em tempo real via Server-Sent Events (SSE).
+- Gerenciar catálogo de agentes (upload de ZIPs, ativação, desativação).
+- Fazer upload de documentos para a Base de Conhecimento RAG.
+- Controlar agendamentos (Schedules).
+- Gerenciar configurações locais (MCP Servers) e Internacionalização (i18n).
 
 ## Regras de Negócio
-* **[BR01] Tema Visual Responsivo:** O layout do sistema deve se adaptar automaticamente a temas claro e escuro (`bg-white` / `bg-gray-950`).
-  * *Status:* 🟢 CONFIRMADO (extraído de `frontend/src/app/layout.tsx`).
-* **[BR02] Autenticação Obrigatória:** Rotas internas (chat, upload) exigem autenticação do usuário. Apenas a tela de login (/auth) deve estar disponível publicamente.
-  * *Status:* 🟡 INFERIDO.
-
----
+- Arquivos de Agentes só podem ser submetidos no formato ZIP estruturado. 🟢
+- O chat faz fallback para uma API padrão se não houver backend customizado definido. 🟡
+- O polling de atualização da Base de Conhecimento roda a cada 3 segundos caso existam documentos nos estados `UPLOADING` ou `PROCESSING`. 🟢
 
 ## Requisitos Funcionais
 
 | ID | Requisito | Prioridade | Critério de Aceite |
-|----|-----------|------------|-------------------|
-| RF-01 | Interface de Autenticação Centralizada | Must | Tela flexível e centralizada em fundo gradiente/padrão para login. |
-| RF-02 | Painel de Conversação (Chat) | Must | Exibir mensagens sequenciais divididas por remetente (User vs Assistente). |
-| RF-03 | Upload de Arquivos | Must | Permitir arrastar e soltar ou selecionar arquivos para upload. |
-| RF-04 | Exibição de Status de Documentos | Should | Mostrar se o documento está indexado ou processando na listagem. |
-
----
+|----|-----------|-----------|-------------------|
+| RF-01 | Enviar mensagens de chat | Must | O streaming SSE deve preencher a resposta progressivamente no canvas. |
+| RF-02 | Upload de Agentes | Must | Validação prévia de `.zip` obrigatório (rejeita `.md`). |
+| RF-03 | Upload de Documentos KB | Must | Exibir barra de progresso e atualizar a grid. |
+| RF-04 | Internacionalização | Should | Suporte pleno a alternância entre `pt-BR` e `en` no painel. |
 
 ## Requisitos Não Funcionais
 
 | Tipo | Requisito inferido | Evidência no código | Confiança |
 |------|--------------------|---------------------|-----------|
-| Usabilidade | Suporte nativo a Dark Mode e acessibilidade visual | `frontend/src/app/layout.tsx:7` | 🟢 |
-| Segurança | Centralização de layout para fluxos de autenticação | `frontend/src/app/auth/layout.tsx:4` | 🟢 |
+| Performance | Execução nativa no Deno | `next.config.js` / ADR-001 | 🟢 |
+| Segurança | CSP (Content Security Policy) no-report | `next.config.js` | 🟢 |
+| Usabilidade | Suporte a Viewport Mobile via Playwright | `tests/` E2E gate de mobile | 🟢 |
+| Resiliência | API Error Handler unificado encapsulando HTTP status | `apiClient.ts` | 🟢 |
 
----
+> Inferido a partir do código. Validar com equipe de operações.
 
 ## Critérios de Aceitação
 
 ```gherkin
-Dado que um usuário não autenticado tenta acessar o painel de chat
-Quando o roteamento carrega a página
-Então ele deve ser redirecionado visualmente para a tela de login (/auth)
+Dado que o usuário está na tela de Catálogo
+Quando tenta fazer upload de um arquivo `.md` direto
+Então a interface exibe erro de validação "Formato inválido, envie um .zip"
 
-Dado que o usuário está na tela de login
-Quando digita credenciais válidas e clica em Entrar
-Então ele deve ser autenticado e direcionado para a interface principal de chat
+Dado que a resposta do agente é longa
+Quando o backend inicia a transmissão via SSE
+Então a bolha de chat preenche texto sem travar a thread principal da UI
 ```
-
----
 
 ## Prioridade (MoSCoW)
 
 | Requisito | MoSCoW | Justificativa |
 |-----------|--------|---------------|
-| Interface de login e fluxo de Auth Layout | Must | Ponto de entrada obrigatório para proteger acessos do sistema |
-| Componentização de layouts (Root e Auth Layout) | Must | Define a estrutura visual de carregamento de páginas da aplicação |
-| Suporte a Dark Mode (Tailwind) | Should | Melhora usabilidade em ambientes de escritório corporativo |
+| Chat via SSE | Must | Acesso primário da IA pelo usuário |
+| Catálogo ZIP | Must | Bloqueio de lixo e erros do usuário |
+| Internacionalização (i18n) | Should | Diferencial competitivo, não essencial para funcionar |
+| Mobile Viewport | Could | Importante, mas backend e engine IA funcionam independente disso |
 
----
+> Prioridade inferida por frequência de chamada e posição na cadeia de dependências.
 
 ## Rastreabilidade de Código
 
 | Arquivo | Função / Classe | Cobertura |
 |---------|-----------------|-----------|
-| `frontend/src/app/layout.tsx` | `RootLayout` | 🟢 |
-| `frontend/src/app/auth/layout.tsx` | `AuthLayout` | 🟢 |
+| `frontend/src/app/chat/ChatCanvas.tsx` | `handleSend` / SSE | 🟢 |
+| `frontend/src/app/knowledge/KnowledgeBasePage.tsx` | `handleFileSelect` | 🟢 |
+| `frontend/src/utils/apiClient.ts` | `ApiError` | 🟢 |
