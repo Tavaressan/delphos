@@ -161,7 +161,7 @@ jobs:
 
       - name: Deploy no Cloud Run
         if: env.DRY_RUN != 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ vars.CLOUD_RUN_SERVICE_JAVA_CORE || 'java-core' }}
           region: ${{ vars.GCP_REGION }}
@@ -225,7 +225,7 @@ jobs:
 
       - name: Deploy no Cloud Run
         if: env.DRY_RUN != 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ matrix.service }}
           region: ${{ vars.GCP_REGION }}
@@ -278,7 +278,7 @@ jobs:
 
       - name: Deploy no Cloud Run
         if: env.DRY_RUN != 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ vars.CLOUD_RUN_SERVICE_CREW_WORKER || 'crew-worker' }}
           region: ${{ vars.GCP_REGION }}
