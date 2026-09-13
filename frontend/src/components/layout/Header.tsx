@@ -111,7 +111,7 @@ export const Header: React.FC = () => {
               <div className="hidden sm:flex flex-col text-left">
                 <span className="font-bold text-text-primary">{user.firstName} {user.lastName}</span>
                 <span className="text-[10px] uppercase bg-secondary/40 dark:bg-slate-900/50 text-text-secondary px-1 py-0.5 rounded font-mono font-bold border border-border-color flex items-center gap-0.5">
-                  <ShieldCheck className="w-2.5 h-2.5 text-primary" /> ROLE_ADMIN
+                  <ShieldCheck className="w-2.5 h-2.5 text-primary" /> {user.role || 'ROLE_USER'}
                 </span>
               </div>
             </div>

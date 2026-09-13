@@ -1,80 +1,63 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { User } from '../domain/entities';
+import { authRepository } from '../infrastructure/repositories/AuthRepository';
 
 interface AuthContextType {
   user: User | null;
   isLogged: boolean;
   tenantId: string;
-  login: (username: string, role: 'ROLE_USER' | 'ROLE_ADMIN') => void;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEFAULT_TENANT_ID = 'd3b07384-d113-4ec2-a5d6-c8a7b6cf9110';
+
+function readStoredUser(): User | null {
+  if (typeof localStorage === 'undefined') return null;
+  const storedUser = localStorage.getItem('alfabra_user');
+  if (!storedUser) return null;
+  try {
+    return JSON.parse(storedUser) as User;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredTenant(): string {
+  if (typeof localStorage === 'undefined') return DEFAULT_TENANT_ID;
+  return localStorage.getItem('alfabra_tenant') || DEFAULT_TENANT_ID;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLogged, setIsLogged] = useState<boolean>(false);
-  const [tenantId, setTenantId] = useState<string>('d3b07384-d113-4ec2-a5d6-c8a7b6cf9110');
+  // Estado inicial lido de forma síncrona (sem useEffect / sem seed padrão):
+  // visitantes sem sessão válida em localStorage começam deslogados (issue #316).
+  const [user, setUser] = useState<User | null>(() => readStoredUser());
+  const [tenantId] = useState<string>(() => readStoredTenant());
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('alfabra_user');
-    const storedLogged = localStorage.getItem('alfabra_logged');
-    const storedTenant = localStorage.getItem('alfabra_tenant');
+  const login = async (username: string, password: string) => {
+    // Credenciais são sempre validadas contra o backend/mock — o role nunca é
+    // decidido pelo chamador (issue #316). Rejeita (throw) em caso de falha.
+    const authenticatedUser = await authRepository.login(username, password);
 
-    if (storedUser && storedLogged) {
-      setUser(JSON.parse(storedUser));
-      setIsLogged(storedLogged === 'true');
-    } else {
-      // Seed default user for PoC so the user starts logged in
-      const defaultUser: User = {
-        id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-        username: 'admin',
-        email: 'admin@company.com',
-        firstName: 'Vitor',
-        lastName: 'Tavares',
-        status: 'ACTIVE',
-        role: 'ROLE_ADMIN',
-      };
-      setUser(defaultUser);
-      setIsLogged(true);
-      localStorage.setItem('alfabra_user', JSON.stringify(defaultUser));
-      localStorage.setItem('alfabra_logged', 'true');
+    setUser(authenticatedUser);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('alfabra_user', JSON.stringify(authenticatedUser));
     }
-
-    if (storedTenant) {
-      setTenantId(storedTenant);
-    } else {
-      localStorage.setItem('alfabra_tenant', tenantId);
-    }
-  }, []);
-
-  const login = (username: string, role: 'ROLE_USER' | 'ROLE_ADMIN') => {
-    const newUser: User = {
-      id: role === 'ROLE_ADMIN' ? 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' : 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
-      username,
-      email: `${username}@company.com`,
-      firstName: username.charAt(0).toUpperCase() + username.slice(1),
-      lastName: role === 'ROLE_ADMIN' ? 'Admin' : 'User',
-      status: 'ACTIVE',
-      role,
-    };
-    setUser(newUser);
-    setIsLogged(true);
-    localStorage.setItem('alfabra_user', JSON.stringify(newUser));
-    localStorage.setItem('alfabra_logged', 'true');
   };
 
   const logout = () => {
     setUser(null);
-    setIsLogged(false);
-    localStorage.removeItem('alfabra_user');
-    localStorage.removeItem('alfabra_logged');
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('alfabra_user');
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLogged, tenantId, login, logout }}>
+    <AuthContext.Provider value={{ user, isLogged: user !== null, tenantId, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
