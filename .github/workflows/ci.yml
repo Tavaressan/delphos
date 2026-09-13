@@ -130,7 +130,7 @@ jobs:
       - name: Gera token da GitHub App (permissão de administração)
         id: app-token
         if: github.actor != 'dependabot[bot]' && github.run_attempt > 1
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: 4358824
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
