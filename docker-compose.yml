@@ -163,8 +163,8 @@ services:
     container_name: workflow_worker
     restart: on-failure
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/rag_db
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-rag_db}
+      - RABBITMQ_URL=amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASS:-guest}@rabbitmq:5672
     env_file:
       - .env
     volumes:
