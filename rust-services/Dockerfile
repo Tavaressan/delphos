@@ -1,7 +1,7 @@
 # Dockerfile for Rust Services (generic placeholder)
 
 # Use the official Rust image for building
-FROM rust:1.97 as builder
+FROM rust:1.98 as builder
 WORKDIR /app
 # Copy Cargo files (assuming a workspace will be added later)
 COPY Cargo.toml Cargo.lock ./
