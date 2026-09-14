@@ -219,7 +219,7 @@ jiter==0.14.0
     #   openai
 json-repair==0.25.3
     # via crewai
-json5==0.10.0
+json5==0.15.0
     # via crewai
 jsonref==1.1.0
     # via crewai
