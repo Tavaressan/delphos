@@ -514,7 +514,7 @@ tomli==2.0.2
     #   crewai
     #   crewai-cli
     #   crewai-core
-tomli-w==1.1.0
+tomli-w==1.2.0
     # via
     #   crewai
     #   crewai-cli
