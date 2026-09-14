@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim
+FROM python:3.14-slim
 WORKDIR /app
 # Instala a partir do lock totalmente pinado, não do requirements.txt: com as
 # faixas abertas (crewai>=1.0.0, litellm, google-cloud-aiplatform>=1.60.0) o
