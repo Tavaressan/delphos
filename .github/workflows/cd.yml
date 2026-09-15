@@ -138,7 +138,7 @@ jobs:
       # o setup do provider e da service account no GCP. Nenhuma chave JSON é
       # armazenada como secret.
       - name: Autenticar no Google Cloud (OIDC)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
@@ -161,7 +161,7 @@ jobs:
 
       - name: Deploy no Cloud Run
         if: env.DRY_RUN != 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ vars.CLOUD_RUN_SERVICE_JAVA_CORE || 'java-core' }}
           region: ${{ vars.GCP_REGION }}
@@ -202,7 +202,7 @@ jobs:
           ref: ${{ needs.gate.outputs.ref }}
 
       - name: Autenticar no Google Cloud (OIDC)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
@@ -225,7 +225,7 @@ jobs:
 
       - name: Deploy no Cloud Run
         if: env.DRY_RUN != 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ matrix.service }}
           region: ${{ vars.GCP_REGION }}
@@ -255,7 +255,7 @@ jobs:
           ref: ${{ needs.gate.outputs.ref }}
 
       - name: Autenticar no Google Cloud (OIDC)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
@@ -278,7 +278,7 @@ jobs:
 
       - name: Deploy no Cloud Run
         if: env.DRY_RUN != 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: ${{ vars.CLOUD_RUN_SERVICE_CREW_WORKER || 'crew-worker' }}
           region: ${{ vars.GCP_REGION }}
