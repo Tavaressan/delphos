@@ -81,7 +81,7 @@ jobs:
       # sem isso o `bash $GITHUB_WORKSPACE/scripts/...` não acharia o
       # arquivo, já que este job nunca dava checkout antes desta mudança.
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Sem isso, o runner EC2 só entra no ar se alguém der `aws ec2
       # start-instances` manualmente (ver #345). A role é assumida via OIDC
@@ -166,7 +166,7 @@ jobs:
       python: ${{ steps.normalize.outputs.python }}
       e2e: ${{ steps.normalize.outputs.e2e }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Necessário para o turbo `--affected` conseguir calcular o
           # merge-base contra a branch base sem marcar tudo como afetado
@@ -336,7 +336,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -466,7 +466,7 @@ jobs:
     if: needs.changes.outputs.java == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup JDK 21
         uses: actions/setup-java@v5
@@ -499,7 +499,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup JDK 21
         uses: actions/setup-java@v5
@@ -543,7 +543,7 @@ jobs:
     if: needs.changes.outputs.frontend == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Runtime do frontend (issue #187, Fase 2). O Deno substitui o Node em
       # todo o ciclo: install, lint, test e build.
@@ -621,7 +621,7 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -718,7 +718,7 @@ jobs:
       image: ${{ steps.meta.outputs.image }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Tag derivada do conteúdo do Cargo.lock: enquanto as dependências não
       # mudarem, a imagem já existe e o build abaixo é pulado. Sempre calculada
@@ -797,7 +797,7 @@ jobs:
           - workflow-worker
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         if: needs.changes.outputs.rust == 'true' && github.event.pull_request.draft != true
@@ -897,7 +897,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -971,7 +971,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -1051,7 +1051,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -1126,7 +1126,7 @@ jobs:
     if: needs.changes.outputs.python == 'true' && github.event.pull_request.draft != true
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -1231,7 +1231,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Suíte migrada de node:test/npm para deno test (issue #199) — sem
       # depender de `npm ci`/node_modules na raiz para rodar a suíte E2E.
