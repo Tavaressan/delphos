@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Run ci-select-runner.test.sh
         run: bash scripts/ci-select-runner.test.sh
@@ -48,7 +48,7 @@ jobs:
     needs: unit-tests
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Sem chamada de rede real: um stub `gh` no PATH que responde "1
       # runner online" a qualquer `gh api .../actions/runners`, simulando o
