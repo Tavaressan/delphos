@@ -1,6 +1,6 @@
 # Delphos
 
-Uma plataforma corporativa modular para orquestração de agentes de IA do framework Carobelli com Recuperação Aumentada por Geração (RAG).
+Uma plataforma corporativa modular para orquestração de agentes de IA com Recuperação Aumentada por Geração (RAG).
 
 ## 🏗️ Arquitetura do Sistema
 
