@@ -1,4 +1,4 @@
-# Alfabra Vector
+# Delphos
 
 Uma plataforma corporativa modular para orquestração de agentes de IA do framework Carobelli com Recuperação Aumentada por Geração (RAG).
 
